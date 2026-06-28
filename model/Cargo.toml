@@ -1,0 +1,11 @@
+[package]
+name = "moraine-model"
+description = "Typed, validated protocol objects for the Moraine registry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+moraine-codec = { path = "../codec" }
+moraine-crypto = { path = "../crypto" }

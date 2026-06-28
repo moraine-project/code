@@ -1,0 +1,21 @@
+[package]
+name = "moraine-verify"
+description = "Standalone verifier for Moraine signed objects and the protocol test-vector corpus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "moraine-verify"
+path = "src/main.rs"
+
+[dependencies]
+moraine-codec = { path = "../codec" }
+moraine-crypto = { path = "../crypto" }
+moraine-model = { path = "../model" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+sha2.workspace = true

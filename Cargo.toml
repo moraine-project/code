@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = ["codec", "crypto", "model", "verify"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+
+[workspace.dependencies]
+ed25519-dalek = { version = "3", features = ["fast", "zeroize"] }
+sha2 = "0.11"
+hex = "0.4"
+unicode-normalization = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+rand_core = "0.10"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

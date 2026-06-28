@@ -1,0 +1,10 @@
+[package]
+name = "moraine-codec"
+description = "Deterministic CBOR canonical encoding profile for the Moraine protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+unicode-normalization.workspace = true

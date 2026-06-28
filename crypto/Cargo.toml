@@ -1,0 +1,13 @@
+[package]
+name = "moraine-crypto"
+description = "Keys, signatures, domain tags, and object identity for the Moraine protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+moraine-codec = { path = "../codec" }
+ed25519-dalek.workspace = true
+sha2.workspace = true
+hex.workspace = true
