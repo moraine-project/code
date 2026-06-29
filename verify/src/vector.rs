@@ -1,6 +1,8 @@
 use moraine_codec::decode;
 use moraine_crypto::{KeyId, ObjectKind, object_id_string};
 use moraine_model::Canonical;
+use moraine_model::compatibility::{Predicate, PredicateResult};
+use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
 use moraine_model::delegation::{Delegation, DelegationPurpose};
 use moraine_model::error::{ModelError, RejectReason};
 use moraine_model::feed::FeedEntry;
@@ -9,6 +11,7 @@ use moraine_model::profile::ProfileRevision;
 use moraine_model::release::ReleasePayload;
 use moraine_model::signed::{Signature, SignatureEnvelope, SignedObject, TrustedKey, verify_envelope};
 use moraine_model::trust::{RootSet, verify_key_delegation, verify_ownership_transfer};
+use moraine_model::version::{OrderingScheme, VersionCatalog};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +40,20 @@ pub struct Vector {
 	pub trust: Option<TrustJson>,
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
 	pub prior_feed_hex: Vec<String>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub predicate_case: Option<PredicateCase>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PredicateCase {
+	pub ordering: String,
+	#[serde(default)]
+	pub catalog: Vec<String>,
+	pub scheme: String,
+	#[serde(default)]
+	pub values: Vec<String>,
+	pub version: String,
+	pub expected: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +109,9 @@ impl Actual {
 }
 
 pub fn evaluate(vector: &Vector) -> Actual {
+	if vector.kind == "predicate" {
+		return evaluate_predicate(vector);
+	}
 	if vector.kind == "canonical" {
 		return match hex::decode(&vector.payload_hex) {
 			Ok(bytes) => match decode(&bytes) {
@@ -122,12 +142,39 @@ pub fn evaluate(vector: &Vector) -> Actual {
 		ObjectKind::Release => verify_with_trust::<ReleasePayload>(vector, payload, &envelope, kind, verify_kind),
 		ObjectKind::Profile => verify_profile_object(vector, payload, &envelope, verify_kind),
 		ObjectKind::FeedEntry => verify_feed_object(vector, payload, &envelope, kind, verify_kind),
+		ObjectKind::GameDef => verify_with_trust::<GameDef>(vector, payload, &envelope, kind, verify_kind),
+		ObjectKind::LoaderDef => verify_with_trust::<LoaderObject>(vector, payload, &envelope, kind, verify_kind),
+		ObjectKind::RuntimeDef => verify_with_trust::<RuntimeDef>(vector, payload, &envelope, kind, verify_kind),
 		_ => Err(ModelError::new(RejectReason::WrongObjectKind, "{} is not implemented yet")),
 	};
 
 	match outcome {
 		Ok(()) => Actual::accept(),
 		Err(error) => Actual::from_error(error),
+	}
+}
+
+fn evaluate_predicate(vector: &Vector) -> Actual {
+	let Some(case) = &vector.predicate_case else {
+		return Actual::reject(RejectReason::InvalidFieldValue);
+	};
+	let Some(scheme) = OrderingScheme::parse(&case.ordering) else {
+		return Actual::reject(RejectReason::InvalidFieldValue);
+	};
+	let catalog = VersionCatalog::new(scheme, case.catalog.clone());
+	let predicate = Predicate {
+		scheme: case.scheme.clone(),
+		values: case.values.clone(),
+	};
+	let token = match catalog.evaluate(&predicate, &case.version) {
+		PredicateResult::Satisfied => "satisfied",
+		PredicateResult::NotSatisfied => "not-satisfied",
+		PredicateResult::Unknown => "unknown",
+	};
+	if token == case.expected {
+		Actual::accept()
+	} else {
+		Actual::reject(RejectReason::InvalidFieldValue)
 	}
 }
 

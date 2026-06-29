@@ -750,6 +750,667 @@
       "prior_feed_hex": [
         "a6646b696e647172656c656173652d7075626c69736865646870726f746f636f6c016873657175656e6365016a70726f6a6563745f6964784a67643a7368613235363a373539623263343265643732333330643939356266633533666134333831646334653465623731313435306234383164326434383936316562323431303539356b6465636c617265645f61741a68e778006d6f626a6563745f6469676573745820cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
       ]
+    },
+    {
+      "name": "predicate-semver-prefix",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "semver",
+        "catalog": [],
+        "scheme": "semver",
+        "values": [
+          "1.20"
+        ],
+        "version": "1.20.4",
+        "expected": "satisfied"
+      }
+    },
+    {
+      "name": "predicate-semver-prefix-miss",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "semver",
+        "catalog": [],
+        "scheme": "semver",
+        "values": [
+          "1.20"
+        ],
+        "version": "1.21.0",
+        "expected": "not-satisfied"
+      }
+    },
+    {
+      "name": "predicate-semver-range",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "semver",
+        "catalog": [],
+        "scheme": "semver",
+        "values": [
+          ">=1.4.0",
+          "<2.0.0"
+        ],
+        "version": "1.9.9",
+        "expected": "satisfied"
+      }
+    },
+    {
+      "name": "predicate-semver-range-exceeds",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "semver",
+        "catalog": [],
+        "scheme": "semver",
+        "values": [
+          ">=1.4.0",
+          "<2.0.0"
+        ],
+        "version": "2.0.0",
+        "expected": "not-satisfied"
+      }
+    },
+    {
+      "name": "predicate-semver-prerelease",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "semver",
+        "catalog": [],
+        "scheme": "semver",
+        "values": [
+          "=1.0.0-alpha"
+        ],
+        "version": "1.0.0-alpha",
+        "expected": "satisfied"
+      }
+    },
+    {
+      "name": "predicate-semver-prerelease-order",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "semver",
+        "catalog": [],
+        "scheme": "semver",
+        "values": [
+          "=1.0.0-alpha"
+        ],
+        "version": "1.0.0",
+        "expected": "not-satisfied"
+      }
+    },
+    {
+      "name": "predicate-exact-hit",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "semver",
+        "catalog": [],
+        "scheme": "exact",
+        "values": [
+          "1.20.1"
+        ],
+        "version": "1.20.1",
+        "expected": "satisfied"
+      }
+    },
+    {
+      "name": "predicate-exact-miss",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "semver",
+        "catalog": [],
+        "scheme": "exact",
+        "values": [
+          "1.20.1"
+        ],
+        "version": "1.20.2",
+        "expected": "not-satisfied"
+      }
+    },
+    {
+      "name": "predicate-any",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "semver",
+        "catalog": [],
+        "scheme": "any",
+        "values": [],
+        "version": "9.9.9",
+        "expected": "satisfied"
+      }
+    },
+    {
+      "name": "predicate-unknown-scheme",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "semver",
+        "catalog": [],
+        "scheme": "maven",
+        "values": [
+          "[1.0,2.0)"
+        ],
+        "version": "1.5",
+        "expected": "unknown"
+      }
+    },
+    {
+      "name": "predicate-scheme-mismatch",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "semver",
+        "catalog": [],
+        "scheme": "ordered-list",
+        "values": [],
+        "version": "1.5",
+        "expected": "unknown"
+      }
+    },
+    {
+      "name": "predicate-ordered-range-exclusive",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "ordered-list",
+        "catalog": [
+          "1.16",
+          "1.17",
+          "1.18",
+          "1.19",
+          "1.20",
+          "1.20.4"
+        ],
+        "scheme": "ordered-list",
+        "values": [
+          "1.17..1.20.4"
+        ],
+        "version": "1.19",
+        "expected": "satisfied"
+      }
+    },
+    {
+      "name": "predicate-ordered-range-excludes-end",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "ordered-list",
+        "catalog": [
+          "1.16",
+          "1.17",
+          "1.18",
+          "1.19",
+          "1.20",
+          "1.20.4"
+        ],
+        "scheme": "ordered-list",
+        "values": [
+          "1.17..1.20.4"
+        ],
+        "version": "1.20.4",
+        "expected": "not-satisfied"
+      }
+    },
+    {
+      "name": "predicate-ordered-range-inclusive",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "ordered-list",
+        "catalog": [
+          "1.16",
+          "1.17",
+          "1.18",
+          "1.19",
+          "1.20",
+          "1.20.4"
+        ],
+        "scheme": "ordered-list",
+        "values": [
+          "1.17..=1.20.4"
+        ],
+        "version": "1.20.4",
+        "expected": "satisfied"
+      }
+    },
+    {
+      "name": "predicate-ordered-unknown-version",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "ordered-list",
+        "catalog": [
+          "1.16",
+          "1.17",
+          "1.18",
+          "1.19",
+          "1.20",
+          "1.20.4"
+        ],
+        "scheme": "ordered-list",
+        "values": [
+          "1.17..1.20.4"
+        ],
+        "version": "1.21",
+        "expected": "unknown"
+      }
+    },
+    {
+      "name": "predicate-calendar-range",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "calendar",
+        "catalog": [
+          "2024-01",
+          "2024-02",
+          "2024-03"
+        ],
+        "scheme": "calendar",
+        "values": [
+          "2024-01..=2024-03"
+        ],
+        "version": "2024-02",
+        "expected": "satisfied"
+      }
+    },
+    {
+      "name": "predicate-calendar-outside",
+      "category": "definitions",
+      "kind": "predicate",
+      "payload_hex": "",
+      "expected_verdict": "accept",
+      "predicate_case": {
+        "ordering": "calendar",
+        "catalog": [
+          "2024-01",
+          "2024-02",
+          "2024-03"
+        ],
+        "scheme": "calendar",
+        "values": [
+          "2024-01..2024-02"
+        ],
+        "version": "2024-03",
+        "expected": "not-satisfied"
+      }
+    },
+    {
+      "name": "game-def-valid",
+      "category": "definitions",
+      "kind": "game-def",
+      "payload_hex": "ac647461677382a262696466636c69656e74656c6162656c66636c69656e74a262696466736572766572656c6162656c667365727665726767616d655f6964784a67643a7368613235363a393937303632363636363536306133323436356434636531306432386633323333333635616638333365313565656435393838346439343737383632633337396870726f746f636f6c016a63617465676f7269657382a2626964677574696c697479656c6162656c677574696c697479a262696463716f6c656c6162656c63716f6c6c646973706c61795f6e616d65694d696e6563726166746d6465636c617265645f74696d651a68e778006e76657273696f6e5f73796e746178a1646b696e646673656d7665726f696e7374616c6c5f61646170746572716d696e6563726166742f64656661756c746f6c6f61646572735f616c6c6f776564f57076657273696f6e5f6f72646572696e676673656d766572726c6f616465725f617574686f72697469657381784a67643a7368613235363a65326465363562366233646364396439643839623162393236353465306335663339636334633065386264653365626263663137636433313363313364316362726d657461646174615f657874726163746f72756d696e6563726166742f6661627269632d6a736f6e",
+      "envelope": {
+        "alg": 1,
+        "signatures": [
+          {
+            "alg": 1,
+            "key_id": "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2",
+            "sig": "74029249be7ac75ebd0994bb9fa23339bd52b502763aca582c39006e1072924fe9c97c417341ec5d287a32bba345210a53780e159668394ad2bd6a5339c1e20f"
+          }
+        ],
+        "key_ids": [
+          "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2"
+        ]
+      },
+      "expected_id": "gd:sha256:fbcc31243a9652fa6b9416cbf6df86fb6746d6d9f676bb380b670e15bfe4ab40",
+      "expected_verdict": "accept",
+      "trust": {
+        "roots": [
+          "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        ],
+        "threshold": 1,
+        "authorized_kinds": [],
+        "profile_roots": [],
+        "delegated_keys": []
+      }
+    },
+    {
+      "name": "game-def-unknown-ordering",
+      "category": "definitions",
+      "kind": "game-def",
+      "payload_hex": "ac647461677382a262696466636c69656e74656c6162656c66636c69656e74a262696466736572766572656c6162656c667365727665726767616d655f6964784a67643a7368613235363a393937303632363636363536306133323436356434636531306432386633323333333635616638333365313565656435393838346439343737383632633337396870726f746f636f6c016a63617465676f7269657381a2626964677574696c697479656c6162656c677574696c6974796c646973706c61795f6e616d65694d696e6563726166746d6465636c617265645f74696d651a68e778006e76657273696f6e5f73796e746178a1646b696e646673656d7665726f696e7374616c6c5f61646170746572716d696e6563726166742f64656661756c746f6c6f61646572735f616c6c6f776564f57076657273696f6e5f6f72646572696e676d6c657869636f67726170686963726c6f616465725f617574686f72697469657381784a67643a7368613235363a65326465363562366233646364396439643839623162393236353465306335663339636334633065386264653365626263663137636433313363313364316362726d657461646174615f657874726163746f72756d696e6563726166742f6661627269632d6a736f6e",
+      "envelope": {
+        "alg": 1,
+        "signatures": [
+          {
+            "alg": 1,
+            "key_id": "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2",
+            "sig": "1f61fc549d2c53dd80950146590b3a8a5fecb4e26c19f16acf4465f916afa55b320edc343ff0a5fe11c283cfe52dfec3c34e97ec18c1cd3328c44dc9e8dedc0f"
+          }
+        ],
+        "key_ids": [
+          "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2"
+        ]
+      },
+      "expected_id": "gd:sha256:a3caef7f8d4cdcc13fd11eed11dfab5afdd9e9e28da00114bf546463d3c20ed5",
+      "expected_verdict": "reject",
+      "reason_code": "invalid-field-value",
+      "trust": {
+        "roots": [
+          "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        ],
+        "threshold": 1,
+        "authorized_kinds": [],
+        "profile_roots": [],
+        "delegated_keys": []
+      }
+    },
+    {
+      "name": "game-def-duplicate-category",
+      "category": "definitions",
+      "kind": "game-def",
+      "payload_hex": "ac647461677382a262696466636c69656e74656c6162656c66636c69656e74a262696466736572766572656c6162656c667365727665726767616d655f6964784a67643a7368613235363a393937303632363636363536306133323436356434636531306432386633323333333635616638333365313565656435393838346439343737383632633337396870726f746f636f6c016a63617465676f7269657382a2626964677574696c697479656c6162656c677574696c697479a2626964677574696c697479656c6162656c677574696c6974796c646973706c61795f6e616d65694d696e6563726166746d6465636c617265645f74696d651a68e778006e76657273696f6e5f73796e746178a1646b696e646673656d7665726f696e7374616c6c5f61646170746572716d696e6563726166742f64656661756c746f6c6f61646572735f616c6c6f776564f57076657273696f6e5f6f72646572696e676673656d766572726c6f616465725f617574686f72697469657381784a67643a7368613235363a65326465363562366233646364396439643839623162393236353465306335663339636334633065386264653365626263663137636433313363313364316362726d657461646174615f657874726163746f72756d696e6563726166742f6661627269632d6a736f6e",
+      "envelope": {
+        "alg": 1,
+        "signatures": [
+          {
+            "alg": 1,
+            "key_id": "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2",
+            "sig": "34dfcd2201b5ae5274fb496865d81a2daf7fce40eb51a063a1693e494c1cc304fdf6582440cf10c55b8b4933efc61836af35dfcb1e8fc4ebc4d7697a7b49850e"
+          }
+        ],
+        "key_ids": [
+          "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2"
+        ]
+      },
+      "expected_id": "gd:sha256:ce52a054f195df1f1dba0755f4aaa9c0d836cf9e9a5167c1fc126bfd9ab2a13f",
+      "expected_verdict": "reject",
+      "reason_code": "invalid-field-value",
+      "trust": {
+        "roots": [
+          "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        ],
+        "threshold": 1,
+        "authorized_kinds": [],
+        "profile_roots": [],
+        "delegated_keys": []
+      }
+    },
+    {
+      "name": "runtime-def-valid",
+      "category": "definitions",
+      "kind": "runtime-def",
+      "payload_hex": "a6646b696e64646a6176616870726f746f636f6c016a72756e74696d655f6964784a67643a7368613235363a333861303936336136333634623039616438363761613961363663366430303936373363323165313832303135343631646132333665633336313837376637376c646973706c61795f6e616d65644a6176616d6465636c617265645f74696d651a68e778007076657273696f6e5f6f72646572696e676673656d766572",
+      "envelope": {
+        "alg": 1,
+        "signatures": [
+          {
+            "alg": 1,
+            "key_id": "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2",
+            "sig": "be653f14f2e74fdadd5c8b11356f448b641f921c48984a0344a51c2bb335d45d887600ebeac852cc5394932b336d3a6f88e74b17f547e54597514027f2ea4208"
+          }
+        ],
+        "key_ids": [
+          "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2"
+        ]
+      },
+      "expected_id": "gd:sha256:9ffde6207bbfd9738b22b13ab397351992edad659c3483b76cee97283ee13bb7",
+      "expected_verdict": "accept",
+      "trust": {
+        "roots": [
+          "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        ],
+        "threshold": 1,
+        "authorized_kinds": [],
+        "profile_roots": [],
+        "delegated_keys": []
+      }
+    },
+    {
+      "name": "loader-def-valid",
+      "category": "definitions",
+      "kind": "loader-def",
+      "payload_hex": "a864747970656a646566696e6974696f6e6767616d655f6964784a67643a7368613235363a393937303632363636363536306133323436356434636531306432386633323333333635616638333365313565656435393838346439343737383632633337396870726f746f636f6c0169626f6f747374726170a36473697a6519100066646967657374582055555555555555555555555555555555555555555555555555555555555555556a6d656469615f7479706578186170706c69636174696f6e2f6a6176612d61726368697665696c6f616465725f6964784a67643a7368613235363a616432613534326338346337303630663166326563393266366637643264363735636631666338623437653063373530373164383633383065666162626235336c646973706c61795f6e616d65664661627269636d6465636c617265645f74696d651a68e778007076657273696f6e5f6f72646572696e676673656d766572",
+      "envelope": {
+        "alg": 1,
+        "signatures": [
+          {
+            "alg": 1,
+            "key_id": "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2",
+            "sig": "98c96c2b5c4be5052fe07a9b19b79bf037116c5ab26b981387f4f1205d302d93bcb147e3c101bf3575c766208dcf5b8bbb71f7ce3bfb10fa251086b44ae5260c"
+          }
+        ],
+        "key_ids": [
+          "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2"
+        ]
+      },
+      "expected_id": "gd:sha256:56a34c5574cefc3f7a2bc9e5d74ae206c4900bbab43d5987fd41054eece1160d",
+      "expected_verdict": "accept",
+      "trust": {
+        "roots": [
+          "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        ],
+        "threshold": 1,
+        "authorized_kinds": [],
+        "profile_roots": [],
+        "delegated_keys": []
+      }
+    },
+    {
+      "name": "loader-release-valid",
+      "category": "definitions",
+      "kind": "loader-def",
+      "payload_hex": "a764747970656772656c656173656870726f746f636f6c01696c6f616465725f6964784a67643a7368613235363a616432613534326338346337303630663166326563393266366637643264363735636631666338623437653063373530373164383633383065666162626235336a72756e74696d655f6964784a67643a7368613235363a333861303936336136333634623039616438363761613961363663366430303936373363323165313832303135343631646132333665633336313837376637376a76657273696f6e5f696466302e31352e306d6465636c617265645f74696d651a68e778007667616d655f76657273696f6e5f707265646963617465a266736368656d656565786163746676616c7565738166312e32302e31",
+      "envelope": {
+        "alg": 1,
+        "signatures": [
+          {
+            "alg": 1,
+            "key_id": "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2",
+            "sig": "103c9efb1b6546a6698de8624eead08fafc3ee38d11ada8d6505142bbaeac7f42a6c6416eb56fcaa39d15ebca5f8476e34135f888ee5c1c64da632ff0e09590c"
+          }
+        ],
+        "key_ids": [
+          "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2"
+        ]
+      },
+      "expected_id": "gd:sha256:85c1d082f989532c3c5a3003114220ee553e6d4a4aee1362bc9061ec32e94c19",
+      "expected_verdict": "accept",
+      "trust": {
+        "roots": [
+          "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        ],
+        "threshold": 1,
+        "authorized_kinds": [],
+        "profile_roots": [],
+        "delegated_keys": []
+      }
+    },
+    {
+      "name": "loader-acceptance-directional",
+      "category": "loader-acceptance",
+      "kind": "loader-def",
+      "payload_hex": "a96474797065676d617070696e676767616d655f6964784a67643a7368613235363a393937303632363636363536306133323436356434636531306432386633323333333635616638333365313565656435393838346439343737383632633337396870726f746f636f6c016b6465636c617265645f6279a2626964784a67643a7368613235363a30666664663336383666326636373239616536633936393462623338666336376236326234356464646333656661346438303966653933666266376433306439646b696e64706c6f616465722d617574686f726974796d6465636c617265645f74696d651a68e778006d7175616c696669636174696f6e646d6f73747261636365707465645f6c6f616465725f6964784a67643a7368613235363a3731623431643664643438646335386562613866356366396564663330666566363539376664663238356135323162623866636261643462336435303838376473616363657074696e675f6c6f616465725f6964784a67643a7368613235363a643235643938353635306562366566613438636232373963373339643139393535663336373134646636666337303861356432366136653962346332366137317667616d655f76657273696f6e5f707265646963617465a266736368656d656565786163746676616c7565738166312e31322e32",
+      "envelope": {
+        "alg": 1,
+        "signatures": [
+          {
+            "alg": 1,
+            "key_id": "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2",
+            "sig": "563223868decbe37ec2e0f0b883d427aed5c1a80021d162deba63045d38c6632c99b0543dd6e00c3bea4a7bf72baf399b2ccdf7cfe1cb25fed5758c52cd4fa09"
+          }
+        ],
+        "key_ids": [
+          "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2"
+        ]
+      },
+      "expected_id": "gd:sha256:64a2d9f36d5416d75b89d70b4cadba7a1322c6031e508aee590ff35ca7ca7b27",
+      "expected_verdict": "accept",
+      "trust": {
+        "roots": [
+          "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        ],
+        "threshold": 1,
+        "authorized_kinds": [],
+        "profile_roots": [],
+        "delegated_keys": []
+      }
+    },
+    {
+      "name": "loader-acceptance-invalid-qualification",
+      "category": "loader-acceptance",
+      "kind": "loader-def",
+      "payload_hex": "a86474797065676d617070696e676767616d655f6964784a67643a7368613235363a393937303632363636363536306133323436356434636531306432386633323333333635616638333365313565656435393838346439343737383632633337396870726f746f636f6c016b6465636c617265645f6279a2626964784a67643a7368613235363a30666664663336383666326636373239616536633936393462623338666336376236326234356464646333656661346438303966653933666266376433306439646b696e64706c6f616465722d617574686f726974796d6465636c617265645f74696d651a68e778006d7175616c696669636174696f6e74646566696e6974656c792d6e6f742d76616c69647261636365707465645f6c6f616465725f6964784a67643a7368613235363a3731623431643664643438646335386562613866356366396564663330666566363539376664663238356135323162623866636261643462336435303838376473616363657074696e675f6c6f616465725f6964784a67643a7368613235363a64323564393835363530656236656661343863623237396337333964313939353566333637313464663666633730386135643236613665396234633236613731",
+      "envelope": {
+        "alg": 1,
+        "signatures": [
+          {
+            "alg": 1,
+            "key_id": "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2",
+            "sig": "5b2f7cb98906d5631ce88adc664e3d111c9a3b1c35e838a0aa8c82fa290f3881d51e4306aa376f35f0934839f799e4e2b217b261971d01eccf779907caad140c"
+          }
+        ],
+        "key_ids": [
+          "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2"
+        ]
+      },
+      "expected_id": "gd:sha256:d6ce9bbe924db57f6480fed4dcbd0b5de06a62bd925fdaf5a4cdf1b4df4aefd7",
+      "expected_verdict": "reject",
+      "reason_code": "invalid-field-value",
+      "trust": {
+        "roots": [
+          "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        ],
+        "threshold": 1,
+        "authorized_kinds": [],
+        "profile_roots": [],
+        "delegated_keys": []
+      }
+    },
+    {
+      "name": "loader-acceptance-unknown-field",
+      "category": "loader-acceptance",
+      "kind": "loader-def",
+      "payload_hex": "a9646f6f7073016474797065676d617070696e676767616d655f6964784a67643a7368613235363a393937303632363636363536306133323436356434636531306432386633323333333635616638333365313565656435393838346439343737383632633337396870726f746f636f6c016b6465636c617265645f6279a2626964784a67643a7368613235363a30666664663336383666326636373239616536633936393462623338666336376236326234356464646333656661346438303966653933666266376433306439646b696e64706c6f616465722d617574686f726974796d6465636c617265645f74696d651a68e778006d7175616c696669636174696f6e646d6f73747261636365707465645f6c6f616465725f6964784a67643a7368613235363a3731623431643664643438646335386562613866356366396564663330666566363539376664663238356135323162623866636261643462336435303838376473616363657074696e675f6c6f616465725f6964784a67643a7368613235363a64323564393835363530656236656661343863623237396337333964313939353566333637313464663666633730386135643236613665396234633236613731",
+      "envelope": {
+        "alg": 1,
+        "signatures": [
+          {
+            "alg": 1,
+            "key_id": "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2",
+            "sig": "6636554d43bb0ad87100c5440926aed6e0214eaf61de97a8483f971bb123883b68348f9acb11944a8b0c20e99cfcdf357e8c5d0b73b1ae7927cd5db36a40b200"
+          }
+        ],
+        "key_ids": [
+          "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2"
+        ]
+      },
+      "expected_id": "gd:sha256:1bb2af83f347e8d11ee65ddb72efe7465d1a4d1380d36634df0abeb715b7ee74",
+      "expected_verdict": "reject",
+      "reason_code": "unknown-field",
+      "trust": {
+        "roots": [
+          "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        ],
+        "threshold": 1,
+        "authorized_kinds": [],
+        "profile_roots": [],
+        "delegated_keys": []
+      }
+    },
+    {
+      "name": "loader-release-missing-version",
+      "category": "definitions",
+      "kind": "loader-def",
+      "payload_hex": "a564747970656772656c656173656870726f746f636f6c01696c6f616465725f6964784a67643a7368613235363a616432613534326338346337303630663166326563393266366637643264363735636631666338623437653063373530373164383633383065666162626235336d6465636c617265645f74696d651a68e778007667616d655f76657273696f6e5f707265646963617465a266736368656d656565786163746676616c7565738166312e32302e31",
+      "envelope": {
+        "alg": 1,
+        "signatures": [
+          {
+            "alg": 1,
+            "key_id": "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2",
+            "sig": "9890bfb83bab62eda2ac306f3b0e3b32ae3c80405c627651e875ff8e7c27bebf267f278962983697db21c4fcddf717d37da0a180856d5d6d7e7c01e4c3b3d806"
+          }
+        ],
+        "key_ids": [
+          "d2dd6e81a001b70a13607f6fbbb3b129ff367216fc1f8e3ae53e63976bf573a2"
+        ]
+      },
+      "expected_id": "gd:sha256:8b31b98a4d48c5ad295ffbd0a1efc0a6965a46dea5abed03e0cf928537e612dc",
+      "expected_verdict": "reject",
+      "reason_code": "missing-field",
+      "trust": {
+        "roots": [
+          "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        ],
+        "threshold": 1,
+        "authorized_kinds": [],
+        "profile_roots": [],
+        "delegated_keys": []
+      }
+    },
+    {
+      "name": "game-def-bad-signature",
+      "category": "definitions",
+      "kind": "game-def",
+      "payload_hex": "ac647461677382a262696466636c69656e74656c6162656c66636c69656e74a262696466736572766572656c6162656c667365727665726767616d655f6964784a67643a7368613235363a393937303632363636363536306133323436356434636531306432386633323333333635616638333365313565656435393838346439343737383632633337396870726f746f636f6c016a63617465676f7269657382a2626964677574696c697479656c6162656c677574696c697479a262696463716f6c656c6162656c63716f6c6c646973706c61795f6e616d65694d696e6563726166746d6465636c617265645f74696d651a68e778006e76657273696f6e5f73796e746178a1646b696e646673656d7665726f696e7374616c6c5f61646170746572716d696e6563726166742f64656661756c746f6c6f61646572735f616c6c6f776564f57076657273696f6e5f6f72646572696e676673656d766572726c6f616465725f617574686f72697469657381784a67643a7368613235363a65326465363562366233646364396439643839623162393236353465306335663339636334633065386264653365626263663137636433313363313364316362726d657461646174615f657874726163746f72756d696e6563726166742f6661627269632d6a736f6e",
+      "envelope": {
+        "alg": 1,
+        "signatures": [
+          {
+            "alg": 1,
+            "key_id": "b7aad8bfb5dfa91211a3e3f1be1a65bce503a7c436837f0f4875bb4d0774431c",
+            "sig": "372602e2b743f7426625b9440bed78635e1c296270f4771ad66d35a47b422ca5178068cecc02eabfa0080ca26a9d9e79d555be730fe40d6e044afc852372db09"
+          }
+        ],
+        "key_ids": [
+          "b7aad8bfb5dfa91211a3e3f1be1a65bce503a7c436837f0f4875bb4d0774431c"
+        ]
+      },
+      "expected_id": "gd:sha256:fbcc31243a9652fa6b9416cbf6df86fb6746d6d9f676bb380b670e15bfe4ab40",
+      "expected_verdict": "reject",
+      "reason_code": "bad-signature",
+      "trust": {
+        "roots": [
+          "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        ],
+        "threshold": 1,
+        "authorized_kinds": [],
+        "profile_roots": [],
+        "delegated_keys": [
+          "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        ]
+      }
     }
   ]
 }

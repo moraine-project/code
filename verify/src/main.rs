@@ -1,3 +1,4 @@
+mod definitions;
 mod generate;
 mod vector;
 
@@ -6,6 +7,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use moraine_crypto::{ObjectKind, object_id_string};
 use moraine_model::Canonical;
+use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
 use moraine_model::delegation::Delegation;
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::Genesis;
@@ -138,6 +140,9 @@ fn verify_object(kind: &str, file: &PathBuf, roots: &[String], threshold: usize)
 		ObjectKind::Release => describe::<ReleasePayload>(kind, &bytes)?,
 		ObjectKind::FeedEntry => describe::<FeedEntry>(kind, &bytes)?,
 		ObjectKind::Profile => describe::<ProfileRevision>(kind, &bytes)?,
+		ObjectKind::GameDef => describe::<GameDef>(kind, &bytes)?,
+		ObjectKind::LoaderDef => describe::<LoaderObject>(kind, &bytes)?,
+		ObjectKind::RuntimeDef => describe::<RuntimeDef>(kind, &bytes)?,
 		other => return Err(format!("object kind `{}` is not implemented yet", other.as_str())),
 	};
 	println!("id: {id}");

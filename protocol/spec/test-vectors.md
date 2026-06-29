@@ -44,6 +44,12 @@ A vector with `kind: "canonical"` carries raw bytes in `payload_hex` and no
 envelope. It tests the codec directly: minimal widths, key order, duplicate
 keys, indefinite lengths, floats, tags, and Unicode normalization collisions.
 
+A vector with `kind: "predicate"` carries no object at all. Its
+`predicate_case` holds the ordering scheme, an optional version catalog, the
+predicate's scheme and values, a version to test, and the expected outcome
+(`satisfied`, `not-satisfied`, or `unknown`). This is how version-order
+semantics are pinned without wrapping them in a signed record.
+
 ## Categories
 
 1. Canonical encoding
@@ -62,8 +68,9 @@ keys, indefinite lengths, floats, tags, and Unicode normalization collisions.
 14. Events and webhooks
 15. Search response
 
-Categories 1 through 7 have vectors now. The rest arrive with the objects they
-cover.
+Categories 1 through 9 have vectors now, including predicate evaluation, which
+is tested directly rather than through a signed object. The rest arrive with
+the objects they cover.
 
 ## Regenerating
 

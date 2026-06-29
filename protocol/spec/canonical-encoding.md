@@ -108,7 +108,6 @@ kept: no single signature moves a project.
 
 ## Not covered yet
 
-The game, loader, and runtime definition objects; loader acceptance mappings;
-migration and recovery records; advisories and attestations; notifications;
+Migration and recovery records, advisories and attestations, notifications,
 and search responses are not implemented yet. Their addition does not change
 any byte rule above.

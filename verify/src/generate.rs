@@ -1,5 +1,5 @@
 use moraine_codec::{Value, encode};
-use moraine_crypto::{ObjectKind, SigningKey};
+use moraine_crypto::{ObjectKind, SigningKey, object_id_string};
 use moraine_model::artifact::Artifact;
 use moraine_model::canonical::Canonical;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
@@ -9,25 +9,26 @@ use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::profile::ProfileRevision;
 use moraine_model::release::ReleasePayload;
 use moraine_model::signed::{SignatureEnvelope, SignedObject, sign_payload};
+use moraine_model::version::VersionCatalog;
 use sha2::{Digest, Sha256};
 
-use crate::vector::{EnvelopeJson, SignatureJson, TrustJson, Vector, VectorFile};
+use crate::vector::{EnvelopeJson, PredicateCase, SignatureJson, TrustJson, Vector, VectorFile};
 
-const DECLARED_AT: i64 = 1_760_000_000;
+pub(crate) const DECLARED_AT: i64 = 1_760_000_000;
 
-fn signer(byte: u8) -> SigningKey {
+pub(crate) fn signer(byte: u8) -> SigningKey {
 	SigningKey::from_seed(&[byte; 32])
 }
 
-fn public_hex(key: &SigningKey) -> String {
+pub(crate) fn public_hex(key: &SigningKey) -> String {
 	hex::encode(key.verifying_key().to_bytes())
 }
 
-fn sample_id(label: &str) -> String {
+pub(crate) fn sample_id(label: &str) -> String {
 	format!("gd:sha256:{}", hex::encode(Sha256::digest(label.as_bytes())))
 }
 
-fn envelope_json(envelope: &SignatureEnvelope) -> EnvelopeJson {
+pub(crate) fn envelope_json(envelope: &SignatureEnvelope) -> EnvelopeJson {
 	EnvelopeJson {
 		alg: envelope.alg,
 		signatures: envelope
@@ -43,7 +44,7 @@ fn envelope_json(envelope: &SignatureEnvelope) -> EnvelopeJson {
 	}
 }
 
-fn tampered_envelope(envelope: &SignatureEnvelope) -> EnvelopeJson {
+pub(crate) fn tampered_envelope(envelope: &SignatureEnvelope) -> EnvelopeJson {
 	let mut json = envelope_json(envelope);
 	if let Some(signature) = json.signatures.first_mut() {
 		let mut bytes = hex::decode(&signature.sig).expect("signature hex");
@@ -54,7 +55,7 @@ fn tampered_envelope(envelope: &SignatureEnvelope) -> EnvelopeJson {
 	json
 }
 
-fn trust(keys: &[&SigningKey], threshold: usize) -> TrustJson {
+pub(crate) fn trust(keys: &[&SigningKey], threshold: usize) -> TrustJson {
 	TrustJson {
 		roots: keys.iter().map(|key| public_hex(key)).collect(),
 		threshold,
@@ -64,7 +65,7 @@ fn trust(keys: &[&SigningKey], threshold: usize) -> TrustJson {
 	}
 }
 
-fn object_vector<T: Canonical>(
+pub(crate) fn object_vector<T: Canonical>(
 	name: &str,
 	category: &str,
 	kind: ObjectKind,
@@ -85,10 +86,74 @@ fn object_vector<T: Canonical>(
 		verify_kind: None,
 		trust,
 		prior_feed_hex: Vec::new(),
+		predicate_case: None,
 	}
 }
 
-fn canonical_vector(name: &str, bytes: &[u8], verdict: &str, reason: Option<&str>) -> Vector {
+pub(crate) fn predicate_vector(
+	name: &str,
+	catalog: VersionCatalog,
+	predicate: Predicate,
+	version: &str,
+	expected: &str,
+) -> Vector {
+	Vector {
+		name: name.to_string(),
+		category: "definitions".to_string(),
+		kind: "predicate".to_string(),
+		payload_hex: String::new(),
+		envelope: None,
+		expected_id: None,
+		expected_verdict: "accept".to_string(),
+		reason_code: None,
+		verify_kind: None,
+		trust: None,
+		prior_feed_hex: Vec::new(),
+		predicate_case: Some(PredicateCase {
+			ordering: catalog.scheme().as_str().to_string(),
+			catalog: catalog.ordered().to_vec(),
+			scheme: predicate.scheme.clone(),
+			values: predicate.values.clone(),
+			version: version.to_string(),
+			expected: expected.to_string(),
+		}),
+	}
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Outcome<'a> {
+	pub verdict: &'a str,
+	pub reason: Option<&'a str>,
+}
+
+pub(crate) fn raw_vector(
+	name: &str,
+	category: &str,
+	kind: ObjectKind,
+	value: Value,
+	keys: &[&SigningKey],
+	outcome: Outcome<'_>,
+	trust: Option<TrustJson>,
+) -> Vector {
+	let payload_bytes = encode(&value).expect("value is encodable");
+	let envelope = moraine_model::signed::sign_raw(kind, &payload_bytes, keys);
+	Vector {
+		name: name.to_string(),
+		category: category.to_string(),
+		kind: kind.as_str().to_string(),
+		payload_hex: hex::encode(&payload_bytes),
+		envelope: Some(envelope_json(&envelope)),
+		expected_id: Some(object_id_string(kind, &payload_bytes)),
+		expected_verdict: outcome.verdict.to_string(),
+		reason_code: outcome.reason.map(str::to_string),
+		verify_kind: None,
+		trust,
+		prior_feed_hex: Vec::new(),
+		predicate_case: None,
+	}
+}
+
+pub(crate) fn canonical_vector(name: &str, bytes: &[u8], verdict: &str, reason: Option<&str>) -> Vector {
 	Vector {
 		name: name.to_string(),
 		category: "canonical".to_string(),
@@ -101,6 +166,7 @@ fn canonical_vector(name: &str, bytes: &[u8], verdict: &str, reason: Option<&str
 		verify_kind: None,
 		trust: None,
 		prior_feed_hex: Vec::new(),
+		predicate_case: None,
 	}
 }
 
@@ -570,6 +636,8 @@ pub fn generate() -> VectorFile {
 	);
 	gap_vector.prior_feed_hex = vec![hex::encode(signed_feed1.payload_bytes.clone())];
 	vectors.push(gap_vector);
+
+	vectors.extend(crate::definitions::vectors());
 
 	VectorFile {
 		protocol: 1,

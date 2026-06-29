@@ -179,6 +179,18 @@ pub fn sign_payload<T: Canonical + Clone>(kind: ObjectKind, payload: &T, signers
 	}
 }
 
+pub fn sign_raw(kind: ObjectKind, payload_bytes: &[u8], signers: &[&SigningKey]) -> SignatureEnvelope {
+	let mut message = domain_tag(kind);
+	message.extend_from_slice(payload_bytes);
+	let (alg, signatures) = sign_message(&message, signers);
+	let key_ids = signers.iter().map(|signer| signer.key_id()).collect();
+	SignatureEnvelope {
+		alg,
+		signatures,
+		key_ids,
+	}
+}
+
 pub(crate) fn sign_message(message: &[u8], signers: &[&SigningKey]) -> (u8, Vec<Signature>) {
 	let signatures = signers
 		.iter()

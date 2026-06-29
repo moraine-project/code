@@ -62,32 +62,6 @@ impl Predicate {
 	pub fn scheme(&self) -> Option<Scheme> {
 		Scheme::parse(&self.scheme)
 	}
-
-	pub fn evaluate(&self, version: &str, ordering: Option<Scheme>) -> PredicateResult {
-		let Some(scheme) = self.scheme() else {
-			return PredicateResult::Unknown;
-		};
-		if ordering.is_none() {
-			return PredicateResult::Unknown;
-		}
-		match scheme {
-			Scheme::Any => PredicateResult::Satisfied,
-			Scheme::Exact | Scheme::Set => {
-				if self.values.iter().any(|candidate| candidate == version) {
-					PredicateResult::Satisfied
-				} else {
-					PredicateResult::NotSatisfied
-				}
-			}
-			Scheme::Semver | Scheme::OrderedList | Scheme::Calendar => {
-				if self.values.iter().any(|candidate| candidate == version) {
-					PredicateResult::Satisfied
-				} else {
-					PredicateResult::Unknown
-				}
-			}
-		}
-	}
 }
 
 impl Canonical for Predicate {
