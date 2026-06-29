@@ -1,6 +1,7 @@
 use moraine_codec::decode;
 use moraine_crypto::{KeyId, ObjectKind, object_id_string};
 use moraine_model::Canonical;
+use moraine_model::attestation::AttestationObject;
 use moraine_model::compatibility::{Predicate, PredicateResult};
 use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
 use moraine_model::delegation::{Delegation, DelegationPurpose};
@@ -8,9 +9,9 @@ use moraine_model::error::{ModelError, RejectReason};
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::{Genesis, GenesisKind};
 use moraine_model::profile::ProfileRevision;
-use moraine_model::release::ReleasePayload;
+use moraine_model::release::ReleaseObject;
 use moraine_model::signed::{Signature, SignatureEnvelope, SignedObject, TrustedKey, verify_envelope};
-use moraine_model::trust::{RootSet, verify_key_delegation, verify_ownership_transfer};
+use moraine_model::trust::{RootSet, verify_key_delegation, verify_migration, verify_ownership_transfer, verify_recovery};
 use moraine_model::version::{OrderingScheme, VersionCatalog};
 use serde::{Deserialize, Serialize};
 
@@ -139,13 +140,17 @@ pub fn evaluate(vector: &Vector) -> Actual {
 	let outcome = match kind {
 		ObjectKind::Genesis => verify_genesis_object(vector, payload, &envelope, verify_kind),
 		ObjectKind::Delegation => verify_delegation_object(vector, payload, &envelope, verify_kind),
-		ObjectKind::Release => verify_with_trust::<ReleasePayload>(vector, payload, &envelope, kind, verify_kind),
+		ObjectKind::Release => verify_with_trust::<ReleaseObject>(vector, payload, &envelope, kind, verify_kind),
 		ObjectKind::Profile => verify_profile_object(vector, payload, &envelope, verify_kind),
 		ObjectKind::FeedEntry => verify_feed_object(vector, payload, &envelope, kind, verify_kind),
 		ObjectKind::GameDef => verify_with_trust::<GameDef>(vector, payload, &envelope, kind, verify_kind),
 		ObjectKind::LoaderDef => verify_with_trust::<LoaderObject>(vector, payload, &envelope, kind, verify_kind),
 		ObjectKind::RuntimeDef => verify_with_trust::<RuntimeDef>(vector, payload, &envelope, kind, verify_kind),
-		_ => Err(ModelError::new(RejectReason::WrongObjectKind, "{} is not implemented yet")),
+		ObjectKind::Attestation => verify_with_trust::<AttestationObject>(vector, payload, &envelope, kind, verify_kind),
+		other => Err(ModelError::new(
+			RejectReason::WrongObjectKind,
+			format!("{} is not implemented yet", other.as_str()),
+		)),
 	};
 
 	match outcome {
@@ -210,9 +215,11 @@ fn verify_delegation_object(
 		root.verify(&message, envelope)?;
 		return Ok(());
 	}
-	match signed.payload.purpose {
+	match signed.payload.purpose() {
 		DelegationPurpose::Key => verify_key_delegation(&signed, &root),
 		DelegationPurpose::OwnershipTransfer => verify_ownership_transfer(&signed, &root),
+		DelegationPurpose::Migration => verify_migration(&signed, &root),
+		DelegationPurpose::Recovery => verify_recovery(&signed, &root),
 	}
 }
 

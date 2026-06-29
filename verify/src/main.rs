@@ -1,5 +1,6 @@
 mod definitions;
 mod generate;
+mod records;
 mod vector;
 
 use std::path::PathBuf;
@@ -7,12 +8,13 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use moraine_crypto::{ObjectKind, object_id_string};
 use moraine_model::Canonical;
+use moraine_model::attestation::AttestationObject;
 use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
 use moraine_model::delegation::Delegation;
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::Genesis;
 use moraine_model::profile::ProfileRevision;
-use moraine_model::release::ReleasePayload;
+use moraine_model::release::ReleaseObject;
 use moraine_model::signed::{SignedObject, TrustedKey, verify_envelope};
 use sha2::{Digest, Sha256};
 
@@ -137,7 +139,8 @@ fn verify_object(kind: &str, file: &PathBuf, roots: &[String], threshold: usize)
 	let (id, message) = match kind {
 		ObjectKind::Genesis => describe::<Genesis>(kind, &bytes)?,
 		ObjectKind::Delegation => describe::<Delegation>(kind, &bytes)?,
-		ObjectKind::Release => describe::<ReleasePayload>(kind, &bytes)?,
+		ObjectKind::Release => describe::<ReleaseObject>(kind, &bytes)?,
+		ObjectKind::Attestation => describe::<AttestationObject>(kind, &bytes)?,
 		ObjectKind::FeedEntry => describe::<FeedEntry>(kind, &bytes)?,
 		ObjectKind::Profile => describe::<ProfileRevision>(kind, &bytes)?,
 		ObjectKind::GameDef => describe::<GameDef>(kind, &bytes)?,

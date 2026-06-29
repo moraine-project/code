@@ -68,7 +68,7 @@ semantics are pinned without wrapping them in a signed record.
 14. Events and webhooks
 15. Search response
 
-Categories 1 through 9 have vectors now, including predicate evaluation, which
+Categories 1 through 12 have vectors now, including predicate evaluation, which
 is tested directly rather than through a signed object. The rest arrive with
 the objects they cover.
 

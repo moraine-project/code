@@ -1,6 +1,6 @@
 use moraine_crypto::ObjectKind;
 
-use crate::delegation::{Delegation, DelegationPurpose};
+use crate::delegation::Delegation;
 use crate::error::{ModelError, RejectReason};
 use crate::genesis::{Genesis, GenesisKind};
 use crate::signed::{SignedObject, TrustedKey, verify_envelope};
@@ -76,21 +76,16 @@ pub fn verify_genesis(signed: &SignedObject<Genesis>) -> Result<RootSet, ModelEr
 }
 
 pub fn verify_key_delegation(signed: &SignedObject<Delegation>, root: &RootSet) -> Result<(), ModelError> {
-	if signed.payload.purpose != DelegationPurpose::Key {
+	let Delegation::Key(delegation) = &signed.payload else {
 		return Err(ModelError::new(RejectReason::WrongObjectKind, "expected a key delegation"));
-	}
+	};
 	if !root.authorizes_kind("delegation") {
 		return Err(ModelError::new(
 			RejectReason::UnauthorizedKind,
 			"genesis does not authorize delegations",
 		));
 	}
-	let allowed = signed
-		.payload
-		.allowed_kinds
-		.as_ref()
-		.expect("validated key delegation has allowed_kinds");
-	for kind in allowed {
+	for kind in &delegation.allowed_kinds {
 		if !root.authorizes_kind(kind) {
 			return Err(ModelError::new(
 				RejectReason::UnauthorizedKind,
@@ -98,26 +93,13 @@ pub fn verify_key_delegation(signed: &SignedObject<Delegation>, root: &RootSet) 
 			));
 		}
 	}
-	let delegate = signed
-		.payload
-		.delegate_key
-		.as_ref()
-		.expect("validated key delegation has a delegate key");
-	let derived = moraine_crypto::key_id(moraine_crypto::ALG_ED25519, &delegate.public_key)
-		.map_err(|_| ModelError::new(RejectReason::InvalidFieldValue, "invalid delegate public key"))?;
-	if derived != delegate.key_id {
-		return Err(ModelError::new(
-			RejectReason::InvalidFieldValue,
-			"delegate key_id does not match its public key",
-		));
-	}
 	let message = signed.signed_message(ObjectKind::Delegation);
 	root.verify(&message, &signed.envelope)?;
 	Ok(())
 }
 
 pub fn verify_ownership_transfer(signed: &SignedObject<Delegation>, root: &RootSet) -> Result<(), ModelError> {
-	if signed.payload.purpose != DelegationPurpose::OwnershipTransfer {
+	if !matches!(signed.payload, Delegation::OwnershipTransfer(_)) {
 		return Err(ModelError::new(
 			RejectReason::WrongObjectKind,
 			"expected an ownership transfer",
@@ -131,5 +113,29 @@ pub fn verify_ownership_transfer(signed: &SignedObject<Delegation>, root: &RootS
 			"ownership transfer requires the previous and new owner signatures",
 		));
 	}
+	Ok(())
+}
+
+pub fn verify_migration(signed: &SignedObject<Delegation>, root: &RootSet) -> Result<(), ModelError> {
+	if !matches!(signed.payload, Delegation::Migration(_)) {
+		return Err(ModelError::new(RejectReason::WrongObjectKind, "expected a migration record"));
+	}
+	let message = signed.signed_message(ObjectKind::Delegation);
+	let valid = verify_envelope(&signed.envelope, &message, root.keys(), root.threshold())?;
+	if valid < root.threshold() + 2 {
+		return Err(ModelError::new(
+			RejectReason::CrossSignatureRequired,
+			"migration requires the publisher and both home signatures",
+		));
+	}
+	Ok(())
+}
+
+pub fn verify_recovery(signed: &SignedObject<Delegation>, root: &RootSet) -> Result<(), ModelError> {
+	if !matches!(signed.payload, Delegation::Recovery(_)) {
+		return Err(ModelError::new(RejectReason::WrongObjectKind, "expected a recovery event"));
+	}
+	let message = signed.signed_message(ObjectKind::Delegation);
+	root.verify(&message, &signed.envelope)?;
 	Ok(())
 }

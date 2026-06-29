@@ -108,6 +108,5 @@ kept: no single signature moves a project.
 
 ## Not covered yet
 
-Migration and recovery records, advisories and attestations, notifications,
-and search responses are not implemented yet. Their addition does not change
-any byte rule above.
+Advisories, notifications, moderation records, and search responses are not
+implemented yet. Their addition does not change any byte rule above.

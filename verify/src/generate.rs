@@ -3,7 +3,7 @@ use moraine_crypto::{ObjectKind, SigningKey, object_id_string};
 use moraine_model::artifact::Artifact;
 use moraine_model::canonical::Canonical;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
-use moraine_model::delegation::{Delegation, DelegationPurpose, OwnerRef};
+use moraine_model::delegation::{Delegation, KeyDelegation, OwnerRef, OwnershipTransfer};
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::profile::ProfileRevision;
@@ -255,45 +255,35 @@ fn build_profile(project_id: &str) -> ProfileRevision {
 }
 
 fn build_key_delegation(project_id: &str, delegate: &SigningKey, allowed_kinds: &[&str]) -> Delegation {
-	Delegation {
+	Delegation::Key(KeyDelegation {
 		protocol: 1,
-		purpose: DelegationPurpose::Key,
 		project_id: project_id.to_string(),
-		delegate_key: Some(RootKey::from_public_key(delegate.verifying_key().to_bytes().to_vec()).expect("delegate")),
-		allowed_kinds: Some(allowed_kinds.iter().map(|kind| kind.to_string()).collect()),
+		delegate_key: RootKey::from_public_key(delegate.verifying_key().to_bytes().to_vec()).expect("delegate"),
+		allowed_kinds: allowed_kinds.iter().map(|kind| kind.to_string()).collect(),
 		channels: None,
 		max_version_scope: None,
 		valid_from_seq: None,
 		expires_at: None,
-		from_owner: None,
-		to_owner: None,
 		issued_at: DECLARED_AT,
 		previous_delegation_digest: None,
-	}
+	})
 }
 
 fn build_transfer(project_id: &str) -> Delegation {
-	Delegation {
+	Delegation::OwnershipTransfer(OwnershipTransfer {
 		protocol: 1,
-		purpose: DelegationPurpose::OwnershipTransfer,
 		project_id: project_id.to_string(),
-		delegate_key: None,
-		allowed_kinds: None,
-		channels: None,
-		max_version_scope: None,
-		valid_from_seq: None,
-		expires_at: None,
-		from_owner: Some(OwnerRef {
+		from_owner: OwnerRef {
 			kind: "user".to_string(),
 			id: "user-a".to_string(),
-		}),
-		to_owner: Some(OwnerRef {
+		},
+		to_owner: OwnerRef {
 			kind: "org".to_string(),
 			id: "org-b".to_string(),
-		}),
+		},
 		issued_at: DECLARED_AT,
 		previous_delegation_digest: None,
-	}
+	})
 }
 
 fn build_feed(project_id: &str, sequence: u64, previous: Option<Vec<u8>>) -> FeedEntry {
@@ -638,6 +628,7 @@ pub fn generate() -> VectorFile {
 	vectors.push(gap_vector);
 
 	vectors.extend(crate::definitions::vectors());
+	vectors.extend(crate::records::vectors());
 
 	VectorFile {
 		protocol: 1,

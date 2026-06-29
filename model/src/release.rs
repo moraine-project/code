@@ -7,6 +7,7 @@ use crate::canonical::{Canonical, Fields, expect_array, expect_bytes, expect_i64
 use crate::compatibility::{Compatibility, Rights};
 use crate::dependency::Dependency;
 use crate::error::{ModelError, RejectReason};
+use crate::location::LocationRecord;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleasePayload {
@@ -91,6 +92,7 @@ impl Canonical for ReleasePayload {
 	fn to_value(&self) -> Value {
 		let mut pairs = vec![
 			("protocol", Value::int(i64::from(self.protocol))),
+			("type", Value::text("release")),
 			("project_id", Value::text(self.project_id.clone())),
 			("game_id", Value::text(self.game_id.clone())),
 			("release_nonce", Value::bytes(self.release_nonce.clone())),
@@ -140,6 +142,7 @@ impl Canonical for ReleasePayload {
 	fn from_value(value: Value) -> Result<Self, ModelError> {
 		let fields = Fields::new("ReleasePayload", value)?.reject_unknown(&[
 			"protocol",
+			"type",
 			"project_id",
 			"game_id",
 			"release_nonce",
@@ -158,6 +161,7 @@ impl Canonical for ReleasePayload {
 			"minimum_verifier_version",
 			"critical_extensions",
 		])?;
+		expect_type(&fields, "release")?;
 		let release = Self {
 			protocol: expect_u32(fields.required("protocol")?, "protocol")?,
 			project_id: expect_text(fields.required("project_id")?, "project_id")?,
@@ -208,4 +212,40 @@ impl Canonical for ReleasePayload {
 		release.validate()?;
 		Ok(release)
 	}
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReleaseObject {
+	Release(ReleasePayload),
+	Location(LocationRecord),
+}
+
+impl Canonical for ReleaseObject {
+	fn to_value(&self) -> Value {
+		match self {
+			Self::Release(release) => release.to_value(),
+			Self::Location(location) => location.to_value(),
+		}
+	}
+
+	fn from_value(value: Value) -> Result<Self, ModelError> {
+		let discriminant = value
+			.get("type")
+			.and_then(Value::as_text)
+			.ok_or_else(|| ModelError::field(RejectReason::MissingField, "type"))?;
+		match discriminant {
+			"release" => Ok(Self::Release(ReleasePayload::from_value(value)?)),
+			"location" => Ok(Self::Location(LocationRecord::from_value(value)?)),
+			_ => Err(ModelError::field(RejectReason::InvalidFieldValue, "type")),
+		}
+	}
+}
+
+fn expect_type(fields: &Fields, expected: &str) -> Result<(), ModelError> {
+	let found = expect_text(fields.required("type")?, "type")?;
+	if found != expected {
+		return Err(ModelError::field(RejectReason::InvalidFieldValue, "type"));
+	}
+	Ok(())
 }

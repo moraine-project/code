@@ -1,4 +1,5 @@
 pub mod artifact;
+pub mod attestation;
 pub mod canonical;
 pub mod compatibility;
 pub mod definition;
@@ -7,6 +8,7 @@ pub mod dependency;
 pub mod error;
 pub mod feed;
 pub mod genesis;
+pub mod location;
 pub mod profile;
 pub mod reference;
 pub mod release;
