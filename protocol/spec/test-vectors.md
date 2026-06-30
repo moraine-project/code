@@ -70,8 +70,10 @@ semantics are pinned without wrapping them in a signed record.
 
 Categories 1 through 12 and advisories have vectors now, including predicate
 evaluation, which is tested directly rather than through a signed object.
-Moderation taxonomy behavior, event idempotency, and search result merging are
-covered by unit tests until their wire shapes need vectors.
+Moderation taxonomy behavior and event idempotency are covered by unit tests.
+Search results are JSON, not signed objects, so they live beside the corpus:
+`protocol/vectors/search.json` holds two directory responses that a test
+validates and merges by project ID.
 
 ## Regenerating
 

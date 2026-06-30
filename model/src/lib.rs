@@ -15,6 +15,7 @@ pub mod moderation;
 pub mod profile;
 pub mod reference;
 pub mod release;
+pub mod search;
 pub mod signed;
 pub mod trust;
 pub mod version;

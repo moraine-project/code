@@ -184,4 +184,32 @@ mod tests {
 			crate::vector::check(case).unwrap_or_else(|error| panic!("{}: {error}", case.name));
 		}
 	}
+
+	#[test]
+	fn search_fixture_merges_by_project_id() {
+		#[derive(serde::Deserialize)]
+		struct Fixture {
+			responses: Vec<moraine_model::search::SearchResponse>,
+		}
+
+		let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../protocol/vectors/search.json");
+		let text = std::fs::read_to_string(path).expect("search.json is committed");
+		let fixture: Fixture = serde_json::from_str(&text).expect("search.json parses");
+		for response in &fixture.responses {
+			response.validate().expect("fixture responses are valid");
+		}
+		let merged = moraine_model::search::merge(fixture.responses);
+		assert_eq!(merged.results.len(), 2);
+		let shared = merged
+			.results
+			.iter()
+			.find(|result| result.listings.len() == 2)
+			.expect("one merged project");
+		assert!(
+			shared
+				.listings
+				.iter()
+				.any(|listing| listing.source_instance == "https://dir-b.example")
+		);
+	}
 }

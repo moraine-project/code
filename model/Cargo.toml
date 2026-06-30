@@ -9,3 +9,4 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 moraine-codec = { path = "../codec" }
 moraine-crypto = { path = "../crypto" }
+serde.workspace = true

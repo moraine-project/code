@@ -108,6 +108,6 @@ kept: no single signature moves a project.
 
 ## Not covered yet
 
-Notifications and webhooks, moderation records, and search responses are not
-yet exercised by the corpus. Their addition does not change any byte rule
-above.
+Search responses are JSON rather than canonical CBOR and live beside the
+corpus. Notifications, webhooks, and moderation records are covered by unit
+tests. None of this changes any byte rule above.

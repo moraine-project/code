@@ -1,0 +1,47 @@
+{
+  "responses": [
+    {
+      "protocol": 1,
+      "query": { "text": "minimap", "limit": 20, "sort": "relevance" },
+      "results": [
+        {
+          "project_id": "gd:sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "game_id": "gd:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "display_name": "Minimap",
+          "summary": "A map overlay",
+          "listing_state": "listed",
+          "source_instance": "https://dir-a.example",
+          "annotations": [],
+          "instance_popularity": { "window": "30d", "value": 120 }
+        },
+        {
+          "project_id": "gd:sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "game_id": "gd:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "display_name": "Minimap Plus",
+          "summary": "A fork",
+          "listing_state": "listed",
+          "source_instance": "https://dir-a.example",
+          "annotations": []
+        }
+      ]
+    },
+    {
+      "protocol": 1,
+      "query": { "text": "minimap", "limit": 20 },
+      "results": [
+        {
+          "project_id": "gd:sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "game_id": "gd:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "display_name": "Minimap",
+          "summary": "A map overlay",
+          "listing_state": "blocked",
+          "source_instance": "https://dir-b.example",
+          "annotations": [
+            { "kind": "policy", "label": "local policy" }
+          ],
+          "instance_popularity": { "window": "30d", "value": 4 }
+        }
+      ]
+    }
+  ]
+}
