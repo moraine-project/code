@@ -108,5 +108,6 @@ kept: no single signature moves a project.
 
 ## Not covered yet
 
-Advisories, notifications, moderation records, and search responses are not
-implemented yet. Their addition does not change any byte rule above.
+Notifications and webhooks, moderation records, and search responses are not
+yet exercised by the corpus. Their addition does not change any byte rule
+above.

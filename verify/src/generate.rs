@@ -1,5 +1,6 @@
 use moraine_codec::{Value, encode};
 use moraine_crypto::{ObjectKind, SigningKey, object_id_string};
+use moraine_model::advisory::{Advisory, Affected, Category, Severity};
 use moraine_model::artifact::Artifact;
 use moraine_model::canonical::Canonical;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
@@ -231,6 +232,31 @@ fn build_release(project_id: &str, artifacts: Vec<Artifact>, critical: Vec<Strin
 		sbom_digest: None,
 		minimum_verifier_version: 1,
 		critical_extensions: critical,
+	}
+}
+
+fn build_advisory(
+	project_id: &str,
+	severity: Severity,
+	category: Category,
+	block_promotion: bool,
+	affected: Affected,
+	taxonomy_version: u32,
+) -> Advisory {
+	Advisory {
+		protocol: 1,
+		provider_id: sample_id("scanner-provider"),
+		project_id: project_id.to_string(),
+		game_id: sample_id("minecraft"),
+		affected,
+		severity,
+		category,
+		taxonomy_version,
+		block_promotion,
+		evidence_ref: None,
+		published_at: DECLARED_AT,
+		expires_at: None,
+		retracted_at: None,
 	}
 }
 
@@ -520,6 +546,72 @@ pub fn generate() -> VectorFile {
 	);
 	bad_release.envelope = Some(tampered_envelope(&signed_release.envelope));
 	vectors.push(bad_release);
+
+	let malware = build_advisory(
+		&project_id,
+		Severity::Critical,
+		Category::Malware,
+		true,
+		Affected {
+			digest: Some(vec![0xAB; 32]),
+			predicate: None,
+		},
+		1,
+	);
+	let signed_malware = sign_payload(ObjectKind::Advisory, &malware, &[&k1]);
+	vectors.push(object_vector(
+		"advisory-malware-critical-blocks",
+		"advisory",
+		ObjectKind::Advisory,
+		&signed_malware,
+		"accept",
+		None,
+		Some(trust(&[&k1], 1)),
+	));
+
+	let bad_block = build_advisory(
+		&project_id,
+		Severity::Moderate,
+		Category::Vulnerability,
+		true,
+		Affected {
+			digest: None,
+			predicate: Some(Predicate::new(Scheme::Exact, vec!["1.0.0".to_string()])),
+		},
+		1,
+	);
+	let signed_bad_block = sign_payload(ObjectKind::Advisory, &bad_block, &[&k1]);
+	vectors.push(object_vector(
+		"advisory-block-outside-malware-high",
+		"advisory",
+		ObjectKind::Advisory,
+		&signed_bad_block,
+		"reject",
+		Some("invalid-field-value"),
+		Some(trust(&[&k1], 1)),
+	));
+
+	let unrecognized_taxonomy = build_advisory(
+		&project_id,
+		Severity::High,
+		Category::Vulnerability,
+		false,
+		Affected {
+			digest: Some(vec![0xAB; 32]),
+			predicate: None,
+		},
+		2,
+	);
+	let signed_unrecognized = sign_payload(ObjectKind::Advisory, &unrecognized_taxonomy, &[&k1]);
+	vectors.push(object_vector(
+		"advisory-unrecognized-taxonomy",
+		"advisory",
+		ObjectKind::Advisory,
+		&signed_unrecognized,
+		"accept",
+		None,
+		Some(trust(&[&k1], 1)),
+	));
 
 	let profile = build_profile(&project_id);
 	let signed_profile = sign_payload(ObjectKind::Profile, &profile, &[&k1]);

@@ -68,9 +68,10 @@ semantics are pinned without wrapping them in a signed record.
 14. Events and webhooks
 15. Search response
 
-Categories 1 through 12 have vectors now, including predicate evaluation, which
-is tested directly rather than through a signed object. The rest arrive with
-the objects they cover.
+Categories 1 through 12 and advisories have vectors now, including predicate
+evaluation, which is tested directly rather than through a signed object.
+Moderation taxonomy behavior, event idempotency, and search result merging are
+covered by unit tests until their wire shapes need vectors.
 
 ## Regenerating
 

@@ -1,3 +1,4 @@
+pub mod advisory;
 pub mod artifact;
 pub mod attestation;
 pub mod canonical;
@@ -6,9 +7,11 @@ pub mod definition;
 pub mod delegation;
 pub mod dependency;
 pub mod error;
+pub mod event;
 pub mod feed;
 pub mod genesis;
 pub mod location;
+pub mod moderation;
 pub mod profile;
 pub mod reference;
 pub mod release;

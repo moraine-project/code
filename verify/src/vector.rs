@@ -1,6 +1,7 @@
 use moraine_codec::decode;
 use moraine_crypto::{KeyId, ObjectKind, object_id_string};
 use moraine_model::Canonical;
+use moraine_model::advisory::Advisory;
 use moraine_model::attestation::AttestationObject;
 use moraine_model::compatibility::{Predicate, PredicateResult};
 use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
@@ -147,6 +148,7 @@ pub fn evaluate(vector: &Vector) -> Actual {
 		ObjectKind::LoaderDef => verify_with_trust::<LoaderObject>(vector, payload, &envelope, kind, verify_kind),
 		ObjectKind::RuntimeDef => verify_with_trust::<RuntimeDef>(vector, payload, &envelope, kind, verify_kind),
 		ObjectKind::Attestation => verify_with_trust::<AttestationObject>(vector, payload, &envelope, kind, verify_kind),
+		ObjectKind::Advisory => verify_with_trust::<Advisory>(vector, payload, &envelope, kind, verify_kind),
 		other => Err(ModelError::new(
 			RejectReason::WrongObjectKind,
 			format!("{} is not implemented yet", other.as_str()),

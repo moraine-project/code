@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use moraine_crypto::{ObjectKind, object_id_string};
 use moraine_model::Canonical;
+use moraine_model::advisory::Advisory;
 use moraine_model::attestation::AttestationObject;
 use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
 use moraine_model::delegation::Delegation;
@@ -141,6 +142,7 @@ fn verify_object(kind: &str, file: &PathBuf, roots: &[String], threshold: usize)
 		ObjectKind::Delegation => describe::<Delegation>(kind, &bytes)?,
 		ObjectKind::Release => describe::<ReleaseObject>(kind, &bytes)?,
 		ObjectKind::Attestation => describe::<AttestationObject>(kind, &bytes)?,
+		ObjectKind::Advisory => describe::<Advisory>(kind, &bytes)?,
 		ObjectKind::FeedEntry => describe::<FeedEntry>(kind, &bytes)?,
 		ObjectKind::Profile => describe::<ProfileRevision>(kind, &bytes)?,
 		ObjectKind::GameDef => describe::<GameDef>(kind, &bytes)?,
