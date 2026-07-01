@@ -19,6 +19,13 @@ The kind is recovered by decoding the payload, not by reading the ID. An
 earlier draft used a per-kind letter prefix; it was dropped because the domain
 tag already separates kinds and a prefix only invites mistakes.
 
+## Feed references use object identity digests
+
+A feed entry's `object_digest` is the identity digest of the referenced object,
+the same value embedded in that object's `gd:sha256:` ID. The previous-entry
+link is the identity digest of the prior feed entry. Both are raw 32-byte
+digests inside signed bytes, not hex, and not the artifact blob digest.
+
 ## Key IDs are raw digests on the wire
 
 ```

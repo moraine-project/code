@@ -1,7 +1,10 @@
 mod blob;
 mod capability;
 mod config;
+mod registry;
 mod routes;
+mod store;
+mod verify;
 
 use std::sync::Arc;
 
@@ -18,8 +21,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	let config = Config::parse();
 	let store = Arc::new(blob::BlobStore::new(&config.data_dir).await?);
+	let metadata = Arc::new(store::MetadataStore::open(config.data_dir.join("metadata.sqlite")).await?);
 	let capability = Arc::new(capability::Capability::discover(&config));
-	let state = routes::AppState { store, capability };
+	let state = routes::AppState {
+		store,
+		metadata,
+		capability,
+	};
 	let app = routes::router(state);
 
 	let listener = tokio::net::TcpListener::bind(config.bind).await?;

@@ -13,10 +13,12 @@ use tokio_util::io::{ReaderStream, StreamReader};
 
 use crate::blob::{BlobError, BlobStore};
 use crate::capability::Capability;
+use crate::store::MetadataStore;
 
 #[derive(Clone)]
 pub struct AppState {
 	pub store: Arc<BlobStore>,
+	pub metadata: Arc<MetadataStore>,
 	pub capability: Arc<Capability>,
 }
 
@@ -27,6 +29,7 @@ pub fn router(state: AppState) -> Router {
 		.route("/readyz", get(ready))
 		.route("/v1/blobs", post(blob_upload))
 		.route("/v1/blobs/sha256/{digest}", get(blob_get).head(blob_head))
+		.merge(crate::registry::routes())
 		.with_state(state)
 }
 
@@ -220,6 +223,11 @@ mod tests {
 	async fn test_app() -> (Router, tempfile::TempDir) {
 		let directory = tempfile::tempdir().expect("tempdir");
 		let store = Arc::new(BlobStore::new(directory.path()).await.expect("store"));
+		let metadata = Arc::new(
+			MetadataStore::open(directory.path().join("metadata.sqlite"))
+				.await
+				.expect("metadata"),
+		);
 		let config = crate::config::Config {
 			bind: "127.0.0.1:0".parse().expect("addr"),
 			data_dir: directory.path().to_path_buf(),
@@ -228,6 +236,7 @@ mod tests {
 		};
 		let state = AppState {
 			store,
+			metadata,
 			capability: Arc::new(Capability::discover(&config)),
 		};
 		(router(state), directory)

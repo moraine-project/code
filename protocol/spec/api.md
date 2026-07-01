@@ -43,8 +43,45 @@ the full stream and happens in the client.
 An unknown or malformed digest returns `404` or `400` and never a substituted
 object.
 
+## Projects, objects, and feeds
+
+Signed objects are stored after their signatures are checked. An object is
+addressed by its identity digest, the SHA-256 of the domain tag and canonical
+payload. That is the same digest embedded in the `gd:sha256:` ID, so a feed
+entry's `object_digest` points at an object identity, not at a blob.
+
+`POST /v1/projects` imports a signed project genesis. The genesis verifies
+against its own root keys, defines the project ID, and becomes the trust anchor
+for everything else. Importing the same ID with different genesis bytes is a
+`409`.
+
+`POST /v1/projects/{id}/objects/{kind}` imports any signed object except a
+genesis or a feed entry. The server loads the project genesis, verifies the
+object against the root keys and threshold, and stores it. `{kind}` is one of
+`delegation`, `release`, `profile`, `advisory`, `attestation`, `game-def`,
+`loader-def`, or `runtime-def`.
+
+`POST /v1/projects/{id}/feed` appends a signed feed entry. The entry must be
+the next sequence, its `previous` must equal the current head digest, and the
+referenced object must already be stored. One transaction writes the entry and
+advances the head; a profile-updated entry also updates the project's current
+profile.
+
+`GET /v1/projects/{id}` returns the genesis ID, head sequence and entry, and
+current profile ID. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
+bounded page of entries. `GET /v1/objects/{hex}` returns the exact signed wire
+bytes with immutable caching.
+
+Verification currently resolves only the project root keys. A delegated key is
+not yet honored, so an object signed by a delegation is rejected until
+delegation resolution lands.
+
+Writes are not authenticated yet. A valid signature is required, but anyone
+can submit validly signed objects and grow storage. Authentication, quotas,
+and admission review come with the authoring workflow.
+
 ## Not implemented yet
 
-Project, game, loader, and definition documents; signed feeds; digest lookup;
-authentication and sessions; admission review; advisories; and search. The
-storage metadata layer and directory indexing are the next steps.
+Game and loader definition hosting, digest lookup, range caching of object
+documents, directory indexing, authentication and sessions, admission review,
+advisories, and search.

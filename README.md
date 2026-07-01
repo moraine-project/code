@@ -19,9 +19,11 @@ the tools that check it.
   ownership transfer, release payloads, profile revisions, and feed entries.
   Each type validates itself on decode and refuses unknown fields.
 - **`verify`** — the `moraine-verify` CLI plus the protocol test-vector corpus.
-- **`server`** — an Axum registry that serves capability discovery, health, and
-  digest-addressed blobs over an immutable cache contract with range support.
-  Metadata, auth, admission review, and federation are not built yet.
+- **`server`** — an Axum registry with a SQLite metadata store. It serves
+  capability discovery, health, digest-addressed blobs with range support, and
+  a first signed-object and feed API: import a genesis, store verified
+  objects, append feed entries with continuity checks, and read them back.
+  Auth, admission review, and federation are not built yet.
 
 ## Try it
 
