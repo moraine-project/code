@@ -1,0 +1,30 @@
+[package]
+name = "moraine-server"
+description = "Registry, directory, and worker binary for Moraine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "AGPL-3.0-or-later"
+
+[[bin]]
+name = "moraine-server"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+futures-util = { version = "0.3", default-features = false }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+bytes = "1"
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

@@ -19,6 +19,9 @@ the tools that check it.
   ownership transfer, release payloads, profile revisions, and feed entries.
   Each type validates itself on decode and refuses unknown fields.
 - **`verify`** — the `moraine-verify` CLI plus the protocol test-vector corpus.
+- **`server`** — an Axum registry that serves capability discovery, health, and
+  digest-addressed blobs over an immutable cache contract with range support.
+  Metadata, auth, admission review, and federation are not built yet.
 
 ## Try it
 
@@ -35,6 +38,13 @@ Verify a signed object you already have:
 cargo run -p moraine-verify -- object --kind release --file release.cbor --root <hex> --threshold 1
 ```
 
+Run the registry:
+
+```sh
+cargo run -p moraine-server -- --data-dir ./data --bind 127.0.0.1:8080
+curl http://127.0.0.1:8080/.well-known/mod-registry
+```
+
 ## Layout
 
 ```
@@ -42,6 +52,7 @@ codec/          deterministic CBOR canonical profile
 crypto/         keys, signatures, domain separation, object IDs
 model/          typed, validated protocol objects
 verify/         moraine-verify CLI and vector runner
+server/         moraine-server registry, directory, and worker binary
 protocol/
   spec/         notes that pin implementation decisions
   vectors/      the test-vector corpus

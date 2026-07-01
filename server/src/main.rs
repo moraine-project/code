@@ -1,0 +1,29 @@
+mod blob;
+mod capability;
+mod config;
+mod routes;
+
+use std::sync::Arc;
+
+use clap::Parser;
+use tracing_subscriber::EnvFilter;
+
+use crate::config::Config;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+	tracing_subscriber::fmt()
+		.with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+		.init();
+
+	let config = Config::parse();
+	let store = Arc::new(blob::BlobStore::new(&config.data_dir).await?);
+	let capability = Arc::new(capability::Capability::discover(&config));
+	let state = routes::AppState { store, capability };
+	let app = routes::router(state);
+
+	let listener = tokio::net::TcpListener::bind(config.bind).await?;
+	tracing::info!(address = %config.bind, "moraine-server listening");
+	axum::serve(listener, app).await?;
+	Ok(())
+}
