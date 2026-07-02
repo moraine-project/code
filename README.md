@@ -24,8 +24,9 @@ the tools that check it.
   a first signed-object and feed API: import a genesis, store verified
   objects, append feed entries with continuity checks, and read them back. It
   also has accounts (Argon2id passwords, server-side sessions with CSRF, and
-  scoped revocable API keys) and admission review with a `review`/`open`
-  setting. Federation is not built yet.
+  scoped revocable API keys), admission review with a `review`/`open` setting,
+  and a pull-based federation sync that fetches, verifies, and indexes a
+  remote home's feed.
 
 ## Try it
 

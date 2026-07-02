@@ -2,6 +2,7 @@ mod auth;
 mod blob;
 mod capability;
 mod config;
+mod federation;
 mod password;
 mod registry;
 mod review;

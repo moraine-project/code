@@ -11,6 +11,8 @@ pub struct Capability {
 	pub upload_modes: Vec<String>,
 	pub server_role: Vec<String>,
 	pub publishing: String,
+	#[serde(skip)]
+	pub allow_insecure_federation_local: bool,
 }
 
 impl Capability {
@@ -27,6 +29,7 @@ impl Capability {
 			upload_modes: vec!["staged".to_string()],
 			server_role: vec!["home".to_string(), "directory".to_string()],
 			publishing: config.publishing.as_str().to_string(),
+			allow_insecure_federation_local: config.allow_insecure_federation_local,
 		}
 	}
 }

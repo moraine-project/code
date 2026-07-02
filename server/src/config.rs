@@ -35,4 +35,7 @@ pub struct Config {
 
 	#[arg(long, env = "MORAINE_PUBLISHING", value_enum, default_value_t = Publishing::Review)]
 	pub publishing: Publishing,
+
+	#[arg(long, env = "MORAINE_FEDERATION_ALLOW_HTTP_LOCAL", default_value_t = false)]
+	pub allow_insecure_federation_local: bool,
 }

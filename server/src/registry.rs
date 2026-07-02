@@ -292,10 +292,6 @@ async fn object_bytes(State(state): State<AppState>, Path(hex_digest): Path<Stri
 				header::CACHE_CONTROL,
 				"public, max-age=31536000, immutable".parse().expect("valid header"),
 			);
-			headers.insert(
-				header::CONTENT_LENGTH,
-				object.payload.len().to_string().parse().expect("valid header"),
-			);
 			response
 		}
 		Ok(None) => (StatusCode::NOT_FOUND, "no such object").into_response(),
@@ -323,7 +319,11 @@ async fn load_root(state: &AppState, project_id: &str) -> Result<RootSet, Box<Re
 		.map_err(|error| Box::new(bad_request(error)))
 }
 
-async fn load_delegations(state: &AppState, project_id: &str, root: &RootSet) -> Result<Vec<KeyDelegation>, Box<Response>> {
+pub(crate) async fn load_delegations(
+	state: &AppState,
+	project_id: &str,
+	root: &RootSet,
+) -> Result<Vec<KeyDelegation>, Box<Response>> {
 	let stored = match state.metadata.objects_of_kind("delegation", 500).await {
 		Ok(stored) => stored,
 		Err(error) => return Err(Box::new(storage_error(error))),
@@ -354,7 +354,7 @@ fn unix_now() -> i64 {
 		.unwrap_or(0)
 }
 
-fn stored(object: &verify::VerifiedObject) -> StoredObject {
+pub(crate) fn stored(object: &verify::VerifiedObject) -> StoredObject {
 	StoredObject {
 		digest: object.digest.to_vec(),
 		kind: object.kind.as_str().to_string(),

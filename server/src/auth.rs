@@ -23,6 +23,7 @@ const KNOWN_SCOPES: &[&str] = &[
 	"projects:write",
 	"submissions:write",
 	"submissions:review",
+	"federation:manage",
 	"orgs:manage",
 	"notifications:read",
 ];
@@ -431,6 +432,7 @@ mod tests {
 			data_dir: directory.path().to_path_buf(),
 			max_artifact_bytes: 1024,
 			max_feed_page_entries: 100,
+			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Review,
 		};
 		let state = AppState {

@@ -71,6 +71,14 @@ CREATE TABLE IF NOT EXISTS submissions (
 	created_at INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS subscriptions (
+	home_url TEXT NOT NULL,
+	project_id TEXT NOT NULL,
+	cursor_seq INTEGER NOT NULL DEFAULT 0,
+	status TEXT NOT NULL,
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY (home_url, project_id)
+);
 CREATE TABLE IF NOT EXISTS review_decisions (
 	id TEXT PRIMARY KEY,
 	submission_id TEXT NOT NULL,
@@ -153,6 +161,15 @@ pub struct SubmissionRow {
 	pub state: String,
 	pub submitted_by: String,
 	pub created_at: i64,
+	pub updated_at: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubscriptionRow {
+	pub home_url: String,
+	pub project_id: String,
+	pub cursor_seq: i64,
+	pub status: String,
 	pub updated_at: i64,
 }
 
@@ -480,6 +497,67 @@ impl MetadataStore {
 		Ok(result.rows_affected() == 1)
 	}
 
+	pub async fn upsert_subscription(
+		&self,
+		home_url: &str,
+		project_id: &str,
+		status: &str,
+		updated_at: i64,
+	) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"INSERT INTO subscriptions (home_url, project_id, cursor_seq, status, updated_at) VALUES (?1, ?2, 0, ?3, ?4)
+			 ON CONFLICT(home_url, project_id) DO UPDATE SET status = ?3, updated_at = ?4",
+		)
+		.bind(home_url)
+		.bind(project_id)
+		.bind(status)
+		.bind(updated_at)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
+	pub async fn subscription(&self, home_url: &str, project_id: &str) -> Result<Option<SubscriptionRow>, sqlx::Error> {
+		let row = sqlx::query(
+			"SELECT home_url, project_id, cursor_seq, status, updated_at FROM subscriptions WHERE home_url = ?1 AND project_id = ?2",
+		)
+		.bind(home_url)
+		.bind(project_id)
+		.fetch_optional(&self.pool)
+		.await?;
+		Ok(row.map(subscription_from_row))
+	}
+
+	pub async fn set_subscription_cursor(
+		&self,
+		home_url: &str,
+		project_id: &str,
+		cursor_seq: i64,
+		status: &str,
+		updated_at: i64,
+	) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"UPDATE subscriptions SET cursor_seq = ?1, status = ?2, updated_at = ?3 WHERE home_url = ?4 AND project_id = ?5",
+		)
+		.bind(cursor_seq)
+		.bind(status)
+		.bind(updated_at)
+		.bind(home_url)
+		.bind(project_id)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
+	pub async fn subscriptions(&self) -> Result<Vec<SubscriptionRow>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT home_url, project_id, cursor_seq, status, updated_at FROM subscriptions ORDER BY home_url, project_id",
+		)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows.into_iter().map(subscription_from_row).collect())
+	}
+
 	pub async fn create_submission(&self, submission: &SubmissionRow) -> Result<(), sqlx::Error> {
 		sqlx::query(
 			"INSERT INTO submissions (id, project_id, object_digest, entry_digest, entry_wire, state, submitted_by, created_at, updated_at)
@@ -572,6 +650,16 @@ impl MetadataStore {
 				appeal_route: row.get("appeal_route"),
 			})
 			.collect())
+	}
+}
+
+fn subscription_from_row(row: sqlx::sqlite::SqliteRow) -> SubscriptionRow {
+	SubscriptionRow {
+		home_url: row.get("home_url"),
+		project_id: row.get("project_id"),
+		cursor_seq: row.get("cursor_seq"),
+		status: row.get("status"),
+		updated_at: row.get("updated_at"),
 	}
 }
 

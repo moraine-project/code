@@ -32,6 +32,7 @@ pub fn router(state: AppState) -> Router {
 		.merge(crate::registry::routes())
 		.merge(crate::auth::routes())
 		.merge(crate::review::routes())
+		.merge(crate::federation::routes())
 		.with_state(state)
 }
 
@@ -235,6 +236,7 @@ mod tests {
 			data_dir: directory.path().to_path_buf(),
 			max_artifact_bytes: 1024,
 			max_feed_page_entries: 100,
+			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Review,
 		};
 		let state = AppState {

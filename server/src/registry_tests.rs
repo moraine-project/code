@@ -8,6 +8,7 @@ use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::release::ReleasePayload;
 use moraine_model::signed::sign_payload;
+use tokio::net::TcpListener;
 use tower::ServiceExt;
 
 use super::*;
@@ -27,10 +28,13 @@ fn sample_id(label: &str) -> String {
 }
 
 async fn app() -> (Router, tempfile::TempDir) {
-	app_mode(crate::config::Publishing::Review).await
+	app_mode(crate::config::Publishing::Review, false).await
 }
 
-async fn app_mode(publishing: crate::config::Publishing) -> (Router, tempfile::TempDir) {
+async fn app_mode(
+	publishing: crate::config::Publishing,
+	allow_insecure_federation_local: bool,
+) -> (Router, tempfile::TempDir) {
 	let directory = tempfile::tempdir().expect("tempdir");
 	let store = Arc::new(BlobStore::new(directory.path()).await.expect("blob store"));
 	let metadata = Arc::new(
@@ -43,6 +47,7 @@ async fn app_mode(publishing: crate::config::Publishing) -> (Router, tempfile::T
 		data_dir: directory.path().to_path_buf(),
 		max_artifact_bytes: 1024,
 		max_feed_page_entries: 100,
+		allow_insecure_federation_local,
 		publishing,
 	};
 	let state = AppState {
@@ -344,7 +349,7 @@ async fn review_mode_queues_then_accepts() {
 
 #[tokio::test]
 async fn open_mode_auto_accepts() {
-	let (application, _directory) = app_mode(crate::config::Publishing::Open).await;
+	let (application, _directory) = app_mode(crate::config::Publishing::Open, false).await;
 	let signer = key(4);
 	let (project_id, release_digest) = publish_project(&application, &signer).await;
 	let (session, csrf) = login(&application, "author@example.org").await;
@@ -392,4 +397,59 @@ async fn reject_requires_a_reason_code() {
 		.expect("request");
 	let response = application.oneshot(review).await.expect("response");
 	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn federation_syncs_a_home_feed() {
+	let home_signer = key(6);
+	let (home, _home_directory) = app().await;
+	let (project_id, release_digest) = publish_project(&home, &home_signer).await;
+	let feed = feed_wire(&home_signer, &project_id, 1, None, release_digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(feed))
+		.expect("request");
+	let response = home.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+	let address = listener.local_addr().expect("addr");
+	let serving = home.clone();
+	tokio::spawn(async move {
+		let _ = axum::serve(listener, serving).await;
+	});
+
+	let (directory, _directory_dir) = app_mode(crate::config::Publishing::Review, true).await;
+	let (session, csrf) = login(&directory, "ops@example.org").await;
+	let sync = axum::http::Request::post("/v1/federation/sync")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.header("x-csrf-token", csrf)
+		.body(Body::from(
+			serde_json::json!({
+				"home_url": format!("http://127.0.0.1:{}", address.port()),
+				"project_id": project_id,
+			})
+			.to_string(),
+		))
+		.expect("request");
+	let response = directory.clone().oneshot(sync).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let report = body_json(response).await;
+	assert_eq!(report["applied"], 1);
+
+	let feed_request = axum::http::Request::get(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::empty())
+		.expect("request");
+	let response = directory.clone().oneshot(feed_request).await.expect("response");
+	let page = body_json(response).await;
+	assert_eq!(page["head_seq"], 1);
+
+	let subscriptions = axum::http::Request::get("/v1/subscriptions")
+		.header(header::COOKIE, format!("moraine_session={session}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = directory.oneshot(subscriptions).await.expect("response");
+	let list = body_json(response).await;
+	assert_eq!(list.as_array().expect("subscriptions").len(), 1);
+	assert_eq!(list[0]["cursor_seq"], 1);
 }

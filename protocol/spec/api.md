@@ -146,6 +146,36 @@ state must also send `X-CSRF-Token` equal to the CSRF cookie. A session carries
 the whole account; an API key carries only the scopes it was granted, and
 `keys:manage` is required to manage keys through a key.
 
+## Federation
+
+A directory pulls from a home. `POST /v1/federation/sync` takes a `home_url`
+and `project_id`, fetches the project's genesis and object documents, and
+ingests its feed:
+
+1. fetch the genesis, verify it against its own roots, and confirm the genesis
+   ID matches the requested project;
+2. ensure a local project with the same genesis exists;
+3. fetch feed entries after the stored cursor, resolve each referenced object,
+   verify it against the root and any stored delegations, and store it;
+4. append each entry with the same continuity checks a direct import uses;
+5. advance the subscription cursor to the home's head.
+
+The event kind maps to an object kind (`release-published` to a release,
+`profile-updated` to a profile, `key-changed`/`migration`/`recovery` to a
+delegation, `advisory` to an advisory), and an entry whose object kind is
+unknown is skipped rather than guessed.
+
+Sync is idempotent: re-running it re-fetches nothing past the cursor and
+re-verifies everything it does fetch. The cursor only advances after the
+entries are durably stored. `GET /v1/subscriptions` lists the followed homes
+and their cursors. Both routes need the `federation:manage` scope.
+
+A home URL must use HTTPS. Plain HTTP is rejected unless it points at loopback
+and the operator explicitly enabled it, which exists for development. The
+client does not follow redirects, and every fetch has a timeout. Response size
+bounds, DNS revalidation, and background polling are not implemented yet; a
+sync is a synchronous request today.
+
 ## Not implemented yet
 
 Game and loader definition hosting, digest lookup, range caching of object
