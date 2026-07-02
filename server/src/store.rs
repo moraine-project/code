@@ -60,6 +60,28 @@ CREATE TABLE IF NOT EXISTS api_keys (
 	revoked_at INTEGER,
 	last_used_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS submissions (
+	id TEXT PRIMARY KEY,
+	project_id TEXT NOT NULL,
+	object_digest BLOB NOT NULL,
+	entry_digest BLOB NOT NULL,
+	entry_wire BLOB NOT NULL,
+	state TEXT NOT NULL,
+	submitted_by TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS review_decisions (
+	id TEXT PRIMARY KEY,
+	submission_id TEXT NOT NULL,
+	object_digest BLOB NOT NULL,
+	reviewer_id TEXT NOT NULL,
+	decision TEXT NOT NULL,
+	reason_code TEXT,
+	reason_taxonomy_version INTEGER NOT NULL,
+	decided_at INTEGER NOT NULL,
+	appeal_route TEXT
+);
 ";
 
 #[derive(Debug, Clone)]
@@ -119,6 +141,32 @@ pub struct ApiKeyRow {
 	pub created_at: i64,
 	pub expires_at: Option<i64>,
 	pub last_used_at: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubmissionRow {
+	pub id: String,
+	pub project_id: String,
+	pub object_digest: Vec<u8>,
+	pub entry_digest: Vec<u8>,
+	pub entry_wire: Vec<u8>,
+	pub state: String,
+	pub submitted_by: String,
+	pub created_at: i64,
+	pub updated_at: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReviewDecisionRow {
+	pub id: String,
+	pub submission_id: String,
+	pub object_digest: Vec<u8>,
+	pub reviewer_id: String,
+	pub decision: String,
+	pub reason_code: Option<String>,
+	pub reason_taxonomy_version: u32,
+	pub decided_at: i64,
+	pub appeal_route: Option<String>,
 }
 
 pub struct MetadataStore {
@@ -430,6 +478,114 @@ impl MetadataStore {
 				.execute(&self.pool)
 				.await?;
 		Ok(result.rows_affected() == 1)
+	}
+
+	pub async fn create_submission(&self, submission: &SubmissionRow) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"INSERT INTO submissions (id, project_id, object_digest, entry_digest, entry_wire, state, submitted_by, created_at, updated_at)
+			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+		)
+		.bind(&submission.id)
+		.bind(&submission.project_id)
+		.bind(&submission.object_digest)
+		.bind(&submission.entry_digest)
+		.bind(&submission.entry_wire)
+		.bind(&submission.state)
+		.bind(&submission.submitted_by)
+		.bind(submission.created_at)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
+	pub async fn submission(&self, id: &str) -> Result<Option<SubmissionRow>, sqlx::Error> {
+		let row = sqlx::query(
+			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, submitted_by, created_at, updated_at
+			 FROM submissions WHERE id = ?1",
+		)
+		.bind(id)
+		.fetch_optional(&self.pool)
+		.await?;
+		Ok(row.map(submission_from_row))
+	}
+
+	pub async fn submissions_in_state(&self, state: &str, limit: i64) -> Result<Vec<SubmissionRow>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, submitted_by, created_at, updated_at
+			 FROM submissions WHERE state = ?1 ORDER BY created_at ASC LIMIT ?2",
+		)
+		.bind(state)
+		.bind(limit)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows.into_iter().map(submission_from_row).collect())
+	}
+
+	pub async fn set_submission_state(&self, id: &str, state: &str, updated_at: i64) -> Result<(), sqlx::Error> {
+		sqlx::query("UPDATE submissions SET state = ?1, updated_at = ?2 WHERE id = ?3")
+			.bind(state)
+			.bind(updated_at)
+			.bind(id)
+			.execute(&self.pool)
+			.await?;
+		Ok(())
+	}
+
+	pub async fn insert_decision(&self, decision: &ReviewDecisionRow) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"INSERT INTO review_decisions (id, submission_id, object_digest, reviewer_id, decision, reason_code, reason_taxonomy_version, decided_at, appeal_route)
+			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+		)
+		.bind(&decision.id)
+		.bind(&decision.submission_id)
+		.bind(&decision.object_digest)
+		.bind(&decision.reviewer_id)
+		.bind(&decision.decision)
+		.bind(&decision.reason_code)
+		.bind(decision.reason_taxonomy_version)
+		.bind(decision.decided_at)
+		.bind(&decision.appeal_route)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
+	pub async fn decisions_for(&self, submission_id: &str) -> Result<Vec<ReviewDecisionRow>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT id, submission_id, object_digest, reviewer_id, decision, reason_code, reason_taxonomy_version, decided_at, appeal_route
+			 FROM review_decisions WHERE submission_id = ?1 ORDER BY decided_at ASC",
+		)
+		.bind(submission_id)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows
+			.into_iter()
+			.map(|row| ReviewDecisionRow {
+				id: row.get("id"),
+				submission_id: row.get("submission_id"),
+				object_digest: row.get("object_digest"),
+				reviewer_id: row.get("reviewer_id"),
+				decision: row.get("decision"),
+				reason_code: row.get("reason_code"),
+				reason_taxonomy_version: row.get::<i64, _>("reason_taxonomy_version") as u32,
+				decided_at: row.get("decided_at"),
+				appeal_route: row.get("appeal_route"),
+			})
+			.collect())
+	}
+}
+
+fn submission_from_row(row: sqlx::sqlite::SqliteRow) -> SubmissionRow {
+	SubmissionRow {
+		id: row.get("id"),
+		project_id: row.get("project_id"),
+		object_digest: row.get("object_digest"),
+		entry_digest: row.get("entry_digest"),
+		entry_wire: row.get("entry_wire"),
+		state: row.get("state"),
+		submitted_by: row.get("submitted_by"),
+		created_at: row.get("created_at"),
+		updated_at: row.get("updated_at"),
 	}
 }
 

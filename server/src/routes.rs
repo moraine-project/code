@@ -31,6 +31,7 @@ pub fn router(state: AppState) -> Router {
 		.route("/v1/blobs/sha256/{digest}", get(blob_get).head(blob_head))
 		.merge(crate::registry::routes())
 		.merge(crate::auth::routes())
+		.merge(crate::review::routes())
 		.with_state(state)
 }
 
@@ -234,6 +235,7 @@ mod tests {
 			data_dir: directory.path().to_path_buf(),
 			max_artifact_bytes: 1024,
 			max_feed_page_entries: 100,
+			publishing: crate::config::Publishing::Review,
 		};
 		let state = AppState {
 			store,

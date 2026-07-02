@@ -10,9 +10,14 @@ pub struct Capability {
 	pub artifact_sources: Vec<String>,
 	pub upload_modes: Vec<String>,
 	pub server_role: Vec<String>,
+	pub publishing: String,
 }
 
 impl Capability {
+	pub fn is_open(&self) -> bool {
+		self.publishing == "open"
+	}
+
 	pub fn discover(config: &Config) -> Self {
 		Self {
 			protocol_versions: vec![1],
@@ -21,6 +26,7 @@ impl Capability {
 			artifact_sources: vec!["local".to_string(), "external".to_string(), "mirrored".to_string()],
 			upload_modes: vec!["staged".to_string()],
 			server_role: vec!["home".to_string(), "directory".to_string()],
+			publishing: config.publishing.as_str().to_string(),
 		}
 	}
 }

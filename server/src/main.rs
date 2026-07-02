@@ -4,6 +4,7 @@ mod capability;
 mod config;
 mod password;
 mod registry;
+mod review;
 mod routes;
 mod store;
 mod verify;

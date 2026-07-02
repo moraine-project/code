@@ -1,7 +1,22 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Publishing {
+	Review,
+	Open,
+}
+
+impl Publishing {
+	pub const fn as_str(self) -> &'static str {
+		match self {
+			Self::Review => "review",
+			Self::Open => "open",
+		}
+	}
+}
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "moraine-server", about = "Moraine registry, directory, and worker")]
@@ -17,4 +32,7 @@ pub struct Config {
 
 	#[arg(long, env = "MORAINE_MAX_FEED_PAGE_ENTRIES", default_value_t = 100)]
 	pub max_feed_page_entries: u32,
+
+	#[arg(long, env = "MORAINE_PUBLISHING", value_enum, default_value_t = Publishing::Review)]
+	pub publishing: Publishing,
 }

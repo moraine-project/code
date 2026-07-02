@@ -82,10 +82,40 @@ system can hold a release key while the root stays offline.
 delegation is not revoked by a later one: revocation will need an explicit
 revocation record tied to the feed sequence.
 
-The registry import routes are still signature-gated and unauthenticated:
-anyone can submit a validly signed object. Accounts and sessions now exist for
-the authoring workflow, and admission review and quotas will gate these routes
-later.
+The direct import routes are still signature-gated and unauthenticated: anyone
+can submit a validly signed object. The submission flow below is the
+account-gated path an author uses, and it is the one that honors the
+`review`/`open` setting.
+
+## Admission review
+
+The instance has one setting, `publishing`, chosen on the command line and
+advertised in the capability document: `review` (the default) or `open`.
+
+`POST /v1/submissions` accepts a signed feed entry, verifies its authorization
+and that the referenced object is stored, and then either:
+
+- under `open`, commits it immediately and records an `auto-accepted`
+  submission; or
+- under `review`, records a `submitted` submission and returns `202`.
+
+`GET /v1/review-queue` lists submissions awaiting review. `GET
+/v1/submissions/{id}` returns a submission and its decisions to the submitter
+or a reviewer. `POST /v1/submissions/{id}/review` takes one of:
+
+- `accept` — re-checks continuity against the current head, commits the entry
+  in one transaction, and records an `accept` decision;
+- `reject` or `quarantine` — records the decision with a required reason code
+  from the version-1 taxonomy and never commits the entry.
+
+A decision applies to one object digest and is an instance-attributed policy
+record; it never alters signed bytes, and the signed entry stays stored for
+audit even when rejected. Submitting needs the `submissions:write` scope;
+reviewing needs `submissions:review`.
+
+Because the head can move between submission and acceptance, `accept`
+re-validates sequence continuity at commit time and returns `409` if the entry
+is no longer the next sequence. The author resubmits against the new head.
 
 ## Accounts and credentials
 

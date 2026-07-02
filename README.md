@@ -23,9 +23,9 @@ the tools that check it.
   capability discovery, health, digest-addressed blobs with range support, and
   a first signed-object and feed API: import a genesis, store verified
   objects, append feed entries with continuity checks, and read them back. It
-  also has accounts: Argon2id passwords, server-side sessions with CSRF, and
-  scoped revocable API keys. Admission review and federation are not built
-  yet.
+  also has accounts (Argon2id passwords, server-side sessions with CSRF, and
+  scoped revocable API keys) and admission review with a `review`/`open`
+  setting. Federation is not built yet.
 
 ## Try it
 
@@ -45,7 +45,7 @@ cargo run -p moraine-verify -- object --kind release --file release.cbor --root 
 Run the registry:
 
 ```sh
-cargo run -p moraine-server -- --data-dir ./data --bind 127.0.0.1:8080
+cargo run -p moraine-server -- --data-dir ./data --bind 127.0.0.1:8080 --publishing review
 curl http://127.0.0.1:8080/.well-known/mod-registry
 ```
 
