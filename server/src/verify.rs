@@ -4,12 +4,12 @@ use moraine_crypto::{ObjectKind, object_id};
 use moraine_model::advisory::Advisory;
 use moraine_model::attestation::AttestationObject;
 use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
-use moraine_model::delegation::Delegation;
+use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::Genesis;
 use moraine_model::profile::ProfileRevision;
 use moraine_model::release::ReleaseObject;
-use moraine_model::signed::SignedObject;
+use moraine_model::signed::{SignedObject, TrustedKey, verify_envelope};
 use moraine_model::trust::{RootSet, verify_genesis as verify_genesis_signed};
 use moraine_model::{Canonical, ModelError};
 
@@ -66,6 +66,64 @@ pub fn verify_object(kind: ObjectKind, wire: &[u8], root: &RootSet) -> Result<Ve
 		ObjectKind::RuntimeDef => verify_typed::<RuntimeDef>(kind, wire, root),
 		other => Err(VerifyError::UnsupportedKind(other)),
 	}
+}
+
+/// Accepts an object signed by the root threshold or by a delegated key the
+/// root authorized for this object kind. Delegations must already have been
+/// verified against the root; this function only enforces scope and expiry.
+pub fn verify_object_authorized(
+	kind: ObjectKind,
+	wire: &[u8],
+	root: &RootSet,
+	delegations: &[KeyDelegation],
+	now: i64,
+) -> Result<VerifiedObject, VerifyError> {
+	match verify_object(kind, wire, root) {
+		Ok(object) => Ok(object),
+		Err(VerifyError::Signature(error)) => match kind {
+			ObjectKind::Delegation => verify_delegated::<Delegation>(kind, wire, delegations, now, error),
+			ObjectKind::Release => verify_delegated::<ReleaseObject>(kind, wire, delegations, now, error),
+			ObjectKind::Profile => verify_delegated::<ProfileRevision>(kind, wire, delegations, now, error),
+			ObjectKind::FeedEntry => verify_delegated::<FeedEntry>(kind, wire, delegations, now, error),
+			ObjectKind::Advisory => verify_delegated::<Advisory>(kind, wire, delegations, now, error),
+			ObjectKind::Attestation => verify_delegated::<AttestationObject>(kind, wire, delegations, now, error),
+			ObjectKind::GameDef => verify_delegated::<GameDef>(kind, wire, delegations, now, error),
+			ObjectKind::LoaderDef => verify_delegated::<LoaderObject>(kind, wire, delegations, now, error),
+			ObjectKind::RuntimeDef => verify_delegated::<RuntimeDef>(kind, wire, delegations, now, error),
+			other => Err(VerifyError::UnsupportedKind(other)),
+		},
+		Err(other) => Err(other),
+	}
+}
+
+fn verify_delegated<T: Canonical>(
+	kind: ObjectKind,
+	wire: &[u8],
+	delegations: &[KeyDelegation],
+	now: i64,
+	root_error: ModelError,
+) -> Result<VerifiedObject, VerifyError> {
+	let signed = SignedObject::<T>::from_bytes(wire).map_err(VerifyError::Decode)?;
+	let message = signed.signed_message(kind);
+	for delegation in delegations {
+		if !delegation.allowed_kinds.iter().any(|allowed| allowed == kind.as_str()) {
+			continue;
+		}
+		if delegation.expires_at.is_some_and(|expires| expires <= now) {
+			continue;
+		}
+		let trusted = TrustedKey::new(&delegation.delegate_key.public_key).map_err(VerifyError::Signature)?;
+		if verify_envelope(&signed.envelope, &message, std::slice::from_ref(&trusted), 1).is_ok() {
+			return Ok(VerifiedObject {
+				kind,
+				digest: object_id(kind, &signed.payload_bytes),
+				id: signed.id(kind),
+				payload_bytes: signed.payload_bytes.clone(),
+				wire_bytes: wire.to_vec(),
+			});
+		}
+	}
+	Err(VerifyError::Signature(root_error))
 }
 
 fn verify_typed<T: Canonical>(kind: ObjectKind, wire: &[u8], root: &RootSet) -> Result<VerifiedObject, VerifyError> {

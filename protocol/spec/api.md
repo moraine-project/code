@@ -72,9 +72,15 @@ current profile ID. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
 bounded page of entries. `GET /v1/objects/{hex}` returns the exact signed wire
 bytes with immutable caching.
 
-Verification currently resolves only the project root keys. A delegated key is
-not yet honored, so an object signed by a delegation is rejected until
-delegation resolution lands.
+Verification accepts the root threshold first. If that fails it loads the
+project's stored `delegation` objects, verifies each key delegation against the
+root, and accepts an object signed by a delegated key whose `allowed_kinds`
+contains that object kind and whose `expires_at` has not passed. So a build
+system can hold a release key while the root stays offline.
+
+`channels` and `max_version_scope` are recorded but not enforced yet, and a
+delegation is not revoked by a later one: revocation will need an explicit
+revocation record tied to the feed sequence.
 
 Writes are not authenticated yet. A valid signature is required, but anyone
 can submit validly signed objects and grow storage. Authentication, quotas,

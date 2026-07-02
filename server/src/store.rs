@@ -98,6 +98,23 @@ impl MetadataStore {
 		}))
 	}
 
+	pub async fn objects_of_kind(&self, kind: &str, limit: i64) -> Result<Vec<StoredObject>, sqlx::Error> {
+		let rows = sqlx::query("SELECT digest, kind, payload, wire FROM objects WHERE kind = ?1 LIMIT ?2")
+			.bind(kind)
+			.bind(limit)
+			.fetch_all(&self.pool)
+			.await?;
+		Ok(rows
+			.into_iter()
+			.map(|row| StoredObject {
+				digest: row.get("digest"),
+				kind: row.get("kind"),
+				payload: row.get("payload"),
+				wire: row.get("wire"),
+			})
+			.collect())
+	}
+
 	pub async fn project(&self, id: &str) -> Result<Option<ProjectRow>, sqlx::Error> {
 		let row =
 			sqlx::query("SELECT id, genesis_digest, head_seq, head_digest, profile_digest FROM projects WHERE id = ?1")

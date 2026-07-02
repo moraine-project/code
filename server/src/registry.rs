@@ -6,8 +6,10 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
+use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::feed::FeedEntry;
-use moraine_model::trust::RootSet;
+use moraine_model::signed::SignedObject;
+use moraine_model::trust::{RootSet, verify_key_delegation};
 use serde::{Deserialize, Serialize};
 
 use crate::routes::AppState;
@@ -136,7 +138,11 @@ async fn store_object(State(state): State<AppState>, Path((id, kind)): Path<(Str
 		Ok(root) => root,
 		Err(response) => return *response,
 	};
-	let object = match verify::verify_object(kind, &body, &root) {
+	let delegations = match load_delegations(&state, &id, &root).await {
+		Ok(delegations) => delegations,
+		Err(response) => return *response,
+	};
+	let object = match verify::verify_object_authorized(kind, &body, &root, &delegations, unix_now()) {
 		Ok(object) => object,
 		Err(error) => return bad_request(error),
 	};
@@ -160,7 +166,11 @@ async fn append_feed(State(state): State<AppState>, Path(id): Path<String>, body
 		Ok(root) => root,
 		Err(response) => return *response,
 	};
-	let object = match verify::verify_object(ObjectKind::FeedEntry, &body, &root) {
+	let delegations = match load_delegations(&state, &id, &root).await {
+		Ok(delegations) => delegations,
+		Err(response) => return *response,
+	};
+	let object = match verify::verify_object_authorized(ObjectKind::FeedEntry, &body, &root, &delegations, unix_now()) {
 		Ok(object) => object,
 		Err(error) => return bad_request(error),
 	};
@@ -295,6 +305,37 @@ async fn load_root(state: &AppState, project_id: &str) -> Result<RootSet, Box<Re
 		.map_err(|error| Box::new(bad_request(error)))
 }
 
+async fn load_delegations(state: &AppState, project_id: &str, root: &RootSet) -> Result<Vec<KeyDelegation>, Box<Response>> {
+	let stored = match state.metadata.objects_of_kind("delegation", 500).await {
+		Ok(stored) => stored,
+		Err(error) => return Err(Box::new(storage_error(error))),
+	};
+	let mut delegations = Vec::new();
+	for object in stored {
+		let Ok(signed) = SignedObject::<Delegation>::from_bytes(&object.wire) else {
+			continue;
+		};
+		let Delegation::Key(key) = &signed.payload else {
+			continue;
+		};
+		if key.project_id != project_id {
+			continue;
+		}
+		if verify_key_delegation(&signed, root).is_err() {
+			continue;
+		}
+		delegations.push(key.clone());
+	}
+	Ok(delegations)
+}
+
+fn unix_now() -> i64 {
+	std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|duration| duration.as_secs() as i64)
+		.unwrap_or(0)
+}
+
 fn stored(object: &verify::VerifiedObject) -> StoredObject {
 	StoredObject {
 		digest: object.digest.to_vec(),
@@ -329,6 +370,7 @@ mod tests {
 	use moraine_crypto::{ObjectKind as Kind, SigningKey, object_id};
 	use moraine_model::artifact::Artifact;
 	use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
+	use moraine_model::delegation::{Delegation, KeyDelegation};
 	use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 	use moraine_model::release::ReleasePayload;
 	use moraine_model::signed::sign_payload;
@@ -372,14 +414,16 @@ mod tests {
 		(crate::routes::router(state), directory)
 	}
 
-	fn genesis_wire(signer: &SigningKey) -> Vec<u8> {
+	const PROJECT_KINDS: &[&str] = &["delegation", "release", "profile"];
+
+	fn genesis_wire(signer: &SigningKey, kinds: &[&str]) -> Vec<u8> {
 		let genesis = Genesis {
 			protocol: 1,
 			kind: GenesisKind::Project,
 			nonce: vec![0x11; 16],
 			roots: vec![RootKey::from_public_key(signer.verifying_key().to_bytes().to_vec()).expect("root")],
 			threshold: 1,
-			authorized_kinds: vec!["delegation".to_string(), "release".to_string(), "profile".to_string()],
+			authorized_kinds: kinds.iter().map(|kind| kind.to_string()).collect(),
 			home_hint: None,
 			contacts: None,
 			created_at: 1_760_000_000,
@@ -459,7 +503,7 @@ mod tests {
 		let signer = key(1);
 
 		let request = axum::http::Request::post("/v1/projects")
-			.body(Body::from(genesis_wire(&signer)))
+			.body(Body::from(genesis_wire(&signer, PROJECT_KINDS)))
 			.expect("request");
 		let response = application.clone().oneshot(request).await.expect("response");
 		assert_eq!(response.status(), StatusCode::CREATED);
@@ -497,7 +541,7 @@ mod tests {
 		let (application, _directory) = app().await;
 		let signer = key(2);
 		let request = axum::http::Request::post("/v1/projects")
-			.body(Body::from(genesis_wire(&signer)))
+			.body(Body::from(genesis_wire(&signer, PROJECT_KINDS)))
 			.expect("request");
 		let response = application.clone().oneshot(request).await.expect("response");
 		let receipt = body_json(response).await;
@@ -513,5 +557,56 @@ mod tests {
 		let request = axum::http::Request::post(&path).body(Body::from(feed)).expect("request");
 		let response = application.oneshot(request).await.expect("response");
 		assert_eq!(response.status(), StatusCode::CONFLICT);
+	}
+
+	#[tokio::test]
+	async fn accepts_a_delegated_release_key_and_rejects_an_unrelated_one() {
+		let (application, _directory) = app().await;
+		let root = key(1);
+		let delegated = key(2);
+		let intruder = key(3);
+		let kinds = ["delegation", "release", "profile", "feed-entry"];
+		let request = axum::http::Request::post("/v1/projects")
+			.body(Body::from(genesis_wire(&root, &kinds)))
+			.expect("request");
+		let response = application.clone().oneshot(request).await.expect("response");
+		let receipt = body_json(response).await;
+		let project_id = receipt["project_id"].as_str().expect("project id").to_string();
+
+		let delegation = Delegation::Key(KeyDelegation {
+			protocol: 1,
+			project_id: project_id.clone(),
+			delegate_key: RootKey::from_public_key(delegated.verifying_key().to_bytes().to_vec()).expect("delegate"),
+			allowed_kinds: vec!["release".to_string(), "feed-entry".to_string()],
+			channels: None,
+			max_version_scope: None,
+			valid_from_seq: None,
+			expires_at: None,
+			issued_at: 1_760_000_000,
+			previous_delegation_digest: None,
+		});
+		let wire = sign_payload(Kind::Delegation, &delegation, &[&root]).wire_bytes();
+		let path = format!("/v1/projects/{project_id}/objects/delegation");
+		let request = axum::http::Request::post(&path).body(Body::from(wire)).expect("request");
+		let response = application.clone().oneshot(request).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+
+		let (release, release_digest) = release_wire(&delegated, &project_id);
+		let path = format!("/v1/projects/{project_id}/objects/release");
+		let request = axum::http::Request::post(&path).body(Body::from(release)).expect("request");
+		let response = application.clone().oneshot(request).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+
+		let feed = feed_wire(&delegated, &project_id, 1, None, release_digest);
+		let path = format!("/v1/projects/{project_id}/feed");
+		let request = axum::http::Request::post(&path).body(Body::from(feed)).expect("request");
+		let response = application.clone().oneshot(request).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+
+		let (forged, _) = release_wire(&intruder, &project_id);
+		let path = format!("/v1/projects/{project_id}/objects/release");
+		let request = axum::http::Request::post(&path).body(Body::from(forged)).expect("request");
+		let response = application.oneshot(request).await.expect("response");
+		assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 	}
 }
