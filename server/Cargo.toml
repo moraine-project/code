@@ -11,8 +11,10 @@ name = "moraine-server"
 path = "src/main.rs"
 
 [dependencies]
+argon2 = "0.5"
 axum = "0.8"
 futures-util = { version = "0.3", default-features = false }
+getrandom = "0.3"
 moraine-crypto = { path = "../crypto" }
 moraine-model = { path = "../model" }
 tokio = { version = "1", features = ["full"] }

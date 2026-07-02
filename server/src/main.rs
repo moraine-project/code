@@ -1,6 +1,8 @@
+mod auth;
 mod blob;
 mod capability;
 mod config;
+mod password;
 mod registry;
 mod routes;
 mod store;

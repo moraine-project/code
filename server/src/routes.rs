@@ -30,6 +30,7 @@ pub fn router(state: AppState) -> Router {
 		.route("/v1/blobs", post(blob_upload))
 		.route("/v1/blobs/sha256/{digest}", get(blob_get).head(blob_head))
 		.merge(crate::registry::routes())
+		.merge(crate::auth::routes())
 		.with_state(state)
 }
 

@@ -82,9 +82,39 @@ system can hold a release key while the root stays offline.
 delegation is not revoked by a later one: revocation will need an explicit
 revocation record tied to the feed sequence.
 
-Writes are not authenticated yet. A valid signature is required, but anyone
-can submit validly signed objects and grow storage. Authentication, quotas,
-and admission review come with the authoring workflow.
+The registry import routes are still signature-gated and unauthenticated:
+anyone can submit a validly signed object. Accounts and sessions now exist for
+the authoring workflow, and admission review and quotas will gate these routes
+later.
+
+## Accounts and credentials
+
+`POST /v1/auth/register` takes an email and password, hashes the password with
+Argon2id, and returns the user ID. Passwords must be at least 12 characters.
+
+`POST /v1/auth/session` verifies the password and creates a server-side
+session. It sets an `HttpOnly`, `Secure`, `SameSite=Lax` session cookie and a
+readable CSRF cookie, and returns the session's absolute expiry. Sessions are
+idle-limited to 30 days and absolutely limited to 90 days.
+
+`DELETE /v1/auth/session` revokes the session and clears both cookies.
+
+`GET /v1/auth/me` returns the account and whether the request authenticated
+with a session or an API key.
+
+`GET /v1/auth/keys`, `POST /v1/auth/keys`, and
+`DELETE /v1/auth/keys/{id}` list, create, and revoke scoped API keys. A created
+key is returned exactly once; only its SHA-256 hash is stored. Keys are
+scoped, expire by default after 90 days, and are revocable independently. The
+known scopes are `account:read`, `keys:manage`, `projects:write`,
+`submissions:write`, `orgs:manage`, and `notifications:read`. There is no
+wildcard, and no scope can sign a release.
+
+A request authenticates either with the session cookie or an
+`Authorization: Bearer` API key. A cookie-authenticated request that changes
+state must also send `X-CSRF-Token` equal to the CSRF cookie. A session carries
+the whole account; an API key carries only the scopes it was granted, and
+`keys:manage` is required to manage keys through a key.
 
 ## Not implemented yet
 

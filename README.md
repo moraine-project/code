@@ -22,8 +22,10 @@ the tools that check it.
 - **`server`** — an Axum registry with a SQLite metadata store. It serves
   capability discovery, health, digest-addressed blobs with range support, and
   a first signed-object and feed API: import a genesis, store verified
-  objects, append feed entries with continuity checks, and read them back.
-  Auth, admission review, and federation are not built yet.
+  objects, append feed entries with continuity checks, and read them back. It
+  also has accounts: Argon2id passwords, server-side sessions with CSRF, and
+  scoped revocable API keys. Admission review and federation are not built
+  yet.
 
 ## Try it
 
