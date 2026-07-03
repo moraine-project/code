@@ -60,9 +60,10 @@ npm run dev
 
 `npm run build:static` produces a static site. `npm run build:cloudflare`
 produces a Worker build from the same source. The site reads
-`PUBLIC_MORAINE_REGISTRY` for its default home. Cross-origin fetches need the
-registry to send CORS headers, which is not wired up yet; for now point the
-site at a same-origin or development registry.
+`PUBLIC_MORAINE_REGISTRY` for its default home. The server answers read
+requests with permissive CORS and no credentials, so a static site on another
+origin can resolve projects and fetch blobs. Writes are not offered
+cross-origin.
 
 ## Layout
 

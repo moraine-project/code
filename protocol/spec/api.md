@@ -176,6 +176,20 @@ client does not follow redirects, and every fetch has a timeout. Response size
 bounds, DNS revalidation, and background polling are not implemented yet; a
 sync is a synchronous request today.
 
+## Cross-origin reads
+
+A static website runs on a different origin than the registry, so read requests
+need CORS. The server answers `GET` and `HEAD` with `Access-Control-Allow-Origin:
+*` and no credentials, which lets any static site resolve projects and fetch
+blobs. `POST`, `PUT`, `PATCH`, and `DELETE` are deliberately absent from the
+allowed methods, so a browser cannot use a cross-origin credential to write.
+Automation that must write uses an API key over a direct connection, not a
+browser fetch.
+
+Allowing every read origin is safe here because reads are public and carry no
+credentials. An operator that wants to restrict reads can narrow the allowed
+origin; the protocol does not require a particular policy.
+
 ## Not implemented yet
 
 Game and loader definition hosting, digest lookup, range caching of object

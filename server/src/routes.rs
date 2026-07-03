@@ -10,6 +10,7 @@ use futures_util::TryStreamExt;
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::{ReaderStream, StreamReader};
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::blob::{BlobError, BlobStore};
 use crate::capability::Capability;
@@ -34,6 +35,15 @@ pub fn router(state: AppState) -> Router {
 		.merge(crate::review::routes())
 		.merge(crate::federation::routes())
 		.with_state(state)
+		.layer(read_only_cors())
+}
+
+fn read_only_cors() -> CorsLayer {
+	CorsLayer::new()
+		.allow_origin(Any)
+		.allow_methods([Method::GET, Method::HEAD])
+		.allow_headers(Any)
+		.max_age(std::time::Duration::from_secs(3600))
 }
 
 async fn well_known(State(state): State<AppState>) -> Json<Capability> {
@@ -325,5 +335,32 @@ mod tests {
 				.expect("request");
 		let response = app.oneshot(missing).await.expect("response");
 		assert_eq!(response.status(), StatusCode::NOT_FOUND);
+	}
+
+	#[tokio::test]
+	async fn reads_are_cors_enabled_but_writes_are_not_offered() {
+		let (app, _directory) = test_app().await;
+		let read = axum::http::Request::get("/.well-known/mod-registry")
+			.header(header::ORIGIN, "https://site.example")
+			.body(Body::empty())
+			.expect("request");
+		let response = app.clone().oneshot(read).await.expect("response");
+		assert_eq!(response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+
+		let preflight = axum::http::Request::builder()
+			.method("OPTIONS")
+			.uri("/v1/submissions")
+			.header(header::ORIGIN, "https://site.example")
+			.header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+			.body(Body::empty())
+			.expect("request");
+		let response = app.oneshot(preflight).await.expect("response");
+		let methods = response
+			.headers()
+			.get(header::ACCESS_CONTROL_ALLOW_METHODS)
+			.and_then(|value| value.to_str().ok())
+			.unwrap_or_default()
+			.to_ascii_uppercase();
+		assert!(!methods.contains("POST"));
 	}
 }
