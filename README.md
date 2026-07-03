@@ -50,6 +50,20 @@ cargo run -p moraine-server -- --data-dir ./data --bind 127.0.0.1:8080 --publish
 curl http://127.0.0.1:8080/.well-known/mod-registry
 ```
 
+Run the website against it:
+
+```sh
+cd web
+npm install
+npm run dev
+```
+
+`npm run build:static` produces a static site. `npm run build:cloudflare`
+produces a Worker build from the same source. The site reads
+`PUBLIC_MORAINE_REGISTRY` for its default home. Cross-origin fetches need the
+registry to send CORS headers, which is not wired up yet; for now point the
+site at a same-origin or development registry.
+
 ## Layout
 
 ```
@@ -58,6 +72,7 @@ crypto/         keys, signatures, domain separation, object IDs
 model/          typed, validated protocol objects
 verify/         moraine-verify CLI and vector runner
 server/         moraine-server registry, directory, and worker binary
+web/            SvelteKit website with static and Cloudflare build targets
 protocol/
   spec/         notes that pin implementation decisions
   vectors/      the test-vector corpus
