@@ -8,6 +8,7 @@ use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
 use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::feed::FeedEntry;
+use moraine_model::profile::ProfileRevision;
 use moraine_model::signed::SignedObject;
 use moraine_model::trust::{RootSet, verify_key_delegation};
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,8 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/projects/{id}", get(project_summary))
 		.route("/v1/projects/{id}/objects/{kind}", post(store_object))
 		.route("/v1/projects/{id}/feed", get(feed_page).post(append_feed))
+		.route("/v1/projects/{id}/profile", get(project_profile))
+		.route("/v1/projects/{id}/releases/{hex}", get(release_view))
 		.route("/v1/objects/{hex}", get(object_bytes))
 }
 
@@ -277,6 +280,182 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 		next,
 	};
 	Json(page).into_response()
+}
+
+#[derive(Serialize)]
+struct ProfileView {
+	project_id: String,
+	display_name: String,
+	summary: String,
+	description: String,
+	categories: Vec<String>,
+	tags: Vec<String>,
+	links: Vec<LinkView>,
+	communities: Vec<LinkView>,
+	revision: String,
+}
+
+#[derive(Serialize)]
+struct LinkView {
+	kind: String,
+	url: String,
+}
+
+async fn project_profile(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+	let project = match state.metadata.project(&id).await {
+		Ok(Some(project)) => project,
+		Ok(None) => return (StatusCode::NOT_FOUND, "no such project").into_response(),
+		Err(error) => return storage_error(error),
+	};
+	let Some(revision_digest) = project.profile_digest else {
+		return (StatusCode::NOT_FOUND, "no profile published").into_response();
+	};
+	let Some(object) = (match state.metadata.object(&revision_digest).await {
+		Ok(object) => object,
+		Err(error) => return storage_error(error),
+	}) else {
+		return (StatusCode::INTERNAL_SERVER_ERROR, "profile object is missing").into_response();
+	};
+	let Ok(profile) = ProfileRevision::from_canonical_bytes(&object.payload) else {
+		return (StatusCode::INTERNAL_SERVER_ERROR, "stored profile does not decode").into_response();
+	};
+	let view = ProfileView {
+		project_id: profile.project_id,
+		display_name: profile.display_name,
+		summary: profile.summary,
+		description: profile.description,
+		categories: profile.categories,
+		tags: profile.tags,
+		links: profile
+			.links
+			.into_iter()
+			.map(|link| LinkView {
+				kind: link.kind,
+				url: link.url,
+			})
+			.collect(),
+		communities: profile
+			.communities
+			.into_iter()
+			.map(|link| LinkView {
+				kind: link.kind,
+				url: link.url,
+			})
+			.collect(),
+		revision: id_for(&revision_digest),
+	};
+	Json(view).into_response()
+}
+
+#[derive(Serialize)]
+struct ReleaseView {
+	project_id: String,
+	human_version: String,
+	channel: String,
+	kind: String,
+	declared_time: i64,
+	license_expression: Option<String>,
+	artifacts: Vec<ArtifactView>,
+	compatibility: Vec<CompatibilityView>,
+	dependencies: Vec<DependencyView>,
+	rights: Option<RightsView>,
+}
+
+#[derive(Serialize)]
+struct ArtifactView {
+	digest: String,
+	size: u64,
+	media_type: String,
+	filename: String,
+	is_primary: bool,
+}
+
+#[derive(Serialize)]
+struct CompatibilityView {
+	scheme: String,
+	values: Vec<String>,
+	loader_id: Option<String>,
+	side: String,
+}
+
+#[derive(Serialize)]
+struct DependencyView {
+	target_kind: String,
+	target_id: String,
+	kind: String,
+}
+
+#[derive(Serialize)]
+struct RightsView {
+	redistribution: String,
+	modpack_inclusion: String,
+	mirroring: String,
+	attribution_required: bool,
+}
+
+async fn release_view(State(state): State<AppState>, Path((id, hex_digest)): Path<(String, String)>) -> Response {
+	let Some(digest) = parse_hex_digest(&hex_digest) else {
+		return (StatusCode::BAD_REQUEST, "invalid digest").into_response();
+	};
+	let Some(object) = (match state.metadata.object(&digest).await {
+		Ok(object) => object,
+		Err(error) => return storage_error(error),
+	}) else {
+		return (StatusCode::NOT_FOUND, "no such release").into_response();
+	};
+	let release = match moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload) {
+		Ok(moraine_model::release::ReleaseObject::Release(release)) => release,
+		Ok(_) => return (StatusCode::NOT_FOUND, "object is not a release").into_response(),
+		Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "stored release does not decode").into_response(),
+	};
+	if release.project_id != id {
+		return (StatusCode::NOT_FOUND, "release does not belong to this project").into_response();
+	}
+	let view = ReleaseView {
+		project_id: release.project_id,
+		human_version: release.human_version,
+		channel: release.channel,
+		kind: release.kind,
+		declared_time: release.declared_time,
+		license_expression: release.license_expression,
+		artifacts: release
+			.artifacts
+			.into_iter()
+			.map(|artifact| ArtifactView {
+				digest: format!("sha256:{}", hex::encode(artifact.digest)),
+				size: artifact.size,
+				media_type: artifact.media_type,
+				filename: artifact.filename,
+				is_primary: artifact.is_primary,
+			})
+			.collect(),
+		compatibility: release
+			.compatibility
+			.into_iter()
+			.map(|entry| CompatibilityView {
+				scheme: entry.game_version_predicate.scheme,
+				values: entry.game_version_predicate.values,
+				loader_id: entry.loader_id,
+				side: entry.side.as_str().to_string(),
+			})
+			.collect(),
+		dependencies: release
+			.dependencies
+			.into_iter()
+			.map(|dependency| DependencyView {
+				target_kind: dependency.target_kind.as_str().to_string(),
+				target_id: dependency.target_id,
+				kind: dependency.kind.as_str().to_string(),
+			})
+			.collect(),
+		rights: release.rights.map(|rights| RightsView {
+			redistribution: rights.redistribution.as_str().to_string(),
+			modpack_inclusion: rights.modpack_inclusion.as_str().to_string(),
+			mirroring: rights.mirroring.as_str().to_string(),
+			attribution_required: rights.attribution_required,
+		}),
+	};
+	Json(view).into_response()
 }
 
 async fn object_bytes(State(state): State<AppState>, Path(hex_digest): Path<String>) -> Response {

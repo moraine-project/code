@@ -8,6 +8,23 @@ export const projectSummarySchema = z.object({
 	profile: z.string().nullable().optional()
 });
 
+export const linkSchema = z.object({
+	kind: z.string(),
+	url: z.string()
+});
+
+export const profileSchema = z.object({
+	project_id: z.string(),
+	display_name: z.string(),
+	summary: z.string(),
+	description: z.string(),
+	categories: z.array(z.string()),
+	tags: z.array(z.string()),
+	links: z.array(linkSchema),
+	communities: z.array(linkSchema),
+	revision: z.string()
+});
+
 export const feedEntrySchema = z.object({
 	seq: z.number(),
 	kind: z.string(),
@@ -25,6 +42,7 @@ export const feedPageSchema = z.object({
 });
 
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
+export type Profile = z.infer<typeof profileSchema>;
 export type FeedEntry = z.infer<typeof feedEntrySchema>;
 export type FeedPage = z.infer<typeof feedPageSchema>;
 
@@ -44,6 +62,21 @@ export async function fetchProject(base: string, projectId: string, fetchFn: Fet
 		throw new Error(`home returned ${response.status} for the project`);
 	}
 	return projectSummarySchema.parse(await response.json());
+}
+
+export async function fetchProfile(
+	base: string,
+	projectId: string,
+	fetchFn: Fetcher = fetch
+): Promise<Profile | null> {
+	const response = await fetchFn(`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/profile`);
+	if (response.status === 404) {
+		return null;
+	}
+	if (!response.ok) {
+		throw new Error(`home returned ${response.status} for the profile`);
+	}
+	return profileSchema.parse(await response.json());
 }
 
 export async function fetchFeed(

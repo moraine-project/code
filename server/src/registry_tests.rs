@@ -453,3 +453,72 @@ async fn federation_syncs_a_home_feed() {
 	assert_eq!(list.as_array().expect("subscriptions").len(), 1);
 	assert_eq!(list[0]["cursor_seq"], 1);
 }
+
+#[tokio::test]
+async fn serves_json_views_of_profile_and_release() {
+	use moraine_model::profile::ProfileRevision;
+
+	let (application, _directory) = app().await;
+	let signer = key(7);
+	let (project_id, release_digest) = publish_project(&application, &signer).await;
+
+	let profile = ProfileRevision {
+		protocol: 1,
+		project_id: project_id.clone(),
+		game_id: sample_id("minecraft"),
+		revision_nonce: vec![0x24; 16],
+		display_name: "Example Mod".to_string(),
+		summary: "A worked example".to_string(),
+		description: "Longer description".to_string(),
+		icon: None,
+		gallery: Vec::new(),
+		links: Vec::new(),
+		communities: Vec::new(),
+		categories: vec!["utility".to_string()],
+		tags: vec!["client".to_string()],
+		rights: None,
+		declared_time: 1_760_000_000,
+	};
+	let signed_profile = sign_payload(Kind::Profile, &profile, &[&signer]);
+	let profile_digest = object_id(Kind::Profile, &signed_profile.payload_bytes);
+	let path = format!("/v1/projects/{project_id}/objects/profile");
+	let request = axum::http::Request::post(&path)
+		.body(Body::from(signed_profile.wire_bytes()))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let entry = FeedEntry {
+		protocol: 1,
+		project_id: project_id.clone(),
+		sequence: 1,
+		previous: None,
+		kind: "profile-updated".to_string(),
+		object_digest: profile_digest.to_vec(),
+		declared_at: 1_760_000_000,
+	};
+	let feed = sign_payload(Kind::FeedEntry, &entry, &[&signer]).wire_bytes();
+	let path = format!("/v1/projects/{project_id}/feed");
+	let request = axum::http::Request::post(&path).body(Body::from(feed)).expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let profile_request = axum::http::Request::get(format!("/v1/projects/{project_id}/profile"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(profile_request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let view = body_json(response).await;
+	assert_eq!(view["display_name"], "Example Mod");
+	assert_eq!(view["tags"][0], "client");
+
+	let release_request =
+		axum::http::Request::get(format!("/v1/projects/{project_id}/releases/{}", hex::encode(release_digest)))
+			.body(Body::empty())
+			.expect("request");
+	let response = application.oneshot(release_request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let view = body_json(response).await;
+	assert_eq!(view["human_version"], "1.0.0");
+	assert_eq!(view["artifacts"][0]["is_primary"], true);
+}

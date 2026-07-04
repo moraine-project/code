@@ -72,6 +72,18 @@ current profile ID. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
 bounded page of entries. `GET /v1/objects/{hex}` returns the exact signed wire
 bytes with immutable caching.
 
+Two read-only projections decode a stored signed object into JSON so a browser
+does not have to reimplement the canonical decoder. They are display views, not
+trust anchors: the signed bytes remain the source of truth, and a client that
+verifies must fetch the object document instead.
+
+- `GET /v1/projects/{id}/profile` returns the current profile revision's
+  display name, summary, description, categories, tags, links, and communities.
+  It is `404` until a `profile-updated` entry has been accepted.
+- `GET /v1/projects/{id}/releases/{hex}` returns one release's version,
+  channel, kind, license, artifacts, compatibility entries, dependencies, and
+  rights. The digest is the release object's identity digest.
+
 Verification accepts the root threshold first. If that fails it loads the
 project's stored `delegation` objects, verifies each key delegation against the
 root, and accepts an object signed by a delegated key whose `allowed_kinds`

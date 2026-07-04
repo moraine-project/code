@@ -24,10 +24,15 @@
 	{:else if data.summary && data.feed}
 		<section class="card card-border">
 			<div class="card-body">
-				<h1 class="card-title break-all">{shortDigest(data.summary.project_id, 24)}</h1>
+				<h1 class="card-title break-all">
+					{data.profile?.display_name ?? shortDigest(data.summary.project_id, 24)}
+				</h1>
+				{#if data.profile}
+					<p class="text-base-content/80">{data.profile.summary}</p>
+				{/if}
 				<div class="flex flex-wrap gap-2">
 					<span class="badge badge-outline">head #{data.summary.head_seq}</span>
-					{#if data.summary.profile}
+					{#if data.profile}
 						<span class="badge badge-outline">profile published</span>
 					{/if}
 				</div>
@@ -41,6 +46,37 @@
 				</dl>
 			</div>
 		</section>
+
+		{#if data.profile}
+			<section class="card card-border">
+				<div class="card-body">
+					<h2 class="card-title">About</h2>
+					<p class="whitespace-pre-line text-base-content/80">{data.profile.description}</p>
+					{#if data.profile.tags.length > 0 || data.profile.categories.length > 0}
+						<div class="flex flex-wrap gap-2">
+							{#each data.profile.categories as category (category)}
+								<span class="badge badge-outline">{category}</span>
+							{/each}
+							{#each data.profile.tags as tag (tag)}
+								<span class="badge">{tag}</span>
+							{/each}
+						</div>
+					{/if}
+					{#if data.profile.links.length > 0 || data.profile.communities.length > 0}
+						<ul class="flex flex-col gap-1 text-sm">
+							{#each [...data.profile.links, ...data.profile.communities] as link (link.url)}
+								<li>
+									<span class="text-base-content/60">{link.kind}</span>
+									<a class="link link-hover break-all" href={link.url} rel="noreferrer noopener" target="_blank">
+										{link.url}
+									</a>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			</section>
+		{/if}
 
 		<section class="card card-border">
 			<div class="card-body">
