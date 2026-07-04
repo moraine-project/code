@@ -69,7 +69,11 @@ profile.
 
 `GET /v1/projects/{id}` returns the genesis ID, head sequence and entry, and
 current profile ID. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
-bounded page of entries. `GET /v1/objects/{hex}` returns the exact signed wire
+bounded page of entries. Each entry carries a human `title` derived from the
+referenced object (a release's version and channel, a profile's display name,
+an advisory's severity and category, a delegation's purpose), so a page can say
+what changed without fetching every object. The title is a convenience for
+display; the object digest next to it is the fact. `GET /v1/objects/{hex}` returns the exact signed wire
 bytes with immutable caching.
 
 Two read-only projections decode a stored signed object into JSON so a browser

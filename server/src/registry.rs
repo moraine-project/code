@@ -6,6 +6,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
+use moraine_model::advisory::Advisory;
 use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::feed::FeedEntry;
 use moraine_model::profile::ProfileRevision;
@@ -61,6 +62,7 @@ struct FeedReceipt {
 struct FeedEntryView {
 	seq: i64,
 	kind: String,
+	title: Option<String>,
 	object: String,
 	entry: String,
 	declared_at: i64,
@@ -263,9 +265,14 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 		let declared_at = FeedEntry::from_canonical_bytes(&row.payload)
 			.map(|entry| entry.declared_at)
 			.unwrap_or(0);
+		let title = match state.metadata.object(&row.object_digest).await {
+			Ok(Some(object)) => describe_stored(&object),
+			_ => None,
+		};
 		entries.push(FeedEntryView {
 			seq: row.seq,
 			kind: row.kind.clone(),
+			title,
 			object: id_for(&row.object_digest),
 			entry: id_for(&row.entry_digest),
 			declared_at,
@@ -531,6 +538,27 @@ fn unix_now() -> i64 {
 		.duration_since(std::time::UNIX_EPOCH)
 		.map(|duration| duration.as_secs() as i64)
 		.unwrap_or(0)
+}
+
+fn describe_stored(object: &StoredObject) -> Option<String> {
+	match object.kind.as_str() {
+		"release" => match moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload) {
+			Ok(moraine_model::release::ReleaseObject::Release(release)) => {
+				Some(format!("{} ({})", release.human_version, release.channel))
+			}
+			_ => None,
+		},
+		"profile" => ProfileRevision::from_canonical_bytes(&object.payload)
+			.ok()
+			.map(|profile| profile.display_name),
+		"advisory" => Advisory::from_canonical_bytes(&object.payload)
+			.ok()
+			.map(|advisory| format!("{} {}", advisory.severity.as_str(), advisory.category.as_str())),
+		"delegation" => Delegation::from_canonical_bytes(&object.payload)
+			.ok()
+			.map(|delegation| delegation.purpose().as_str().to_string()),
+		_ => None,
+	}
 }
 
 pub(crate) fn stored(object: &verify::VerifiedObject) -> StoredObject {

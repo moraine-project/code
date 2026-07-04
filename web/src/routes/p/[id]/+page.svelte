@@ -90,6 +90,7 @@
 								<tr>
 									<th scope="col">Seq</th>
 									<th scope="col">Kind</th>
+									<th scope="col">Title</th>
 									<th scope="col">Object</th>
 									<th scope="col">Declared</th>
 								</tr>
@@ -99,6 +100,7 @@
 									<tr>
 										<td>{entry.seq}</td>
 										<td>{entry.kind}</td>
+										<td>{entry.title ?? '—'}</td>
 										<td class="font-mono">{shortDigest(entry.object)}</td>
 										<td>{formatTime(entry.declared_at)}</td>
 									</tr>

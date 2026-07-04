@@ -28,6 +28,7 @@ export const profileSchema = z.object({
 export const feedEntrySchema = z.object({
 	seq: z.number(),
 	kind: z.string(),
+	title: z.string().nullable().optional(),
 	object: z.string(),
 	entry: z.string(),
 	declared_at: z.number(),
