@@ -55,6 +55,7 @@ Publish a release with the CLI:
 ```sh
 cargo run -p moraine-publish -- keygen --key publisher.key
 cargo run -p moraine-publish -- init --key publisher.key --home http://127.0.0.1:8080
+cargo run -p moraine-publish -- upload --home http://127.0.0.1:8080 --file mod.jar
 cargo run -p moraine-publish -- release --key publisher.key --home http://127.0.0.1:8080 \
   --project <project-id> --game <game-id> --game-version 1.20.1 \
   --version 1.2.3 --file mod.jar
@@ -63,8 +64,20 @@ cargo run -p moraine-publish -- publish --key publisher.key --home http://127.0.
 ```
 
 The key is your project's root. Keep it safe: losing it means losing the
-project identity. `init` signs a fresh project, `release` signs and stores a
-release object, and `publish` appends the feed entry that makes it visible.
+project identity. `init` signs a fresh project, `upload` stores the artifact
+bytes at the home, `release` signs and stores a release object, and `publish`
+appends the feed entry that makes it visible.
+
+To go through admission review instead of publishing directly, use `submit`
+with an API key that carries `submissions:write`:
+
+```sh
+cargo run -p moraine-publish -- submit --key publisher.key --home http://127.0.0.1:8080 \
+  --project <project-id> --object <release-id> --api-key <token>
+```
+
+Under `open` publishing it is auto-accepted; under `review` it waits in the
+queue, and `MORAINE_API_KEY` can supply the token instead of the flag.
 
 Run the website against it:
 

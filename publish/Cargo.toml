@@ -16,7 +16,11 @@ getrandom = "0.3"
 hex.workspace = true
 moraine-crypto = { path = "../crypto" }
 moraine-model = { path = "../model" }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 serde_json.workspace = true
 sha2.workspace = true
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs"] }
+tokio-util = { version = "0.7", features = ["io"] }
+
+[dev-dependencies]
+tempfile = "3"

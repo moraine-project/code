@@ -103,24 +103,24 @@ pub async fn release(
 	Ok(())
 }
 
+pub async fn upload(home_url: &str, file: &Path, api_key: Option<String>) -> Result<(), String> {
+	let metadata = std::fs::metadata(file).map_err(|error| format!("{}: {error}", file.display()))?;
+	let handle = tokio::fs::File::open(file)
+		.await
+		.map_err(|error| format!("{}: {error}", file.display()))?;
+	let home = Home::new(home_url)?;
+	let receipt = home
+		.post_blob("/v1/blobs", handle, metadata.len(), api_key.as_deref())
+		.await?;
+	println!("digest: {}", receipt["digest"].as_str().unwrap_or("?"));
+	println!("size: {}", receipt["size"].as_u64().unwrap_or(0));
+	Ok(())
+}
+
 pub async fn publish(key_path: &Path, home_url: &str, project_id: &str, object_id: &str) -> Result<(), String> {
 	let key = keyfile::load(key_path)?;
 	let home = Home::new(home_url)?;
-	let project = home.get_json(&format!("/v1/projects/{project_id}")).await?;
-	let head_seq = project["head_seq"].as_i64().unwrap_or(0);
-	let previous = match project["head_entry"].as_str() {
-		Some(entry) => Some(parse_object_id(entry)?.to_vec()),
-		None => None,
-	};
-	let entry = FeedEntry {
-		protocol: 1,
-		project_id: project_id.to_string(),
-		sequence: (head_seq + 1) as u64,
-		previous,
-		kind: "release-published".to_string(),
-		object_digest: parse_object_id(object_id)?.to_vec(),
-		declared_at: now(),
-	};
+	let entry = next_feed_entry(&home, project_id, object_id, "release-published").await?;
 	let signed = sign_payload(ObjectKind::FeedEntry, &entry, &[&key]);
 	let receipt = home
 		.post_wire(&format!("/v1/projects/{project_id}/feed"), signed.wire_bytes())
@@ -128,6 +128,46 @@ pub async fn publish(key_path: &Path, home_url: &str, project_id: &str, object_i
 	println!("seq: {}", receipt["seq"].as_i64().unwrap_or(0));
 	println!("entry: {}", receipt["entry"].as_str().unwrap_or("?"));
 	Ok(())
+}
+
+pub async fn submit(
+	key_path: &Path,
+	home_url: &str,
+	project_id: &str,
+	object_id: &str,
+	api_key: Option<String>,
+) -> Result<(), String> {
+	let key = keyfile::load(key_path)?;
+	let home = Home::new(home_url)?;
+	let entry = next_feed_entry(&home, project_id, object_id, "release-published").await?;
+	let signed = sign_payload(ObjectKind::FeedEntry, &entry, &[&key]);
+	let receipt = home
+		.post_wire_with_token("/v1/submissions", signed.wire_bytes(), api_key.as_deref())
+		.await?;
+	println!("submission: {}", receipt["id"].as_str().unwrap_or("?"));
+	println!("state: {}", receipt["state"].as_str().unwrap_or("?"));
+	if let Some(seq) = receipt["seq"].as_i64() {
+		println!("seq: {seq}");
+	}
+	Ok(())
+}
+
+async fn next_feed_entry(home: &Home, project_id: &str, object_id: &str, kind: &str) -> Result<FeedEntry, String> {
+	let project = home.get_json(&format!("/v1/projects/{project_id}")).await?;
+	let head_seq = project["head_seq"].as_i64().unwrap_or(0);
+	let previous = match project["head_entry"].as_str() {
+		Some(entry) => Some(parse_object_id(entry)?.to_vec()),
+		None => None,
+	};
+	Ok(FeedEntry {
+		protocol: 1,
+		project_id: project_id.to_string(),
+		sequence: (head_seq + 1) as u64,
+		previous,
+		kind: kind.to_string(),
+		object_digest: parse_object_id(object_id)?.to_vec(),
+		declared_at: now(),
+	})
 }
 
 fn parse_object_id(id: &str) -> Result<[u8; 32], String> {
