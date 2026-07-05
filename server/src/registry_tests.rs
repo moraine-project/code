@@ -523,3 +523,33 @@ async fn serves_json_views_of_profile_and_release() {
 	assert_eq!(view["human_version"], "1.0.0");
 	assert_eq!(view["artifacts"][0]["is_primary"], true);
 }
+
+#[tokio::test]
+async fn looks_up_a_release_from_an_artifact_digest() {
+	let (application, _directory) = app().await;
+	let signer = key(8);
+	let (project_id, release_digest) = publish_project(&application, &signer).await;
+
+	let digest = hex::encode([0xABu8; 32]);
+	let request = axum::http::Request::get(format!("/v1/lookup?sha256={digest}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let view = body_json(response).await;
+	assert_eq!(view["matches"].as_array().expect("matches").len(), 1);
+	assert_eq!(view["matches"][0]["project_id"], project_id);
+	assert_eq!(
+		view["matches"][0]["release"],
+		format!("gd:sha256:{}", hex::encode(release_digest))
+	);
+	assert_eq!(view["matches"][0]["human_version"], "1.0.0");
+	assert_eq!(view["matches"][0]["filename"], "example.jar");
+
+	let unknown = axum::http::Request::get(format!("/v1/lookup?sha256={}", hex::encode([9u8; 32])))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(unknown).await.expect("response");
+	let view = body_json(response).await;
+	assert!(view["matches"].as_array().expect("matches").is_empty());
+}

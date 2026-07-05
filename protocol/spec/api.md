@@ -67,6 +67,13 @@ referenced object must already be stored. One transaction writes the entry and
 advances the head; a profile-updated entry also updates the project's current
 profile.
 
+`GET /v1/lookup?sha256=<hex>` resolves an artifact digest back to the releases
+that publish it. The hex may carry the `sha256:` prefix. A release is indexed
+when it is stored, and federation indexes releases it ingests, so the lookup
+covers every release this instance knows about. A match names the project, the
+release object, and the artifact's version and filename. An unknown digest
+returns an empty match list, not a `404`, because "not here" is not an error.
+
 `GET /v1/projects/{id}` returns the genesis ID, head sequence and entry, and
 current profile ID. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
 bounded page of entries. Each entry carries a human `title` derived from the
@@ -208,6 +215,5 @@ origin; the protocol does not require a particular policy.
 
 ## Not implemented yet
 
-Game and loader definition hosting, digest lookup, range caching of object
-documents, directory indexing, authentication and sessions, admission review,
-advisories, and search.
+Game and loader definition hosting, range caching of object documents,
+directory search, advisories, and notifications.

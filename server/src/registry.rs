@@ -28,6 +28,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/projects/{id}/feed", get(feed_page).post(append_feed))
 		.route("/v1/projects/{id}/profile", get(project_profile))
 		.route("/v1/projects/{id}/releases/{hex}", get(release_view))
+		.route("/v1/lookup", get(lookup))
 		.route("/v1/objects/{hex}", get(object_bytes))
 }
 
@@ -151,7 +152,7 @@ async fn store_object(State(state): State<AppState>, Path((id, kind)): Path<(Str
 		Ok(object) => object,
 		Err(error) => return bad_request(error),
 	};
-	if let Err(error) = state.metadata.put_object(&stored(&object)).await {
+	if let Err(error) = store_object_record(&state, &object).await {
 		return storage_error(error);
 	}
 	let receipt = ObjectReceipt {
@@ -287,6 +288,85 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 		next,
 	};
 	Json(page).into_response()
+}
+
+#[derive(Deserialize)]
+struct LookupQuery {
+	sha256: String,
+}
+
+#[derive(Serialize)]
+struct LookupView {
+	digest: String,
+	matches: Vec<LookupMatch>,
+}
+
+#[derive(Serialize)]
+struct LookupMatch {
+	project_id: String,
+	release: String,
+	human_version: Option<String>,
+	filename: Option<String>,
+}
+
+/// Stores a verified object and, for a release, indexes each artifact digest so
+/// a file can be resolved back to the release that published it.
+pub(crate) async fn store_object_record(state: &AppState, object: &verify::VerifiedObject) -> Result<(), sqlx::Error> {
+	state.metadata.put_object(&stored(object)).await?;
+	if object.kind == ObjectKind::Release
+		&& let Ok(moraine_model::release::ReleaseObject::Release(release)) =
+			moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload_bytes)
+	{
+		for artifact in &release.artifacts {
+			state
+				.metadata
+				.index_artifact(&artifact.digest, &release.project_id, &object.digest)
+				.await?;
+		}
+	}
+	Ok(())
+}
+
+async fn lookup(State(state): State<AppState>, Query(query): Query<LookupQuery>) -> Response {
+	let Some(digest) = parse_sha256(&query.sha256) else {
+		return (StatusCode::BAD_REQUEST, "expected a sha256 digest").into_response();
+	};
+	let matches = match state.metadata.artifacts_for_digest(&digest).await {
+		Ok(matches) => matches,
+		Err(error) => return storage_error(error),
+	};
+	let mut views = Vec::with_capacity(matches.len());
+	for entry in matches {
+		let mut human_version = None;
+		let mut filename = None;
+		if let Ok(Some(object)) = state.metadata.object(&entry.release_digest).await
+			&& let Ok(moraine_model::release::ReleaseObject::Release(release)) =
+				moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload)
+		{
+			human_version = Some(release.human_version);
+			filename = release
+				.artifacts
+				.iter()
+				.find(|artifact| artifact.digest == digest)
+				.map(|artifact| artifact.filename.clone());
+		}
+		views.push(LookupMatch {
+			project_id: entry.project_id,
+			release: id_for(&entry.release_digest),
+			human_version,
+			filename,
+		});
+	}
+	Json(LookupView {
+		digest: format!("sha256:{}", hex::encode(digest)),
+		matches: views,
+	})
+	.into_response()
+}
+
+fn parse_sha256(value: &str) -> Option<[u8; 32]> {
+	let hex = value.strip_prefix("sha256:").unwrap_or(value);
+	hex::decode(hex).ok()?.try_into().ok()
 }
 
 #[derive(Serialize)]

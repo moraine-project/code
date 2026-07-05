@@ -188,7 +188,7 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 				.map_err(|error| rejected(*error))?;
 			let object = verify::verify_object_authorized(kind, &wire, &root, &delegations, now())
 				.map_err(|error| FederationError::Verify(error.to_string()))?;
-			state.metadata.put_object(&registry::stored(&object)).await.map_err(storage)?;
+			registry::store_object_record(state, &object).await.map_err(storage)?;
 		}
 		let entry_wire = client.get_bytes(&format!("/v1/objects/{}", hex_of(&entry.entry)?)).await?;
 		registry::ingest_feed(state, project_id, &entry_wire)

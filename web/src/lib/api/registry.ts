@@ -42,8 +42,21 @@ export const feedPageSchema = z.object({
 	next: z.number().nullable().optional()
 });
 
+export const lookupMatchSchema = z.object({
+	project_id: z.string(),
+	release: z.string(),
+	human_version: z.string().nullable().optional(),
+	filename: z.string().nullable().optional()
+});
+
+export const digestLookupSchema = z.object({
+	digest: z.string(),
+	matches: z.array(lookupMatchSchema)
+});
+
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
 export type Profile = z.infer<typeof profileSchema>;
+export type DigestLookup = z.infer<typeof digestLookupSchema>;
 export type FeedEntry = z.infer<typeof feedEntrySchema>;
 export type FeedPage = z.infer<typeof feedPageSchema>;
 
@@ -103,6 +116,14 @@ export async function fetchObject(base: string, objectId: string, fetchFn: Fetch
 		throw new Error(`home returned ${response.status} for the object`);
 	}
 	return new Uint8Array(await response.arrayBuffer());
+}
+
+export async function lookupDigest(base: string, digest: string, fetchFn: Fetcher = fetch): Promise<DigestLookup> {
+	const response = await fetchFn(`${normalizeBase(base)}/v1/lookup?sha256=${encodeURIComponent(digest.trim())}`);
+	if (!response.ok) {
+		throw new Error(`home returned ${response.status} for the digest`);
+	}
+	return digestLookupSchema.parse(await response.json());
 }
 
 export function shortDigest(id: string, length = 12): string {
