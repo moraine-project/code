@@ -50,6 +50,22 @@ cargo run -p moraine-server -- --data-dir ./data --bind 127.0.0.1:8080 --publish
 curl http://127.0.0.1:8080/.well-known/mod-registry
 ```
 
+Publish a release with the CLI:
+
+```sh
+cargo run -p moraine-publish -- keygen --key publisher.key
+cargo run -p moraine-publish -- init --key publisher.key --home http://127.0.0.1:8080
+cargo run -p moraine-publish -- release --key publisher.key --home http://127.0.0.1:8080 \
+  --project <project-id> --game <game-id> --game-version 1.20.1 \
+  --version 1.2.3 --file mod.jar
+cargo run -p moraine-publish -- publish --key publisher.key --home http://127.0.0.1:8080 \
+  --project <project-id> --object <release-id>
+```
+
+The key is your project's root. Keep it safe: losing it means losing the
+project identity. `init` signs a fresh project, `release` signs and stores a
+release object, and `publish` appends the feed entry that makes it visible.
+
 Run the website against it:
 
 ```sh
@@ -72,6 +88,7 @@ codec/          deterministic CBOR canonical profile
 crypto/         keys, signatures, domain separation, object IDs
 model/          typed, validated protocol objects
 verify/         moraine-verify CLI and vector runner
+publish/        moraine-publish CLI that signs and publishes releases
 server/         moraine-server registry, directory, and worker binary
 web/            SvelteKit website with static and Cloudflare build targets
 protocol/

@@ -1,0 +1,22 @@
+[package]
+name = "moraine-publish"
+description = "Command-line publisher for Moraine homes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "moraine-publish"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+getrandom = "0.3"
+hex.workspace = true
+moraine-crypto = { path = "../crypto" }
+moraine-model = { path = "../model" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde_json.workspace = true
+sha2.workspace = true
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
