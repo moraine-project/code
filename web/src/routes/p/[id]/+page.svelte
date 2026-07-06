@@ -7,6 +7,10 @@
 	function formatTime(seconds: number): string {
 		return new Date(seconds * 1000).toLocaleString();
 	}
+
+	function objectHex(id: string): string {
+		return id.startsWith('gd:sha256:') ? id.slice('gd:sha256:'.length) : id;
+	}
 </script>
 
 <svelte:head>
@@ -100,7 +104,18 @@
 									<tr>
 										<td>{entry.seq}</td>
 										<td>{entry.kind}</td>
-										<td>{entry.title ?? '—'}</td>
+										<td>
+											{#if entry.kind === 'release-published' || entry.kind === 'release-withdrawn'}
+												<a
+													class="link link-hover"
+													href={`/p/${encodeURIComponent(data.projectId)}/release/${objectHex(entry.object)}?home=${encodeURIComponent(data.home)}`}
+												>
+													{entry.title ?? '—'}
+												</a>
+											{:else}
+												{entry.title ?? '—'}
+											{/if}
+										</td>
 										<td class="font-mono">{shortDigest(entry.object)}</td>
 										<td>{formatTime(entry.declared_at)}</td>
 									</tr>

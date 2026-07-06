@@ -54,6 +54,47 @@ export const digestLookupSchema = z.object({
 	matches: z.array(lookupMatchSchema)
 });
 
+export const artifactSchema = z.object({
+	digest: z.string(),
+	size: z.number(),
+	media_type: z.string(),
+	filename: z.string(),
+	is_primary: z.boolean()
+});
+
+export const compatibilitySchema = z.object({
+	scheme: z.string(),
+	values: z.array(z.string()),
+	loader_id: z.string().nullable().optional(),
+	side: z.string()
+});
+
+export const dependencySchema = z.object({
+	target_kind: z.string(),
+	target_id: z.string(),
+	kind: z.string()
+});
+
+export const rightsSchema = z.object({
+	redistribution: z.string(),
+	modpack_inclusion: z.string(),
+	mirroring: z.string(),
+	attribution_required: z.boolean()
+});
+
+export const releaseSchema = z.object({
+	project_id: z.string(),
+	human_version: z.string(),
+	channel: z.string(),
+	kind: z.string(),
+	declared_time: z.number(),
+	license_expression: z.string().nullable().optional(),
+	artifacts: z.array(artifactSchema),
+	compatibility: z.array(compatibilitySchema),
+	dependencies: z.array(dependencySchema),
+	rights: rightsSchema.nullable().optional()
+});
+
 export const searchResultSchema = z.object({
 	project_id: z.string(),
 	game_id: z.string(),
@@ -77,6 +118,8 @@ export type ProjectSummary = z.infer<typeof projectSummarySchema>;
 export type Profile = z.infer<typeof profileSchema>;
 export type DigestLookup = z.infer<typeof digestLookupSchema>;
 export type SearchResult = z.infer<typeof searchResultSchema>;
+export type Release = z.infer<typeof releaseSchema>;
+export type Artifact = z.infer<typeof artifactSchema>;
 export type FeedEntry = z.infer<typeof feedEntrySchema>;
 export type FeedPage = z.infer<typeof feedPageSchema>;
 
@@ -163,6 +206,27 @@ export async function searchProjects(
 		throw new Error(`home returned ${response.status} for the search`);
 	}
 	return searchResponseSchema.parse(await response.json()).results;
+}
+
+export async function fetchRelease(
+	base: string,
+	projectId: string,
+	hex: string,
+	fetchFn: Fetcher = fetch
+): Promise<Release | null> {
+	const response = await fetchFn(`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/releases/${hex}`);
+	if (response.status === 404) {
+		return null;
+	}
+	if (!response.ok) {
+		throw new Error(`home returned ${response.status} for the release`);
+	}
+	return releaseSchema.parse(await response.json());
+}
+
+export function blobUrl(base: string, digest: string): string {
+	const hex = digest.startsWith('sha256:') ? digest.slice('sha256:'.length) : digest;
+	return `${normalizeBase(base)}/v1/blobs/sha256/${hex}`;
 }
 
 export function shortDigest(id: string, length = 12): string {
