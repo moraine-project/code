@@ -17,6 +17,7 @@
 		</div>
 		<div class="navbar-end gap-2">
 			<a class="btn btn-ghost" href="/search">Search</a>
+			<a class="btn btn-ghost" href="/account">Account</a>
 			<span class="badge badge-ghost">federated registry</span>
 		</div>
 	</div>
