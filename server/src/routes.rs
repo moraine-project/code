@@ -11,6 +11,7 @@ use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::{ReaderStream, StreamReader};
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
 
 use crate::blob::{BlobError, BlobStore};
 use crate::capability::Capability;
@@ -21,10 +22,12 @@ pub struct AppState {
 	pub store: Arc<BlobStore>,
 	pub metadata: Arc<MetadataStore>,
 	pub capability: Arc<Capability>,
+	pub web_dir: Option<Arc<std::path::PathBuf>>,
 }
 
 pub fn router(state: AppState) -> Router {
-	Router::new()
+	let web_dir = state.web_dir.clone();
+	let app = Router::new()
 		.route("/.well-known/mod-registry", get(well_known))
 		.route("/healthz", get(|| async { "ok" }))
 		.route("/readyz", get(ready))
@@ -36,7 +39,14 @@ pub fn router(state: AppState) -> Router {
 		.merge(crate::federation::routes())
 		.merge(crate::search::routes())
 		.with_state(state)
-		.layer(read_only_cors())
+		.layer(read_only_cors());
+	match web_dir {
+		Some(directory) => {
+			let index = directory.join("index.html");
+			app.fallback_service(ServeDir::new(&*directory).fallback(ServeFile::new(index)))
+		}
+		None => app,
+	}
 }
 
 fn read_only_cors() -> CorsLayer {
@@ -235,6 +245,10 @@ mod tests {
 	use super::*;
 
 	async fn test_app() -> (Router, tempfile::TempDir) {
+		test_app_with(None).await
+	}
+
+	async fn test_app_with(web_dir: Option<std::path::PathBuf>) -> (Router, tempfile::TempDir) {
 		let directory = tempfile::tempdir().expect("tempdir");
 		let store = Arc::new(BlobStore::new(directory.path()).await.expect("store"));
 		let metadata = Arc::new(
@@ -249,11 +263,13 @@ mod tests {
 			max_feed_page_entries: 100,
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Review,
+			web_dir: web_dir.clone(),
 		};
 		let state = AppState {
 			store,
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
+			web_dir: web_dir.map(Arc::new),
 		};
 		(router(state), directory)
 	}
@@ -363,5 +379,35 @@ mod tests {
 			.unwrap_or_default()
 			.to_ascii_uppercase();
 		assert!(!methods.contains("POST"));
+	}
+
+	#[tokio::test]
+	async fn serves_a_built_site_with_spa_fallback() {
+		let site = tempfile::tempdir().expect("site");
+		std::fs::write(site.path().join("index.html"), "<!doctype html><title>Moraine App</title>").expect("index");
+		std::fs::write(site.path().join("asset.txt"), "asset").expect("asset");
+		let (app, _directory) = test_app_with(Some(site.path().to_path_buf())).await;
+
+		let root = axum::http::Request::get("/").body(Body::empty()).expect("request");
+		let response = app.clone().oneshot(root).await.expect("response");
+		assert_eq!(response.status(), StatusCode::OK);
+		let body = to_bytes(response.into_body(), 16 * 1024).await.expect("body");
+		assert!(String::from_utf8_lossy(&body).contains("Moraine App"));
+
+		let asset = axum::http::Request::get("/asset.txt").body(Body::empty()).expect("request");
+		let response = app.clone().oneshot(asset).await.expect("response");
+		assert_eq!(response.status(), StatusCode::OK);
+
+		let spa_route = axum::http::Request::get("/p/gd:sha256:deadbeef")
+			.body(Body::empty())
+			.expect("request");
+		let response = app.clone().oneshot(spa_route).await.expect("response");
+		assert_eq!(response.status(), StatusCode::OK);
+
+		let api_miss = axum::http::Request::get("/v1/projects/nope")
+			.body(Body::empty())
+			.expect("request");
+		let response = app.oneshot(api_miss).await.expect("response");
+		assert_eq!(response.status(), StatusCode::NOT_FOUND);
 	}
 }

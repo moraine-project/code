@@ -33,6 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		store,
 		metadata,
 		capability,
+		web_dir: config.web_dir.clone().map(Arc::new),
 	};
 	let app = routes::router(state);
 

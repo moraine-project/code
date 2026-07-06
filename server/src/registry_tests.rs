@@ -53,11 +53,13 @@ async fn app_mode(
 		max_feed_page_entries: 100,
 		allow_insecure_federation_local,
 		publishing,
+		web_dir: None,
 	};
 	let state = AppState {
 		store,
 		metadata,
 		capability: Arc::new(Capability::discover(&config)),
+		web_dir: None,
 	};
 	(crate::routes::router(state), directory)
 }

@@ -434,11 +434,13 @@ mod tests {
 			max_feed_page_entries: 100,
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Review,
+			web_dir: None,
 		};
 		let state = AppState {
 			store,
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
+			web_dir: None,
 		};
 		(crate::routes::router(state), directory)
 	}

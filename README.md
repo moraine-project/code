@@ -50,6 +50,18 @@ cargo run -p moraine-server -- --data-dir ./data --bind 127.0.0.1:8080 --publish
 curl http://127.0.0.1:8080/.well-known/mod-registry
 ```
 
+To serve the built website from the same origin as the API, point the server at
+it. That is what browser authentication needs, because sessions are cookies and
+login is a `POST` the server does not offer to other origins:
+
+```sh
+cd web && npm run build:static && cd ..
+cargo run -p moraine-server -- --data-dir ./data --web-dir web/build
+```
+
+`--web-dir` serves files and falls back to `index.html` for client-side routes;
+API paths still get API responses.
+
 Publish a release with the CLI:
 
 ```sh

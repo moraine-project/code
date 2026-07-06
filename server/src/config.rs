@@ -38,4 +38,8 @@ pub struct Config {
 
 	#[arg(long, env = "MORAINE_FEDERATION_ALLOW_HTTP_LOCAL", default_value_t = false)]
 	pub allow_insecure_federation_local: bool,
+
+	/// Directory of a built website to serve from the same origin.
+	#[arg(long, env = "MORAINE_WEB_DIR")]
+	pub web_dir: Option<PathBuf>,
 }
