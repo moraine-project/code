@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{Row, SqlitePool, Transaction};
+use sqlx::{QueryBuilder, Row, SqlitePool, Transaction};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS objects (
@@ -71,6 +71,19 @@ CREATE TABLE IF NOT EXISTS submissions (
 	created_at INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS search_documents (
+	project_id TEXT PRIMARY KEY,
+	game_id TEXT NOT NULL,
+	display_name TEXT NOT NULL,
+	summary TEXT NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS search_labels (
+	project_id TEXT NOT NULL,
+	label_kind TEXT NOT NULL,
+	label_id TEXT NOT NULL,
+	PRIMARY KEY (project_id, label_kind, label_id)
+);
 CREATE TABLE IF NOT EXISTS artifact_index (
 	digest BLOB NOT NULL,
 	project_id TEXT NOT NULL,
@@ -138,6 +151,41 @@ pub struct SubmissionRow {
 	pub submitted_by: String,
 	pub created_at: i64,
 	pub updated_at: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SearchHit {
+	pub project_id: String,
+	pub game_id: String,
+	pub display_name: String,
+	pub summary: String,
+	pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SearchSort {
+	Updated,
+	Name,
+}
+
+pub struct SearchDocument<'a> {
+	pub project_id: &'a str,
+	pub game_id: &'a str,
+	pub display_name: &'a str,
+	pub summary: &'a str,
+	pub categories: &'a [String],
+	pub tags: &'a [String],
+	pub updated_at: i64,
+}
+
+pub struct SearchFilter<'a> {
+	pub text: Option<&'a str>,
+	pub game_id: Option<&'a str>,
+	pub tag: Option<&'a str>,
+	pub category: Option<&'a str>,
+	pub sort: SearchSort,
+	pub cursor: Option<(&'a str, &'a str)>,
+	pub limit: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -289,6 +337,108 @@ impl MetadataStore {
 				object_digest: row.get("object_digest"),
 				payload: row.get("payload"),
 				wire: row.get("wire"),
+			})
+			.collect())
+	}
+
+	pub async fn put_search_document(&self, document: SearchDocument<'_>) -> Result<(), sqlx::Error> {
+		let mut transaction = self.pool.begin().await?;
+		sqlx::query(
+			"INSERT INTO search_documents (project_id, game_id, display_name, summary, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)
+			 ON CONFLICT(project_id) DO UPDATE SET game_id = ?2, display_name = ?3, summary = ?4, updated_at = ?5",
+		)
+		.bind(document.project_id)
+		.bind(document.game_id)
+		.bind(document.display_name)
+		.bind(document.summary)
+		.bind(document.updated_at)
+		.execute(&mut *transaction)
+		.await?;
+		sqlx::query("DELETE FROM search_labels WHERE project_id = ?1")
+			.bind(document.project_id)
+			.execute(&mut *transaction)
+			.await?;
+		for (label_kind, labels) in [("category", document.categories), ("tag", document.tags)] {
+			for label in labels {
+				sqlx::query("INSERT OR IGNORE INTO search_labels (project_id, label_kind, label_id) VALUES (?1, ?2, ?3)")
+					.bind(document.project_id)
+					.bind(label_kind)
+					.bind(label)
+					.execute(&mut *transaction)
+					.await?;
+			}
+		}
+		transaction.commit().await?;
+		Ok(())
+	}
+
+	pub async fn search_documents(&self, filter: SearchFilter<'_>) -> Result<Vec<SearchHit>, sqlx::Error> {
+		let mut query = QueryBuilder::new(
+			"SELECT project_id, game_id, display_name, summary, updated_at FROM search_documents WHERE 1 = 1",
+		);
+		if let Some(text) = filter.text {
+			let pattern = format!("%{}%", text.to_lowercase());
+			query
+				.push(" AND (lower(display_name) LIKE ")
+				.push_bind(pattern.clone())
+				.push(" OR lower(summary) LIKE ")
+				.push_bind(pattern)
+				.push(")");
+		}
+		if let Some(game) = filter.game_id {
+			query.push(" AND game_id = ").push_bind(game);
+		}
+		if let Some(tag) = filter.tag {
+			query
+				.push(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'tag' AND l.label_id = ")
+				.push_bind(tag)
+				.push(")");
+		}
+		if let Some(category) = filter.category {
+			query
+				.push(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'category' AND l.label_id = ")
+				.push_bind(category)
+				.push(")");
+		}
+		match filter.sort {
+			SearchSort::Updated => {
+				if let Some((value, id)) = filter.cursor {
+					let updated = value.parse::<i64>().unwrap_or(i64::MAX);
+					query
+						.push(" AND (updated_at < ")
+						.push_bind(updated)
+						.push(" OR (updated_at = ")
+						.push_bind(updated)
+						.push(" AND project_id < ")
+						.push_bind(id)
+						.push("))");
+				}
+				query.push(" ORDER BY updated_at DESC, project_id DESC");
+			}
+			SearchSort::Name => {
+				if let Some((value, id)) = filter.cursor {
+					query
+						.push(" AND (display_name COLLATE NOCASE > ")
+						.push_bind(value.to_string())
+						.push(" OR (display_name COLLATE NOCASE = ")
+						.push_bind(value.to_string())
+						.push(" AND project_id > ")
+						.push_bind(id)
+						.push("))");
+				}
+				query.push(" ORDER BY display_name COLLATE NOCASE ASC, project_id ASC");
+			}
+		}
+		query.push(" LIMIT ").push_bind(filter.limit);
+		let rows = query.build().fetch_all(&self.pool).await?;
+		Ok(rows
+			.into_iter()
+			.map(|row| SearchHit {
+				project_id: row.get("project_id"),
+				game_id: row.get("game_id"),
+				display_name: row.get("display_name"),
+				summary: row.get("summary"),
+				updated_at: row.get("updated_at"),
 			})
 			.collect())
 	}

@@ -213,7 +213,28 @@ Allowing every read origin is safe here because reads are public and carry no
 credentials. An operator that wants to restrict reads can narrow the allowed
 origin; the protocol does not require a particular policy.
 
+## Search
+
+`GET /v1/search?q=&game=&tag=&category=&sort=&cursor=&limit=` returns the
+portable search response as JSON. Search runs over a local index built from
+validated records: a project enters the index when a `profile-updated` entry
+is accepted, so the name and summary come from the publisher's signed profile,
+never from a directory edit. The index is disposable and can be rebuilt from
+stored objects.
+
+`q` matches the display name and summary case-insensitively. `game`, `tag`, and
+`category` are exact facet filters. `sort` is `updated` (default) or `name`.
+`limit` is bounded to 100. Pagination uses an opaque `next_cursor` and keyset
+ordering, not an offset, so it does not skip or repeat rows under concurrent
+writes.
+
+Ranking is the instance's own policy and never a safety signal. The response's
+`source_instance` names the host that answered, and merging several instances'
+responses is by `project_id`, keeping each source's attribution. Results are
+not signed objects; a client that needs to trust a result fetches and verifies
+the underlying records.
+
 ## Not implemented yet
 
 Game and loader definition hosting, range caching of object documents,
-directory search, advisories, and notifications.
+advisories, and notifications.

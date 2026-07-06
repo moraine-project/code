@@ -54,9 +54,29 @@ export const digestLookupSchema = z.object({
 	matches: z.array(lookupMatchSchema)
 });
 
+export const searchResultSchema = z.object({
+	project_id: z.string(),
+	game_id: z.string(),
+	display_name: z.string(),
+	summary: z.string(),
+	icon_url: z.string().nullable().optional(),
+	listing_state: z.string(),
+	source_instance: z.string(),
+	annotations: z.array(z.unknown()).optional(),
+	instance_popularity: z.unknown().nullable().optional()
+});
+
+export const searchResponseSchema = z.object({
+	protocol: z.number(),
+	results: z.array(searchResultSchema),
+	next_cursor: z.string().nullable().optional(),
+	total_estimate: z.number().nullable().optional()
+});
+
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
 export type Profile = z.infer<typeof profileSchema>;
 export type DigestLookup = z.infer<typeof digestLookupSchema>;
+export type SearchResult = z.infer<typeof searchResultSchema>;
 export type FeedEntry = z.infer<typeof feedEntrySchema>;
 export type FeedPage = z.infer<typeof feedPageSchema>;
 
@@ -124,6 +144,25 @@ export async function lookupDigest(base: string, digest: string, fetchFn: Fetche
 		throw new Error(`home returned ${response.status} for the digest`);
 	}
 	return digestLookupSchema.parse(await response.json());
+}
+
+export async function searchProjects(
+	base: string,
+	query: { q?: string; game?: string; tag?: string; category?: string; sort?: string; limit?: number },
+	fetchFn: Fetcher = fetch
+): Promise<SearchResult[]> {
+	const params = new URLSearchParams();
+	if (query.q) params.set('q', query.q);
+	if (query.game) params.set('game', query.game);
+	if (query.tag) params.set('tag', query.tag);
+	if (query.category) params.set('category', query.category);
+	if (query.sort) params.set('sort', query.sort);
+	params.set('limit', String(query.limit ?? 20));
+	const response = await fetchFn(`${normalizeBase(base)}/v1/search?${params.toString()}`);
+	if (!response.ok) {
+		throw new Error(`home returned ${response.status} for the search`);
+	}
+	return searchResponseSchema.parse(await response.json()).results;
 }
 
 export function shortDigest(id: string, length = 12): string {

@@ -34,6 +34,7 @@ pub fn router(state: AppState) -> Router {
 		.merge(crate::auth::routes())
 		.merge(crate::review::routes())
 		.merge(crate::federation::routes())
+		.merge(crate::search::routes())
 		.with_state(state)
 		.layer(read_only_cors())
 }

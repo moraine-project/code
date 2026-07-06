@@ -8,6 +8,7 @@ mod password;
 mod registry;
 mod review;
 mod routes;
+mod search;
 mod store;
 mod verify;
 

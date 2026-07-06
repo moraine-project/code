@@ -517,11 +517,34 @@ async fn serves_json_views_of_profile_and_release() {
 		axum::http::Request::get(format!("/v1/projects/{project_id}/releases/{}", hex::encode(release_digest)))
 			.body(Body::empty())
 			.expect("request");
-	let response = application.oneshot(release_request).await.expect("response");
+	let response = application.clone().oneshot(release_request).await.expect("response");
 	assert_eq!(response.status(), StatusCode::OK);
 	let view = body_json(response).await;
 	assert_eq!(view["human_version"], "1.0.0");
 	assert_eq!(view["artifacts"][0]["is_primary"], true);
+
+	let search = axum::http::Request::get("/v1/search?q=example")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(search).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let page = body_json(response).await;
+	assert_eq!(page["results"].as_array().expect("results").len(), 1);
+	assert_eq!(page["results"][0]["display_name"], "Example Mod");
+
+	let tagged = axum::http::Request::get("/v1/search?tag=client")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(tagged).await.expect("response");
+	let page = body_json(response).await;
+	assert_eq!(page["results"].as_array().expect("results").len(), 1);
+
+	let missing = axum::http::Request::get("/v1/search?tag=server")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(missing).await.expect("response");
+	let page = body_json(response).await;
+	assert!(page["results"].as_array().expect("results").is_empty());
 }
 
 #[tokio::test]

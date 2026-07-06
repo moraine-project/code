@@ -15,7 +15,8 @@
 		<div class="navbar-start">
 			<a class="btn btn-ghost text-xl" href="/">Moraine</a>
 		</div>
-		<div class="navbar-end">
+		<div class="navbar-end gap-2">
+			<a class="btn btn-ghost" href="/search">Search</a>
 			<span class="badge badge-ghost">federated registry</span>
 		</div>
 	</div>

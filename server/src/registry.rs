@@ -244,6 +244,11 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	if let Err(error) = state.metadata.append_feed(&row).await {
 		return Err(Box::new(storage_error(error)));
 	}
+	if row.kind == "profile-updated"
+		&& let Err(error) = crate::search::refresh_search_document(state, &row.object_digest).await
+	{
+		return Err(Box::new(storage_error(error)));
+	}
 	Ok((row.seq, entry_id))
 }
 
