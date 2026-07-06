@@ -1,8 +1,10 @@
 <script lang="ts">
-	import { blobUrl, shortDigest } from '$lib/api/registry';
+	import { blobUrl, digestHex, fileSha256, shortDigest } from '$lib/api/registry';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+	let checking = $state(false);
+	let checkResult = $state<{ file: string; match: boolean } | null>(null);
 
 	function formatTime(seconds: number): string {
 		return new Date(seconds * 1000).toLocaleString();
@@ -12,6 +14,23 @@
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
 		return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+	}
+
+	async function checkFile(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file || !data.release) {
+			return;
+		}
+		checking = true;
+		checkResult = null;
+		try {
+			const actual = await fileSha256(file);
+			const match = data.release.artifacts.some((artifact) => digestHex(artifact.digest) === actual);
+			checkResult = { file: file.name, match };
+		} finally {
+			checking = false;
+		}
 	}
 </script>
 
@@ -77,6 +96,43 @@
 					A download delivers bytes; it does not prove the file is safe. Use the verifier CLI to
 					check the signature and digest.
 				</p>
+			</div>
+		</section>
+
+		<section class="card card-border">
+			<div class="card-body">
+				<h2 class="card-title">Check a downloaded file</h2>
+				<p class="text-base-content/80 text-sm">
+					Pick the file you saved. The browser hashes it locally and compares the bytes to this
+					release's artifacts.
+				</p>
+				<div class="flex items-center gap-2">
+					<input
+						type="file"
+						class="file-input file-input-bordered w-full max-w-md"
+						onchange={checkFile}
+						disabled={checking}
+						aria-label="File to check against this release"
+					/>
+					{#if checking}
+						<span class="loading loading-spinner loading-sm"></span>
+					{/if}
+				</div>
+				{#if checkResult}
+					{#if checkResult.match}
+						<div role="alert" class="alert alert-success">
+							<span>{checkResult.file} matches an artifact in this release.</span>
+						</div>
+					{:else}
+						<div role="alert" class="alert alert-error">
+							<span>{checkResult.file} does not match any artifact digest in this release.</span>
+						</div>
+					{/if}
+					<p class="text-base-content/60 text-sm">
+						This checks the bytes only. It does not check the publisher's signature; the verifier
+						CLI does that.
+					</p>
+				{/if}
 			</div>
 		</section>
 

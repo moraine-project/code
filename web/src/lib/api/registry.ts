@@ -225,8 +225,17 @@ export async function fetchRelease(
 }
 
 export function blobUrl(base: string, digest: string): string {
-	const hex = digest.startsWith('sha256:') ? digest.slice('sha256:'.length) : digest;
-	return `${normalizeBase(base)}/v1/blobs/sha256/${hex}`;
+	return `${normalizeBase(base)}/v1/blobs/sha256/${digestHex(digest)}`;
+}
+
+export function digestHex(digest: string): string {
+	return digest.startsWith('sha256:') ? digest.slice('sha256:'.length) : digest;
+}
+
+export async function fileSha256(file: File): Promise<string> {
+	// PERF: WebCrypto has no streaming digest, so large files buffer in memory; the CLI streams.
+	const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+	return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 export function shortDigest(id: string, length = 12): string {

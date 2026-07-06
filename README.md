@@ -107,6 +107,10 @@ requests with permissive CORS and no credentials, so a static site on another
 origin can resolve projects and fetch blobs. Writes are not offered
 cross-origin.
 
+A release page can hash a file you already downloaded and check it against the
+release's artifact digests. That is a byte check in the browser; the verifier
+CLI is still what checks the publisher's signature.
+
 ## Layout
 
 ```
