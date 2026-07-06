@@ -163,6 +163,13 @@ async fn store_object(State(state): State<AppState>, Path((id, kind)): Path<(Str
 }
 
 async fn append_feed(State(state): State<AppState>, Path(id): Path<String>, body: Bytes) -> Response {
+	if !state.capability.is_open() {
+		return (
+			StatusCode::CONFLICT,
+			"publishing is under review; submit through /v1/submissions",
+		)
+			.into_response();
+	}
 	match ingest_feed(&state, &id, &body).await {
 		Ok((seq, entry)) => (StatusCode::CREATED, Json(FeedReceipt { seq, entry })).into_response(),
 		Err(response) => *response,

@@ -105,10 +105,15 @@ system can hold a release key while the root stays offline.
 delegation is not revoked by a later one: revocation will need an explicit
 revocation record tied to the feed sequence.
 
-The direct import routes are still signature-gated and unauthenticated: anyone
-can submit a validly signed object. The submission flow below is the
-account-gated path an author uses, and it is the one that honors the
-`review`/`open` setting.
+Object import is signature-gated but unauthenticated: anyone can store a
+validly signed object, because the signature is what authorizes it.
+
+Appending a feed entry directly, though, is accepted only while the instance is
+`open`. Under `review` it returns `409`, and the only way to add a feed entry
+is the submission flow below. That closes the obvious bypass: admission review
+would mean nothing if a publisher could commit straight to the feed. Federation
+ingest is unaffected, because a directory mirroring a home is not publishing to
+its own feed.
 
 ## Admission review
 

@@ -28,6 +28,10 @@ fn sample_id(label: &str) -> String {
 }
 
 async fn app() -> (Router, tempfile::TempDir) {
+	app_mode(crate::config::Publishing::Open, false).await
+}
+
+async fn app_review() -> (Router, tempfile::TempDir) {
 	app_mode(crate::config::Publishing::Review, false).await
 }
 
@@ -304,7 +308,7 @@ async fn publish_project(application: &Router, signer: &SigningKey) -> (String, 
 
 #[tokio::test]
 async fn review_mode_queues_then_accepts() {
-	let (application, _directory) = app().await;
+	let (application, _directory) = app_review().await;
 	let signer = key(1);
 	let (project_id, release_digest) = publish_project(&application, &signer).await;
 	let (session, csrf) = login(&application, "reviewer@example.org").await;
@@ -376,7 +380,7 @@ async fn open_mode_auto_accepts() {
 
 #[tokio::test]
 async fn reject_requires_a_reason_code() {
-	let (application, _directory) = app().await;
+	let (application, _directory) = app_review().await;
 	let signer = key(5);
 	let (project_id, release_digest) = publish_project(&application, &signer).await;
 	let (session, csrf) = login(&application, "reviewer@example.org").await;
@@ -575,4 +579,17 @@ async fn looks_up_a_release_from_an_artifact_digest() {
 	let response = application.oneshot(unknown).await.expect("response");
 	let view = body_json(response).await;
 	assert!(view["matches"].as_array().expect("matches").is_empty());
+}
+
+#[tokio::test]
+async fn review_mode_refuses_direct_feed_append() {
+	let (application, _directory) = app_review().await;
+	let signer = key(9);
+	let (project_id, release_digest) = publish_project(&application, &signer).await;
+	let feed = feed_wire(&signer, &project_id, 1, None, release_digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(feed))
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CONFLICT);
 }
