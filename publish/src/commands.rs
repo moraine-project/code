@@ -5,6 +5,7 @@ use moraine_model::artifact::Artifact;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
+use moraine_model::profile::ProfileRevision;
 use moraine_model::release::ReleasePayload;
 use moraine_model::signed::sign_payload;
 
@@ -103,6 +104,46 @@ pub async fn release(
 	Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn profile(
+	key_path: &Path,
+	home_url: &str,
+	project_id: &str,
+	game_id: &str,
+	name: &str,
+	summary: &str,
+	description: &str,
+	categories: Vec<String>,
+	tags: Vec<String>,
+) -> Result<(), String> {
+	let key = keyfile::load(key_path)?;
+	let profile = ProfileRevision {
+		protocol: 1,
+		project_id: project_id.to_string(),
+		game_id: game_id.to_string(),
+		revision_nonce: random_nonce(),
+		display_name: name.to_string(),
+		summary: summary.to_string(),
+		description: description.to_string(),
+		icon: None,
+		gallery: Vec::new(),
+		links: Vec::new(),
+		communities: Vec::new(),
+		categories,
+		tags,
+		rights: None,
+		declared_time: now(),
+	};
+	let signed = sign_payload(ObjectKind::Profile, &profile, &[&key]);
+	let home = Home::new(home_url)?;
+	let receipt = home
+		.post_wire(&format!("/v1/projects/{project_id}/objects/profile"), signed.wire_bytes())
+		.await?;
+	println!("profile: {}", receipt["id"].as_str().unwrap_or("?"));
+	println!("next: publish or submit it with --object <profile-id> --kind profile-updated");
+	Ok(())
+}
+
 pub async fn upload(home_url: &str, file: &Path, api_key: Option<String>) -> Result<(), String> {
 	let metadata = std::fs::metadata(file).map_err(|error| format!("{}: {error}", file.display()))?;
 	let handle = tokio::fs::File::open(file)
@@ -117,10 +158,17 @@ pub async fn upload(home_url: &str, file: &Path, api_key: Option<String>) -> Res
 	Ok(())
 }
 
-pub async fn publish(key_path: &Path, home_url: &str, project_id: &str, object_id: &str) -> Result<(), String> {
+pub async fn publish(key_path: &Path, home_url: &str, project_id: &str, object_id: &str, kind: &str) -> Result<(), String> {
 	let key = keyfile::load(key_path)?;
 	let home = Home::new(home_url)?;
-	let entry = next_feed_entry(&home, project_id, object_id, "release-published").await?;
+	let capability = home
+		.get_json("/.well-known/mod-registry")
+		.await
+		.unwrap_or(serde_json::Value::Null);
+	if capability["publishing"] == "review" {
+		return Err("this home reviews submissions; use `submit --api-key <token>` instead of `publish`".to_string());
+	}
+	let entry = next_feed_entry(&home, project_id, object_id, kind).await?;
 	let signed = sign_payload(ObjectKind::FeedEntry, &entry, &[&key]);
 	let receipt = home
 		.post_wire(&format!("/v1/projects/{project_id}/feed"), signed.wire_bytes())
@@ -135,11 +183,12 @@ pub async fn submit(
 	home_url: &str,
 	project_id: &str,
 	object_id: &str,
+	kind: &str,
 	api_key: Option<String>,
 ) -> Result<(), String> {
 	let key = keyfile::load(key_path)?;
 	let home = Home::new(home_url)?;
-	let entry = next_feed_entry(&home, project_id, object_id, "release-published").await?;
+	let entry = next_feed_entry(&home, project_id, object_id, kind).await?;
 	let signed = sign_payload(ObjectKind::FeedEntry, &entry, &[&key]);
 	let receipt = home
 		.post_wire_with_token("/v1/submissions", signed.wire_bytes(), api_key.as_deref())

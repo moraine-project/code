@@ -61,7 +61,28 @@ enum Command {
 		#[arg(long, env = "MORAINE_API_KEY")]
 		api_key: Option<String>,
 	},
-	/// Append a feed entry that publishes a stored release object.
+	/// Sign and store a project profile revision.
+	Profile {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		home: String,
+		#[arg(long)]
+		project: String,
+		#[arg(long)]
+		game: String,
+		#[arg(long)]
+		name: String,
+		#[arg(long, default_value = "")]
+		summary: String,
+		#[arg(long, default_value = "")]
+		description: String,
+		#[arg(long = "category")]
+		categories: Vec<String>,
+		#[arg(long = "tag")]
+		tags: Vec<String>,
+	},
+	/// Append a feed entry that publishes a stored object.
 	Publish {
 		#[arg(long)]
 		key: PathBuf,
@@ -71,6 +92,8 @@ enum Command {
 		project: String,
 		#[arg(long)]
 		object: String,
+		#[arg(long, default_value = "release-published")]
+		kind: String,
 	},
 	/// Submit a signed feed entry for admission review.
 	Submit {
@@ -82,6 +105,8 @@ enum Command {
 		project: String,
 		#[arg(long)]
 		object: String,
+		#[arg(long, default_value = "release-published")]
+		kind: String,
 		#[arg(long, env = "MORAINE_API_KEY")]
 		api_key: Option<String>,
 	},
@@ -118,19 +143,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			.await
 		}
 		Command::Upload { home, file, api_key } => commands::upload(&home, &file, api_key).await,
+		Command::Profile {
+			key,
+			home,
+			project,
+			game,
+			name,
+			summary,
+			description,
+			categories,
+			tags,
+		} => commands::profile(&key, &home, &project, &game, &name, &summary, &description, categories, tags).await,
 		Command::Publish {
 			key,
 			home,
 			project,
 			object,
-		} => commands::publish(&key, &home, &project, &object).await,
+			kind,
+		} => commands::publish(&key, &home, &project, &object, &kind).await,
 		Command::Submit {
 			key,
 			home,
 			project,
 			object,
+			kind,
 			api_key,
-		} => commands::submit(&key, &home, &project, &object, api_key).await,
+		} => commands::submit(&key, &home, &project, &object, &kind, api_key).await,
 	};
 	if let Err(message) = result {
 		eprintln!("error: {message}");

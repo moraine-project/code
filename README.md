@@ -63,10 +63,21 @@ cargo run -p moraine-publish -- publish --key publisher.key --home http://127.0.
   --project <project-id> --object <release-id>
 ```
 
-The key is your project's root. Keep it safe: losing it means losing the
-project identity. `init` signs a fresh project, `upload` stores the artifact
-bytes at the home, `release` signs and stores a release object, and `publish`
-appends the feed entry that makes it visible.
+A project has a display name once you publish a profile:
+
+```sh
+cargo run -p moraine-publish -- profile --key publisher.key --home http://127.0.0.1:8080 \
+  --project <project-id> --game <game-id> --name "Minimap" --summary "A map overlay" --tag client
+cargo run -p moraine-publish -- publish --key publisher.key --home http://127.0.0.1:8080 \
+  --project <project-id> --object <profile-id> --kind profile-updated
+```
+
+`publish` and `submit` take `--kind` and default to `release-published`. The
+key is your project's root. Keep it safe: losing it means losing the project
+identity. `init` signs a fresh project, `upload` stores the artifact bytes at
+the home, `release` signs and stores a release object, `profile` signs and
+stores display metadata, and `publish` appends the feed entry that makes an
+object visible.
 
 To go through admission review instead of publishing directly, use `submit`
 with an API key that carries `submissions:write`:
@@ -77,7 +88,9 @@ cargo run -p moraine-publish -- submit --key publisher.key --home http://127.0.0
 ```
 
 Under `open` publishing it is auto-accepted; under `review` it waits in the
-queue, and `MORAINE_API_KEY` can supply the token instead of the flag.
+queue, and `MORAINE_API_KEY` can supply the token instead of the flag. `publish`
+refuses early on a `review` home and points at `submit` rather than failing
+with a bare conflict.
 
 Run the website against it:
 
