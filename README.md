@@ -127,6 +127,11 @@ The account console (`/account`) and review queue (`/review`) use session
 cookies, so they work when the site is served by the registry under one origin
 via `--web-dir`. From a separate origin only the public read pages work.
 
+The publish console (`/publish`) uploads an artifact to the home and prints the
+exact `moraine-publish` command to run locally, filled in with what you entered
+and the origin you are on. Signing stays on your machine; the browser never
+holds a release key.
+
 ## Layout
 
 ```

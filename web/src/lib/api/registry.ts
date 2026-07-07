@@ -238,6 +238,34 @@ export async function fileSha256(file: File): Promise<string> {
 	return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+export const uploadReceiptSchema = z.object({
+	digest: z.string(),
+	size: z.number()
+});
+
+export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
+
+export async function uploadBlob(file: File, fetchFn: Fetcher = fetch): Promise<UploadReceipt> {
+	const response = await fetchFn('/v1/blobs', {
+		method: 'POST',
+		headers: { 'content-type': 'application/octet-stream' },
+		body: file
+	});
+	if (!response.ok) {
+		throw new Error(`upload failed (${response.status})`);
+	}
+	return uploadReceiptSchema.parse(await response.json());
+}
+
+export async function publishingMode(fetchFn: Fetcher = fetch): Promise<string> {
+	const response = await fetchFn('/.well-known/mod-registry');
+	if (!response.ok) {
+		return 'review';
+	}
+	const document = await response.json();
+	return typeof document.publishing === 'string' ? document.publishing : 'review';
+}
+
 export function shortDigest(id: string, length = 12): string {
 	const hex = id.startsWith('gd:sha256:') ? id.slice('gd:sha256:'.length) : id;
 	if (hex.length <= length) {
