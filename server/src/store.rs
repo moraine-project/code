@@ -71,6 +71,26 @@ CREATE TABLE IF NOT EXISTS submissions (
 	created_at INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS orgs (
+	id TEXT PRIMARY KEY,
+	handle TEXT NOT NULL UNIQUE,
+	display_name TEXT NOT NULL,
+	created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS org_members (
+	org_id TEXT NOT NULL,
+	user_id TEXT NOT NULL,
+	role TEXT NOT NULL,
+	added_at INTEGER NOT NULL,
+	PRIMARY KEY (org_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS teams (
+	id TEXT PRIMARY KEY,
+	org_id TEXT NOT NULL,
+	parent_team_id TEXT,
+	display_name TEXT NOT NULL,
+	created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS search_documents (
 	project_id TEXT PRIMARY KEY,
 	game_id TEXT NOT NULL,

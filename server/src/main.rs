@@ -4,6 +4,7 @@ mod blob;
 mod capability;
 mod config;
 mod federation;
+mod orgs;
 mod password;
 mod registry;
 mod review;

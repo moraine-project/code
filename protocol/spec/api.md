@@ -239,6 +239,30 @@ responses is by `project_id`, keeping each source's attribution. Results are
 not signed objects; a client that needs to trust a result fetches and verifies
 the underlying records.
 
+## Organizations
+
+An organization is a named group that owns projects. It is not a login: it has
+no password and no session, and every action taken for it is performed by an
+authenticated member whose role permits it.
+
+`POST /v1/orgs` creates one from a `handle` and `display_name`; the handle is
+validated and unique per instance, and the creator becomes its first `owner`.
+
+- `GET /v1/orgs/{handle}` returns the org and its teams to a member.
+- `GET /v1/orgs/{handle}/members` lists members with their roles.
+- `POST /v1/orgs/{handle}/members` adds a member by email with a role.
+- `DELETE /v1/orgs/{handle}/members/{user_id}` removes a member.
+- `GET`/`POST /v1/orgs/{handle}/teams` list and create teams; a team's optional
+  parent must belong to the same org, so nesting stays inside one organization.
+
+Roles are `owner`, `admin`, and `member`. Owners and admins manage membership
+and teams, only an owner may grant `owner`, and an org must always keep at
+least one owner, so the last one cannot be removed.
+
+None of this touches signing. An org role manages a project page; it does not
+authorize a release. Signing authority still comes only from a key delegation
+under the project's root.
+
 ## Not implemented yet
 
 Game and loader definition hosting, range caching of object documents,
