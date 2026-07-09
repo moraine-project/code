@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use axum::body::to_bytes;
+use axum::body::{Body, to_bytes};
+use axum::http::header;
 use moraine_crypto::{ObjectKind as Kind, SigningKey, object_id};
 use moraine_model::artifact::Artifact;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
 use moraine_model::delegation::{Delegation, KeyDelegation, OwnerRef, OwnershipTransfer};
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
-use moraine_model::release::ReleasePayload;
+use moraine_model::release::{ReleasePayload, Withdrawal};
 use moraine_model::signed::sign_payload;
 use tokio::net::TcpListener;
 use tower::ServiceExt;
@@ -703,4 +704,43 @@ async fn ownership_transfer_requires_two_signatures_and_updates_the_owner() {
 		.await
 		.expect("response");
 	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn withdrawal_marks_a_release_without_rewriting_it() {
+	let (application, _directory) = app().await;
+	let signer = key(12);
+	let (project_id, release_digest) = publish_project(&application, &signer).await;
+	let release_id = format!("gd:sha256:{}", hex::encode(release_digest));
+
+	let withdrawal = Withdrawal {
+		protocol: 1,
+		release_id: release_id.clone(),
+		reason: "compromise".to_string(),
+		note: Some("automated key leak".to_string()),
+		declared_time: 1_760_000_100,
+	};
+	let signed = sign_payload(Kind::Release, &withdrawal, &[&signer]);
+	let digest = object_id(Kind::Release, &signed.payload_bytes);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+		.body(Body::from(signed.wire_bytes()))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let entry = feed_wire_kind(&signer, &project_id, 1, None, digest, "release-withdrawn");
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(entry))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let request = axum::http::Request::get(format!("/v1/projects/{project_id}/releases/{}", hex::encode(release_digest)))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	let view = body_json(response).await;
+	assert_eq!(view["withdrawal"]["reason"], "compromise");
+	assert_eq!(view["withdrawal"]["note"], "automated key leak");
+	assert_eq!(view["human_version"], "1.0.0");
 }

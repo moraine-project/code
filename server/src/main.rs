@@ -12,6 +12,7 @@ mod routes;
 mod search;
 mod store;
 mod verify;
+mod views;
 
 use std::sync::Arc;
 

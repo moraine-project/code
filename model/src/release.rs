@@ -214,11 +214,75 @@ impl Canonical for ReleasePayload {
 	}
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Withdrawal {
+	pub protocol: u32,
+	pub release_id: String,
+	pub reason: String,
+	pub note: Option<String>,
+	pub declared_time: i64,
+}
+
+impl Withdrawal {
+	pub const REASONS: &'static [&'static str] = &["compromise", "harmful", "broken", "legal", "author-preference"];
+
+	pub fn validate(&self) -> Result<(), ModelError> {
+		if self.protocol != 1 {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "protocol"));
+		}
+		if self.release_id.is_empty() {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "release_id"));
+		}
+		if !Self::REASONS.contains(&self.reason.as_str()) {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "reason"));
+		}
+		Ok(())
+	}
+}
+
+impl Canonical for Withdrawal {
+	fn to_value(&self) -> Value {
+		let mut pairs = vec![
+			("protocol", Value::int(i64::from(self.protocol))),
+			("type", Value::text("withdrawal")),
+			("release_id", Value::text(self.release_id.clone())),
+			("reason", Value::text(self.reason.clone())),
+		];
+		if let Some(note) = &self.note {
+			pairs.push(("note", Value::text(note.clone())));
+		}
+		pairs.push(("declared_time", Value::int(self.declared_time)));
+		map_of("Withdrawal", pairs)
+	}
+
+	fn from_value(value: Value) -> Result<Self, ModelError> {
+		let fields = Fields::new("Withdrawal", value)?.reject_unknown(&[
+			"protocol",
+			"type",
+			"release_id",
+			"reason",
+			"note",
+			"declared_time",
+		])?;
+		expect_type(&fields, "withdrawal")?;
+		let withdrawal = Self {
+			protocol: expect_u32(fields.required("protocol")?, "protocol")?,
+			release_id: expect_text(fields.required("release_id")?, "release_id")?,
+			reason: expect_text(fields.required("reason")?, "reason")?,
+			note: fields.optional("note").map(|v| expect_text(v, "note")).transpose()?,
+			declared_time: expect_i64(fields.required("declared_time")?, "declared_time")?,
+		};
+		withdrawal.validate()?;
+		Ok(withdrawal)
+	}
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReleaseObject {
 	Release(ReleasePayload),
 	Location(LocationRecord),
+	Withdrawal(Withdrawal),
 }
 
 impl Canonical for ReleaseObject {
@@ -226,6 +290,7 @@ impl Canonical for ReleaseObject {
 		match self {
 			Self::Release(release) => release.to_value(),
 			Self::Location(location) => location.to_value(),
+			Self::Withdrawal(withdrawal) => withdrawal.to_value(),
 		}
 	}
 
@@ -237,6 +302,7 @@ impl Canonical for ReleaseObject {
 		match discriminant {
 			"release" => Ok(Self::Release(ReleasePayload::from_value(value)?)),
 			"location" => Ok(Self::Location(LocationRecord::from_value(value)?)),
+			"withdrawal" => Ok(Self::Withdrawal(Withdrawal::from_value(value)?)),
 			_ => Err(ModelError::field(RejectReason::InvalidFieldValue, "type")),
 		}
 	}

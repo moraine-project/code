@@ -94,6 +94,15 @@ cargo run -p moraine-publish -- publish --key publisher.key --home http://127.0.
   --project <project-id> --object <profile-id> --kind profile-updated
 ```
 
+Withdraw a release without rewriting it:
+
+```sh
+cargo run -p moraine-publish -- withdraw --key publisher.key --home http://127.0.0.1:8080 \
+  --project <project-id> --release <release-id> --reason compromise --note "key leak"
+cargo run -p moraine-publish -- publish --key publisher.key --home http://127.0.0.1:8080 \
+  --project <project-id> --object <withdrawal-id> --kind release-withdrawn
+```
+
 Transfer ownership with both sides signing:
 
 ```sh

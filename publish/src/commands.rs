@@ -7,7 +7,7 @@ use moraine_model::delegation::{Delegation, OwnerRef, OwnershipTransfer};
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::profile::ProfileRevision;
-use moraine_model::release::ReleasePayload;
+use moraine_model::release::{ReleasePayload, Withdrawal};
 use moraine_model::signed::sign_payload;
 
 use crate::home::Home;
@@ -142,6 +142,32 @@ pub async fn profile(
 		.await?;
 	println!("profile: {}", receipt["id"].as_str().unwrap_or("?"));
 	println!("next: publish or submit it with --object <profile-id> --kind profile-updated");
+	Ok(())
+}
+
+pub async fn withdraw(
+	key_path: &Path,
+	home_url: &str,
+	project_id: &str,
+	release_id: &str,
+	reason: &str,
+	note: Option<String>,
+) -> Result<(), String> {
+	let key = keyfile::load(key_path)?;
+	let withdrawal = Withdrawal {
+		protocol: 1,
+		release_id: release_id.to_string(),
+		reason: reason.to_string(),
+		note,
+		declared_time: now(),
+	};
+	let signed = sign_payload(ObjectKind::Release, &withdrawal, &[&key]);
+	let home = Home::new(home_url)?;
+	let receipt = home
+		.post_wire(&format!("/v1/projects/{project_id}/objects/release"), signed.wire_bytes())
+		.await?;
+	println!("withdrawal: {}", receipt["id"].as_str().unwrap_or("?"));
+	println!("next: publish or submit it with --object <withdrawal-id> --kind release-withdrawn");
 	Ok(())
 }
 

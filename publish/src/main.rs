@@ -52,6 +52,22 @@ enum Command {
 		#[arg(long)]
 		loader: Option<String>,
 	},
+	/// Sign a withdrawal for a release; the release record stays intact.
+	Withdraw {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		home: String,
+		#[arg(long)]
+		project: String,
+		#[arg(long)]
+		release: String,
+		/// One of compromise, harmful, broken, legal, author-preference.
+		#[arg(long)]
+		reason: String,
+		#[arg(long)]
+		note: Option<String>,
+	},
 	/// Transfer project ownership; needs the previous and new owner keys.
 	Transfer {
 		#[arg(long)]
@@ -159,6 +175,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			)
 			.await
 		}
+		Command::Withdraw {
+			key,
+			home,
+			project,
+			release,
+			reason,
+			note,
+		} => commands::withdraw(&key, &home, &project, &release, &reason, note).await,
 		Command::Transfer {
 			key,
 			cosign_key,

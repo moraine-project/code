@@ -106,6 +106,14 @@ CREATE TABLE IF NOT EXISTS search_labels (
 	label_id TEXT NOT NULL,
 	PRIMARY KEY (project_id, label_kind, label_id)
 );
+CREATE TABLE IF NOT EXISTS withdrawals (
+	project_id TEXT NOT NULL,
+	release_id TEXT NOT NULL,
+	reason TEXT NOT NULL,
+	note TEXT,
+	declared_time INTEGER NOT NULL,
+	PRIMARY KEY (project_id, release_id)
+);
 CREATE TABLE IF NOT EXISTS artifact_index (
 	digest BLOB NOT NULL,
 	project_id TEXT NOT NULL,
@@ -219,15 +227,6 @@ pub struct ArtifactMatchRow {
 }
 
 #[derive(Debug, Clone)]
-pub struct SubscriptionRow {
-	pub home_url: String,
-	pub project_id: String,
-	pub cursor_seq: i64,
-	pub status: String,
-	pub updated_at: i64,
-}
-
-#[derive(Debug, Clone)]
 pub struct ReviewDecisionRow {
 	pub id: String,
 	pub submission_id: String,
@@ -238,6 +237,13 @@ pub struct ReviewDecisionRow {
 	pub reason_taxonomy_version: u32,
 	pub decided_at: i64,
 	pub appeal_route: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WithdrawalRow {
+	pub reason: String,
+	pub note: Option<String>,
+	pub declared_time: i64,
 }
 
 pub struct MetadataStore {
@@ -480,6 +486,43 @@ impl MetadataStore {
 			.collect())
 	}
 
+	pub async fn record_withdrawal(
+		&self,
+		project_id: &str,
+		release_id: &str,
+		reason: &str,
+		note: Option<&str>,
+		declared_time: i64,
+	) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"INSERT INTO withdrawals (project_id, release_id, reason, note, declared_time) VALUES (?1, ?2, ?3, ?4, ?5)
+			 ON CONFLICT(project_id, release_id) DO UPDATE SET reason = ?3, note = ?4, declared_time = ?5",
+		)
+		.bind(project_id)
+		.bind(release_id)
+		.bind(reason)
+		.bind(note)
+		.bind(declared_time)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
+	pub async fn withdrawal(&self, project_id: &str, release_id: &str) -> Result<Option<WithdrawalRow>, sqlx::Error> {
+		let row = sqlx::query(
+			"SELECT release_id, reason, note, declared_time FROM withdrawals WHERE project_id = ?1 AND release_id = ?2",
+		)
+		.bind(project_id)
+		.bind(release_id)
+		.fetch_optional(&self.pool)
+		.await?;
+		Ok(row.map(|row| WithdrawalRow {
+			reason: row.get("reason"),
+			note: row.get("note"),
+			declared_time: row.get("declared_time"),
+		}))
+	}
+
 	pub async fn index_artifact(&self, digest: &[u8], project_id: &str, release_digest: &[u8]) -> Result<(), sqlx::Error> {
 		sqlx::query("INSERT OR IGNORE INTO artifact_index (digest, project_id, release_digest) VALUES (?1, ?2, ?3)")
 			.bind(digest)
@@ -502,67 +545,6 @@ impl MetadataStore {
 				release_digest: row.get("release_digest"),
 			})
 			.collect())
-	}
-
-	pub async fn upsert_subscription(
-		&self,
-		home_url: &str,
-		project_id: &str,
-		status: &str,
-		updated_at: i64,
-	) -> Result<(), sqlx::Error> {
-		sqlx::query(
-			"INSERT INTO subscriptions (home_url, project_id, cursor_seq, status, updated_at) VALUES (?1, ?2, 0, ?3, ?4)
-			 ON CONFLICT(home_url, project_id) DO UPDATE SET status = ?3, updated_at = ?4",
-		)
-		.bind(home_url)
-		.bind(project_id)
-		.bind(status)
-		.bind(updated_at)
-		.execute(&self.pool)
-		.await?;
-		Ok(())
-	}
-
-	pub async fn subscription(&self, home_url: &str, project_id: &str) -> Result<Option<SubscriptionRow>, sqlx::Error> {
-		let row = sqlx::query(
-			"SELECT home_url, project_id, cursor_seq, status, updated_at FROM subscriptions WHERE home_url = ?1 AND project_id = ?2",
-		)
-		.bind(home_url)
-		.bind(project_id)
-		.fetch_optional(&self.pool)
-		.await?;
-		Ok(row.map(subscription_from_row))
-	}
-
-	pub async fn set_subscription_cursor(
-		&self,
-		home_url: &str,
-		project_id: &str,
-		cursor_seq: i64,
-		status: &str,
-		updated_at: i64,
-	) -> Result<(), sqlx::Error> {
-		sqlx::query(
-			"UPDATE subscriptions SET cursor_seq = ?1, status = ?2, updated_at = ?3 WHERE home_url = ?4 AND project_id = ?5",
-		)
-		.bind(cursor_seq)
-		.bind(status)
-		.bind(updated_at)
-		.bind(home_url)
-		.bind(project_id)
-		.execute(&self.pool)
-		.await?;
-		Ok(())
-	}
-
-	pub async fn subscriptions(&self) -> Result<Vec<SubscriptionRow>, sqlx::Error> {
-		let rows = sqlx::query(
-			"SELECT home_url, project_id, cursor_seq, status, updated_at FROM subscriptions ORDER BY home_url, project_id",
-		)
-		.fetch_all(&self.pool)
-		.await?;
-		Ok(rows.into_iter().map(subscription_from_row).collect())
 	}
 
 	pub async fn create_submission(&self, submission: &SubmissionRow) -> Result<(), sqlx::Error> {
@@ -657,16 +639,6 @@ impl MetadataStore {
 				appeal_route: row.get("appeal_route"),
 			})
 			.collect())
-	}
-}
-
-fn subscription_from_row(row: sqlx::sqlite::SqliteRow) -> SubscriptionRow {
-	SubscriptionRow {
-		home_url: row.get("home_url"),
-		project_id: row.get("project_id"),
-		cursor_seq: row.get("cursor_seq"),
-		status: row.get("status"),
-		updated_at: row.get("updated_at"),
 	}
 }
 

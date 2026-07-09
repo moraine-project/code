@@ -105,7 +105,14 @@ verifies must fetch the object document instead.
   It is `404` until a `profile-updated` entry has been accepted.
 - `GET /v1/projects/{id}/releases/{hex}` returns one release's version,
   channel, kind, license, artifacts, compatibility entries, dependencies, and
-  rights. The digest is the release object's identity digest.
+  rights. The digest is the release object's identity digest. A `withdrawal`
+  field appears once a `release-withdrawn` feed entry accepts a signed
+  withdrawal for that release; the release record and its digest never change.
+
+A withdrawal is a signed statement published as a stored object and made
+effective by a feed entry, exactly like an ownership transfer. Its reason is
+one of `compromise`, `harmful`, `broken`, `legal`, or `author-preference`, and
+it marks a release without erasing it.
 
 Verification accepts the root threshold first. If that fails it loads the
 project's stored `delegation` objects, verifies each key delegation against the

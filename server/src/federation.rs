@@ -10,10 +10,12 @@ use axum::{Json, Router};
 use moraine_crypto::ObjectKind;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 
 use crate::auth::AuthenticatedUser;
 use crate::registry::{self, load_delegations};
 use crate::routes::AppState;
+use crate::store::MetadataStore;
 use crate::verify;
 
 pub fn routes() -> Router<AppState> {
@@ -318,4 +320,86 @@ fn now() -> i64 {
 fn storage_error(error: sqlx::Error) -> Response {
 	tracing::error!(%error, "subscription store failed");
 	(StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response()
+}
+
+impl MetadataStore {
+	pub async fn upsert_subscription(
+		&self,
+		home_url: &str,
+		project_id: &str,
+		status: &str,
+		updated_at: i64,
+	) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"INSERT INTO subscriptions (home_url, project_id, cursor_seq, status, updated_at) VALUES (?1, ?2, 0, ?3, ?4)
+			 ON CONFLICT(home_url, project_id) DO UPDATE SET status = ?3, updated_at = ?4",
+		)
+		.bind(home_url)
+		.bind(project_id)
+		.bind(status)
+		.bind(updated_at)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
+	pub async fn subscription(&self, home_url: &str, project_id: &str) -> Result<Option<SubscriptionRow>, sqlx::Error> {
+		let row = sqlx::query(
+			"SELECT home_url, project_id, cursor_seq, status, updated_at FROM subscriptions WHERE home_url = ?1 AND project_id = ?2",
+		)
+		.bind(home_url)
+		.bind(project_id)
+		.fetch_optional(&self.pool)
+		.await?;
+		Ok(row.map(subscription_from_row))
+	}
+
+	pub async fn set_subscription_cursor(
+		&self,
+		home_url: &str,
+		project_id: &str,
+		cursor_seq: i64,
+		status: &str,
+		updated_at: i64,
+	) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"UPDATE subscriptions SET cursor_seq = ?1, status = ?2, updated_at = ?3 WHERE home_url = ?4 AND project_id = ?5",
+		)
+		.bind(cursor_seq)
+		.bind(status)
+		.bind(updated_at)
+		.bind(home_url)
+		.bind(project_id)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
+	pub async fn subscriptions(&self) -> Result<Vec<SubscriptionRow>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT home_url, project_id, cursor_seq, status, updated_at FROM subscriptions ORDER BY home_url, project_id",
+		)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows.into_iter().map(subscription_from_row).collect())
+	}
+}
+
+#[derive(Debug, Clone)]
+pub struct SubscriptionRow {
+	pub home_url: String,
+	pub project_id: String,
+	pub cursor_seq: i64,
+	pub status: String,
+	pub updated_at: i64,
+}
+
+fn subscription_from_row(row: sqlx::sqlite::SqliteRow) -> SubscriptionRow {
+	SubscriptionRow {
+		home_url: row.get("home_url"),
+		project_id: row.get("project_id"),
+		cursor_seq: row.get("cursor_seq"),
+		status: row.get("status"),
+		updated_at: row.get("updated_at"),
+	}
 }
