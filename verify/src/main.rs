@@ -1,9 +1,10 @@
+mod artifact;
 mod definitions;
 mod generate;
 mod records;
 mod vector;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use moraine_crypto::{ObjectKind, object_id_string};
@@ -57,6 +58,18 @@ enum Command {
 		#[arg(long, default_value_t = 1)]
 		threshold: usize,
 	},
+
+	/// Verify a downloaded file against a signed release.
+	Artifact {
+		#[arg(long)]
+		release: PathBuf,
+		#[arg(long)]
+		file: PathBuf,
+		#[arg(long = "root")]
+		roots: Vec<String>,
+		#[arg(long, default_value_t = 1)]
+		threshold: usize,
+	},
 }
 
 fn main() -> std::process::ExitCode {
@@ -82,7 +95,27 @@ fn run(cli: Cli) -> Result<(), String> {
 			roots,
 			threshold,
 		} => verify_object(&kind, &file, &roots, threshold),
+		Command::Artifact {
+			release,
+			file,
+			roots,
+			threshold,
+		} => verify_artifact(&release, &file, &roots, threshold),
 	}
+}
+
+fn verify_artifact(release: &Path, file: &Path, roots: &[String], threshold: usize) -> Result<(), String> {
+	let verdict = artifact::verify(release, file, roots, threshold)?;
+	println!("release: {} ({})", verdict.human_version, verdict.channel);
+	println!("file: {} (sha256:{})", file.display(), hex::encode(verdict.digest));
+	println!(
+		"artifact: {}{}",
+		verdict.filename,
+		if verdict.is_primary { " (primary)" } else { "" }
+	);
+	println!("size: {} bytes", verdict.size);
+	println!("status: verified");
+	Ok(())
 }
 
 fn run_vectors(file: &PathBuf) -> Result<(), String> {

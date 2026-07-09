@@ -43,6 +43,16 @@ Verify a signed object you already have:
 cargo run -p moraine-verify -- object --kind release --file release.cbor --root <hex> --threshold 1
 ```
 
+Check a downloaded file against a signed release, offline, with an explicit
+trust root:
+
+```sh
+cargo run -p moraine-verify -- artifact --release release.cbor --file mod.jar --root <hex>
+```
+
+That verifies the release signature, hashes the file, and confirms the bytes
+match a recorded artifact. It prints `status: verified` or fails.
+
 Run the registry:
 
 ```sh
