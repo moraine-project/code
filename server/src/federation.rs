@@ -213,7 +213,7 @@ fn object_kind_for_event(event: &str) -> Option<ObjectKind> {
 	Some(match event {
 		"release-published" | "release-withdrawn" => ObjectKind::Release,
 		"profile-updated" => ObjectKind::Profile,
-		"key-changed" | "migration" | "recovery" => ObjectKind::Delegation,
+		"key-changed" | "migration" | "recovery" | "ownership-transferred" => ObjectKind::Delegation,
 		"advisory" => ObjectKind::Advisory,
 		_ => return None,
 	})

@@ -148,16 +148,15 @@ async fn project_summary(State(state): State<AppState>, Path(id): Path<String>) 
 
 #[derive(Serialize)]
 struct TransferReceipt {
-	project_id: String,
-	owner: OwnerView,
+	transfer: String,
 }
 
 async fn transfer(State(state): State<AppState>, Path(id): Path<String>, body: Bytes) -> Response {
-	let project = match state.metadata.project(&id).await {
-		Ok(Some(project)) => project,
+	match state.metadata.project(&id).await {
+		Ok(Some(_)) => {}
 		Ok(None) => return (StatusCode::NOT_FOUND, "no such project").into_response(),
 		Err(error) => return storage_error(error),
-	};
+	}
 	let root = match load_root(&state, &id).await {
 		Ok(root) => root,
 		Err(response) => return *response,
@@ -166,19 +165,15 @@ async fn transfer(State(state): State<AppState>, Path(id): Path<String>, body: B
 		Ok(signed) => signed,
 		Err(error) => return bad_request(VerifyError::Decode(error)),
 	};
-	let Delegation::OwnershipTransfer(record) = &signed.payload else {
+	if !matches!(signed.payload, Delegation::OwnershipTransfer(_)) {
 		return (StatusCode::BAD_REQUEST, "object is not an ownership transfer").into_response();
-	};
-	if let (Some(current_kind), Some(current_id)) = (&project.owner_kind, &project.owner_id)
-		&& (current_kind != &record.from_owner.kind || current_id != &record.from_owner.id)
-	{
-		return (StatusCode::CONFLICT, "the transfer does not start from the current owner").into_response();
 	}
 	if let Err(error) = verify_ownership_transfer(&signed, &root) {
 		return bad_request(VerifyError::Signature(error));
 	}
+	let digest = object_id(ObjectKind::Delegation, &signed.payload_bytes);
 	let stored = StoredObject {
-		digest: object_id(ObjectKind::Delegation, &signed.payload_bytes).to_vec(),
+		digest: digest.to_vec(),
 		kind: "delegation".to_string(),
 		payload: signed.payload_bytes,
 		wire: body.to_vec(),
@@ -186,20 +181,59 @@ async fn transfer(State(state): State<AppState>, Path(id): Path<String>, body: B
 	if let Err(error) = state.metadata.put_object(&stored).await {
 		return storage_error(error);
 	}
+	(
+		StatusCode::CREATED,
+		Json(TransferReceipt {
+			transfer: id_for(&digest),
+		}),
+	)
+		.into_response()
+}
+
+/// Applies an accepted `ownership-transferred` entry. The transfer object is
+/// re-verified here, so a syncing directory applies the same rule as the home.
+async fn apply_ownership_transfer(state: &AppState, project_id: &str, object_digest: &[u8]) -> Result<(), Box<Response>> {
+	let project = match state.metadata.project(project_id).await {
+		Ok(Some(project)) => project,
+		Ok(None) => return Err(Box::new((StatusCode::NOT_FOUND, "no such project").into_response())),
+		Err(error) => return Err(Box::new(storage_error(error))),
+	};
+	let object = match state.metadata.object(object_digest).await {
+		Ok(Some(object)) => object,
+		Ok(None) => {
+			return Err(Box::new(
+				(StatusCode::CONFLICT, "transfer object is not stored").into_response(),
+			));
+		}
+		Err(error) => return Err(Box::new(storage_error(error))),
+	};
+	let signed = match SignedObject::<Delegation>::from_bytes(&object.wire) {
+		Ok(signed) => signed,
+		Err(error) => return Err(Box::new(bad_request(VerifyError::Decode(error)))),
+	};
+	let Delegation::OwnershipTransfer(record) = &signed.payload else {
+		return Err(Box::new(
+			(StatusCode::BAD_REQUEST, "object is not an ownership transfer").into_response(),
+		));
+	};
+	let root = load_root(state, project_id).await?;
+	if let Err(error) = verify_ownership_transfer(&signed, &root) {
+		return Err(Box::new(bad_request(VerifyError::Signature(error))));
+	}
+	if let (Some(current_kind), Some(current_id)) = (&project.owner_kind, &project.owner_id)
+		&& (current_kind != &record.from_owner.kind || current_id != &record.from_owner.id)
+	{
+		return Err(Box::new(
+			(StatusCode::CONFLICT, "the transfer does not start from the current owner").into_response(),
+		));
+	}
 	match state
 		.metadata
-		.set_project_owner(&id, &record.to_owner.kind, &record.to_owner.id)
+		.set_project_owner(project_id, &record.to_owner.kind, &record.to_owner.id)
 		.await
 	{
-		Ok(true) => {
-			let owner = OwnerView {
-				kind: record.to_owner.kind.clone(),
-				id: record.to_owner.id.clone(),
-			};
-			Json(TransferReceipt { project_id: id, owner }).into_response()
-		}
-		Ok(false) => (StatusCode::NOT_FOUND, "no such project").into_response(),
-		Err(error) => storage_error(error),
+		Ok(_) => Ok(()),
+		Err(error) => Err(Box::new(storage_error(error))),
 	}
 }
 
@@ -325,6 +359,9 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 		&& let Err(error) = crate::search::refresh_search_document(state, &row.object_digest).await
 	{
 		return Err(Box::new(storage_error(error)));
+	}
+	if row.kind == "ownership-transferred" {
+		apply_ownership_transfer(state, &row.project_id, &row.object_digest).await?;
 	}
 	Ok((row.seq, entry_id))
 }

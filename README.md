@@ -89,7 +89,13 @@ Transfer ownership with both sides signing:
 ```sh
 cargo run -p moraine-publish -- transfer --key old-owner.key --cosign-key new-owner.key \
   --home http://127.0.0.1:8080 --project <project-id> --from user:<id> --to org:<id>
+# then publish or submit the transfer entry:
+cargo run -p moraine-publish -- publish --key old-owner.key --home http://127.0.0.1:8080 \
+  --project <project-id> --object <transfer-id> --kind ownership-transferred
 ```
+
+The transfer object only becomes effective when its feed entry is accepted, so
+it reaches directories through sync like any other feed fact.
 
 `publish` and `submit` take `--kind` and default to `release-published`. The
 key is your project's root. Keep it safe: losing it means losing the project

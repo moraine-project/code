@@ -137,12 +137,23 @@ fn feed_wire(
 	previous: Option<[u8; 32]>,
 	object_digest: [u8; 32],
 ) -> Vec<u8> {
+	feed_wire_kind(signer, project_id, sequence, previous, object_digest, "release-published")
+}
+
+fn feed_wire_kind(
+	signer: &SigningKey,
+	project_id: &str,
+	sequence: u64,
+	previous: Option<[u8; 32]>,
+	object_digest: [u8; 32],
+	kind: &str,
+) -> Vec<u8> {
 	let entry = FeedEntry {
 		protocol: 1,
 		project_id: project_id.to_string(),
 		sequence,
 		previous: previous.map(|digest| digest.to_vec()),
-		kind: "release-published".to_string(),
+		kind: kind.to_string(),
 		object_digest: object_digest.to_vec(),
 		declared_at: 1_760_000_000 + sequence as i64,
 	};
@@ -629,20 +640,30 @@ async fn ownership_transfer_requires_two_signatures_and_updates_the_owner() {
 		issued_at: 1_760_000_000,
 		previous_delegation_digest: None,
 	});
-	let wire = sign_payload(Kind::Delegation, &transfer, &[&first, &second]).wire_bytes();
+	let signed_transfer = sign_payload(Kind::Delegation, &transfer, &[&first, &second]);
+	let transfer_digest = object_id(Kind::Delegation, &signed_transfer.payload_bytes);
 	let response = application
 		.clone()
 		.oneshot(
 			axum::http::Request::post(format!("/v1/projects/{project_id}/transfer"))
-				.body(Body::from(wire))
+				.body(Body::from(signed_transfer.wire_bytes()))
 				.expect("request"),
 		)
 		.await
 		.expect("response");
-	assert_eq!(response.status(), StatusCode::OK);
-	let body = body_json(response).await;
-	assert_eq!(body["owner"]["kind"], "org");
-	assert_eq!(body["owner"]["id"], "org-b");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let entry = feed_wire_kind(&first, &project_id, 1, None, transfer_digest, "ownership-transferred");
+	let response = application
+		.clone()
+		.oneshot(
+			axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+				.body(Body::from(entry))
+				.expect("request"),
+		)
+		.await
+		.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
 
 	let summary = body_json(
 		application

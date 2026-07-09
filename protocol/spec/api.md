@@ -77,13 +77,17 @@ returns an empty match list, not a `404`, because "not here" is not an error.
 `GET /v1/projects/{id}` returns the genesis ID, head sequence and entry,
 current profile ID, and the owner if one is recorded.
 
-`POST /v1/projects/{id}/transfer` accepts a signed ownership-transfer object.
-It must carry two signatures over the same payload, one from each side, and
-once a project has an owner the transfer must start from that owner. On
-acceptance the project's owner changes and the signed object is stored for
-audit. The transfer is not yet written as a feed entry, so for now it is a
-server-side ownership association rather than a federated fact; a directory
-learns the owner only from the home it syncs. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
+`POST /v1/projects/{id}/transfer` verifies and stores a signed
+ownership-transfer object. It must carry two signatures over the same payload,
+one from each side, and it returns the transfer object's ID. It does not change
+the owner by itself.
+
+The owner changes when a feed entry of kind `ownership-transferred` that
+references the transfer object is accepted. The same rule runs on the home, in
+review acceptance, and during federation sync, and it re-verifies the transfer
+and requires that it start from the currently recorded owner. Ownership is
+therefore a feed fact: a directory learns it by verifying the same signed
+material, not by trusting the home's summary. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
 bounded page of entries. Each entry carries a human `title` derived from the
 referenced object (a release's version and channel, a profile's display name,
 an advisory's severity and category, a delegation's purpose), so a page can say

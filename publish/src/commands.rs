@@ -168,11 +168,8 @@ pub async fn transfer(
 	let receipt = home
 		.post_wire(&format!("/v1/projects/{project_id}/transfer"), signed.wire_bytes())
 		.await?;
-	println!(
-		"owner: {}:{}",
-		receipt["owner"]["kind"].as_str().unwrap_or("?"),
-		receipt["owner"]["id"].as_str().unwrap_or("?")
-	);
+	println!("transfer: {}", receipt["transfer"].as_str().unwrap_or("?"));
+	println!("next: publish or submit it with --object <transfer-id> --kind ownership-transferred");
 	Ok(())
 }
 
