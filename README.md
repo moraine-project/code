@@ -84,6 +84,13 @@ cargo run -p moraine-publish -- publish --key publisher.key --home http://127.0.
   --project <project-id> --object <profile-id> --kind profile-updated
 ```
 
+Transfer ownership with both sides signing:
+
+```sh
+cargo run -p moraine-publish -- transfer --key old-owner.key --cosign-key new-owner.key \
+  --home http://127.0.0.1:8080 --project <project-id> --from user:<id> --to org:<id>
+```
+
 `publish` and `submit` take `--kind` and default to `release-published`. The
 key is your project's root. Keep it safe: losing it means losing the project
 identity. `init` signs a fresh project, `upload` stores the artifact bytes at

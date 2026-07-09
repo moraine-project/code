@@ -52,6 +52,23 @@ enum Command {
 		#[arg(long)]
 		loader: Option<String>,
 	},
+	/// Transfer project ownership; needs the previous and new owner keys.
+	Transfer {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long = "cosign-key")]
+		cosign_key: PathBuf,
+		#[arg(long)]
+		home: String,
+		#[arg(long)]
+		project: String,
+		/// Previous owner as `user:<id>` or `org:<id>`.
+		#[arg(long)]
+		from: String,
+		/// New owner as `user:<id>` or `org:<id>`.
+		#[arg(long)]
+		to: String,
+	},
 	/// Upload an artifact to a home's blob store.
 	Upload {
 		#[arg(long)]
@@ -142,6 +159,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			)
 			.await
 		}
+		Command::Transfer {
+			key,
+			cosign_key,
+			home,
+			project,
+			from,
+			to,
+		} => commands::transfer(&key, &cosign_key, &home, &project, &from, &to).await,
 		Command::Upload { home, file, api_key } => commands::upload(&home, &file, api_key).await,
 		Command::Profile {
 			key,

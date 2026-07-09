@@ -4,7 +4,7 @@ use axum::body::to_bytes;
 use moraine_crypto::{ObjectKind as Kind, SigningKey, object_id};
 use moraine_model::artifact::Artifact;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
-use moraine_model::delegation::{Delegation, KeyDelegation};
+use moraine_model::delegation::{Delegation, KeyDelegation, OwnerRef, OwnershipTransfer};
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::release::ReleasePayload;
 use moraine_model::signed::sign_payload;
@@ -67,18 +67,25 @@ async fn app_mode(
 const PROJECT_KINDS: &[&str] = &["delegation", "release", "profile"];
 
 fn genesis_wire(signer: &SigningKey, kinds: &[&str]) -> Vec<u8> {
+	genesis_wire_roots(&[signer], kinds)
+}
+
+fn genesis_wire_roots(roots: &[&SigningKey], kinds: &[&str]) -> Vec<u8> {
 	let genesis = Genesis {
 		protocol: 1,
 		kind: GenesisKind::Project,
 		nonce: vec![0x11; 16],
-		roots: vec![RootKey::from_public_key(signer.verifying_key().to_bytes().to_vec()).expect("root")],
+		roots: roots
+			.iter()
+			.map(|signer| RootKey::from_public_key(signer.verifying_key().to_bytes().to_vec()).expect("root"))
+			.collect(),
 		threshold: 1,
 		authorized_kinds: kinds.iter().map(|kind| kind.to_string()).collect(),
 		home_hint: None,
 		contacts: None,
 		created_at: 1_760_000_000,
 	};
-	sign_payload(Kind::Genesis, &genesis, &[signer]).wire_bytes()
+	sign_payload(Kind::Genesis, &genesis, roots.to_vec().as_slice()).wire_bytes()
 }
 
 fn release_wire(signer: &SigningKey, project_id: &str) -> (Vec<u8>, [u8; 32]) {
@@ -594,4 +601,85 @@ async fn review_mode_refuses_direct_feed_append() {
 		.expect("request");
 	let response = application.oneshot(request).await.expect("response");
 	assert_eq!(response.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn ownership_transfer_requires_two_signatures_and_updates_the_owner() {
+	let (application, _directory) = app().await;
+	let first = key(10);
+	let second = key(11);
+	let request = axum::http::Request::post("/v1/projects")
+		.body(Body::from(genesis_wire_roots(&[&first, &second], PROJECT_KINDS)))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	let receipt = body_json(response).await;
+	let project_id = receipt["project_id"].as_str().expect("project id").to_string();
+
+	let transfer = Delegation::OwnershipTransfer(OwnershipTransfer {
+		protocol: 1,
+		project_id: project_id.clone(),
+		from_owner: OwnerRef {
+			kind: "user".to_string(),
+			id: "user-a".to_string(),
+		},
+		to_owner: OwnerRef {
+			kind: "org".to_string(),
+			id: "org-b".to_string(),
+		},
+		issued_at: 1_760_000_000,
+		previous_delegation_digest: None,
+	});
+	let wire = sign_payload(Kind::Delegation, &transfer, &[&first, &second]).wire_bytes();
+	let response = application
+		.clone()
+		.oneshot(
+			axum::http::Request::post(format!("/v1/projects/{project_id}/transfer"))
+				.body(Body::from(wire))
+				.expect("request"),
+		)
+		.await
+		.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let body = body_json(response).await;
+	assert_eq!(body["owner"]["kind"], "org");
+	assert_eq!(body["owner"]["id"], "org-b");
+
+	let summary = body_json(
+		application
+			.clone()
+			.oneshot(
+				axum::http::Request::get(format!("/v1/projects/{project_id}"))
+					.body(Body::empty())
+					.expect("request"),
+			)
+			.await
+			.expect("response"),
+	)
+	.await;
+	assert_eq!(summary["owner"]["id"], "org-b");
+
+	let one_signature = Delegation::OwnershipTransfer(OwnershipTransfer {
+		protocol: 1,
+		project_id: project_id.clone(),
+		from_owner: OwnerRef {
+			kind: "org".to_string(),
+			id: "org-b".to_string(),
+		},
+		to_owner: OwnerRef {
+			kind: "user".to_string(),
+			id: "user-c".to_string(),
+		},
+		issued_at: 1_760_000_001,
+		previous_delegation_digest: None,
+	});
+	let wire = sign_payload(Kind::Delegation, &one_signature, &[&first]).wire_bytes();
+	let response = application
+		.oneshot(
+			axum::http::Request::post(format!("/v1/projects/{project_id}/transfer"))
+				.body(Body::from(wire))
+				.expect("request"),
+		)
+		.await
+		.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

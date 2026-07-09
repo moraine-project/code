@@ -4,14 +4,14 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use moraine_crypto::ObjectKind;
+use moraine_crypto::{ObjectKind, object_id};
 use moraine_model::Canonical;
 use moraine_model::advisory::Advisory;
 use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::feed::FeedEntry;
 use moraine_model::profile::ProfileRevision;
 use moraine_model::signed::SignedObject;
-use moraine_model::trust::{RootSet, verify_key_delegation};
+use moraine_model::trust::{RootSet, verify_key_delegation, verify_ownership_transfer};
 use serde::{Deserialize, Serialize};
 
 use crate::routes::AppState;
@@ -26,6 +26,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/projects/{id}", get(project_summary))
 		.route("/v1/projects/{id}/objects/{kind}", post(store_object))
 		.route("/v1/projects/{id}/feed", get(feed_page).post(append_feed))
+		.route("/v1/projects/{id}/transfer", post(transfer))
 		.route("/v1/projects/{id}/profile", get(project_profile))
 		.route("/v1/projects/{id}/releases/{hex}", get(release_view))
 		.route("/v1/lookup", get(lookup))
@@ -45,6 +46,13 @@ struct ProjectSummary {
 	head_seq: i64,
 	head_entry: Option<String>,
 	profile: Option<String>,
+	owner: Option<OwnerView>,
+}
+
+#[derive(Serialize)]
+struct OwnerView {
+	kind: String,
+	id: String,
 }
 
 #[derive(Serialize)]
@@ -119,16 +127,78 @@ async fn create_project(State(state): State<AppState>, body: Bytes) -> Response 
 async fn project_summary(State(state): State<AppState>, Path(id): Path<String>) -> Response {
 	match state.metadata.project(&id).await {
 		Ok(Some(project)) => {
+			let owner = match (project.owner_kind, project.owner_id) {
+				(Some(kind), Some(id)) => Some(OwnerView { kind, id }),
+				_ => None,
+			};
 			let summary = ProjectSummary {
 				project_id: project.id,
 				genesis: id_for(&project.genesis_digest),
 				head_seq: project.head_seq,
 				head_entry: project.head_digest.as_deref().map(id_for),
 				profile: project.profile_digest.as_deref().map(id_for),
+				owner,
 			};
 			Json(summary).into_response()
 		}
 		Ok(None) => (StatusCode::NOT_FOUND, "no such project").into_response(),
+		Err(error) => storage_error(error),
+	}
+}
+
+#[derive(Serialize)]
+struct TransferReceipt {
+	project_id: String,
+	owner: OwnerView,
+}
+
+async fn transfer(State(state): State<AppState>, Path(id): Path<String>, body: Bytes) -> Response {
+	let project = match state.metadata.project(&id).await {
+		Ok(Some(project)) => project,
+		Ok(None) => return (StatusCode::NOT_FOUND, "no such project").into_response(),
+		Err(error) => return storage_error(error),
+	};
+	let root = match load_root(&state, &id).await {
+		Ok(root) => root,
+		Err(response) => return *response,
+	};
+	let signed = match SignedObject::<Delegation>::from_bytes(&body) {
+		Ok(signed) => signed,
+		Err(error) => return bad_request(VerifyError::Decode(error)),
+	};
+	let Delegation::OwnershipTransfer(record) = &signed.payload else {
+		return (StatusCode::BAD_REQUEST, "object is not an ownership transfer").into_response();
+	};
+	if let (Some(current_kind), Some(current_id)) = (&project.owner_kind, &project.owner_id)
+		&& (current_kind != &record.from_owner.kind || current_id != &record.from_owner.id)
+	{
+		return (StatusCode::CONFLICT, "the transfer does not start from the current owner").into_response();
+	}
+	if let Err(error) = verify_ownership_transfer(&signed, &root) {
+		return bad_request(VerifyError::Signature(error));
+	}
+	let stored = StoredObject {
+		digest: object_id(ObjectKind::Delegation, &signed.payload_bytes).to_vec(),
+		kind: "delegation".to_string(),
+		payload: signed.payload_bytes,
+		wire: body.to_vec(),
+	};
+	if let Err(error) = state.metadata.put_object(&stored).await {
+		return storage_error(error);
+	}
+	match state
+		.metadata
+		.set_project_owner(&id, &record.to_owner.kind, &record.to_owner.id)
+		.await
+	{
+		Ok(true) => {
+			let owner = OwnerView {
+				kind: record.to_owner.kind.clone(),
+				id: record.to_owner.id.clone(),
+			};
+			Json(TransferReceipt { project_id: id, owner }).into_response()
+		}
+		Ok(false) => (StatusCode::NOT_FOUND, "no such project").into_response(),
 		Err(error) => storage_error(error),
 	}
 }

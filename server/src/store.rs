@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS projects (
 	genesis_digest BLOB NOT NULL,
 	head_seq INTEGER NOT NULL DEFAULT 0,
 	head_digest BLOB,
-	profile_digest BLOB
+	profile_digest BLOB,
+	owner_kind TEXT,
+	owner_id TEXT
 );
 CREATE TABLE IF NOT EXISTS feed_entries (
 	project_id TEXT NOT NULL,
@@ -146,6 +148,8 @@ pub struct ProjectRow {
 	pub head_seq: i64,
 	pub head_digest: Option<Vec<u8>>,
 	pub profile_digest: Option<Vec<u8>>,
+	pub owner_kind: Option<String>,
+	pub owner_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -293,18 +297,31 @@ impl MetadataStore {
 	}
 
 	pub async fn project(&self, id: &str) -> Result<Option<ProjectRow>, sqlx::Error> {
-		let row =
-			sqlx::query("SELECT id, genesis_digest, head_seq, head_digest, profile_digest FROM projects WHERE id = ?1")
-				.bind(id)
-				.fetch_optional(&self.pool)
-				.await?;
+		let row = sqlx::query(
+			"SELECT id, genesis_digest, head_seq, head_digest, profile_digest, owner_kind, owner_id FROM projects WHERE id = ?1",
+		)
+		.bind(id)
+		.fetch_optional(&self.pool)
+		.await?;
 		Ok(row.map(|row| ProjectRow {
 			id: row.get("id"),
 			genesis_digest: row.get("genesis_digest"),
 			head_seq: row.get("head_seq"),
 			head_digest: row.get("head_digest"),
 			profile_digest: row.get("profile_digest"),
+			owner_kind: row.get("owner_kind"),
+			owner_id: row.get("owner_id"),
 		}))
+	}
+
+	pub async fn set_project_owner(&self, id: &str, owner_kind: &str, owner_id: &str) -> Result<bool, sqlx::Error> {
+		let result = sqlx::query("UPDATE projects SET owner_kind = ?1, owner_id = ?2 WHERE id = ?3")
+			.bind(owner_kind)
+			.bind(owner_id)
+			.bind(id)
+			.execute(&self.pool)
+			.await?;
+		Ok(result.rows_affected() == 1)
 	}
 
 	pub async fn create_project(&self, id: &str, genesis_digest: &[u8]) -> Result<bool, sqlx::Error> {

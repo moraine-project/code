@@ -3,6 +3,7 @@ use std::path::Path;
 use moraine_crypto::ObjectKind;
 use moraine_model::artifact::Artifact;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
+use moraine_model::delegation::{Delegation, OwnerRef, OwnershipTransfer};
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::profile::ProfileRevision;
@@ -142,6 +143,53 @@ pub async fn profile(
 	println!("profile: {}", receipt["id"].as_str().unwrap_or("?"));
 	println!("next: publish or submit it with --object <profile-id> --kind profile-updated");
 	Ok(())
+}
+
+pub async fn transfer(
+	old_key_path: &Path,
+	new_key_path: &Path,
+	home_url: &str,
+	project_id: &str,
+	from: &str,
+	to: &str,
+) -> Result<(), String> {
+	let old_key = keyfile::load(old_key_path)?;
+	let new_key = keyfile::load(new_key_path)?;
+	let transfer = Delegation::OwnershipTransfer(OwnershipTransfer {
+		protocol: 1,
+		project_id: project_id.to_string(),
+		from_owner: parse_owner(from)?,
+		to_owner: parse_owner(to)?,
+		issued_at: now(),
+		previous_delegation_digest: None,
+	});
+	let signed = sign_payload(ObjectKind::Delegation, &transfer, &[&old_key, &new_key]);
+	let home = Home::new(home_url)?;
+	let receipt = home
+		.post_wire(&format!("/v1/projects/{project_id}/transfer"), signed.wire_bytes())
+		.await?;
+	println!(
+		"owner: {}:{}",
+		receipt["owner"]["kind"].as_str().unwrap_or("?"),
+		receipt["owner"]["id"].as_str().unwrap_or("?")
+	);
+	Ok(())
+}
+
+fn parse_owner(value: &str) -> Result<OwnerRef, String> {
+	let (kind, id) = value
+		.split_once(':')
+		.ok_or_else(|| format!("`{value}` must be user:<id> or org:<id>"))?;
+	if kind != "user" && kind != "org" {
+		return Err(format!("`{value}` must start with user: or org:"));
+	}
+	if id.is_empty() {
+		return Err(format!("`{value}` is missing an id"));
+	}
+	Ok(OwnerRef {
+		kind: kind.to_string(),
+		id: id.to_string(),
+	})
 }
 
 pub async fn upload(home_url: &str, file: &Path, api_key: Option<String>) -> Result<(), String> {

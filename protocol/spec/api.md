@@ -74,8 +74,16 @@ covers every release this instance knows about. A match names the project, the
 release object, and the artifact's version and filename. An unknown digest
 returns an empty match list, not a `404`, because "not here" is not an error.
 
-`GET /v1/projects/{id}` returns the genesis ID, head sequence and entry, and
-current profile ID. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
+`GET /v1/projects/{id}` returns the genesis ID, head sequence and entry,
+current profile ID, and the owner if one is recorded.
+
+`POST /v1/projects/{id}/transfer` accepts a signed ownership-transfer object.
+It must carry two signatures over the same payload, one from each side, and
+once a project has an owner the transfer must start from that owner. On
+acceptance the project's owner changes and the signed object is stored for
+audit. The transfer is not yet written as a feed entry, so for now it is a
+server-side ownership association rather than a federated fact; a directory
+learns the owner only from the home it syncs. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
 bounded page of entries. Each entry carries a human `title` derived from the
 referenced object (a release's version and channel, a profile's display name,
 an advisory's severity and category, a delegation's purpose), so a page can say
