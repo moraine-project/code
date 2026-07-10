@@ -52,6 +52,40 @@ enum Command {
 		#[arg(long)]
 		loader: Option<String>,
 	},
+	/// Pin a provider public key on a home so its advisories are accepted.
+	Provider {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		home: String,
+		#[arg(long)]
+		id: String,
+		#[arg(long, env = "MORAINE_API_KEY")]
+		api_key: Option<String>,
+	},
+	/// Sign and publish an advisory about one artifact digest.
+	Advisory {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		home: String,
+		#[arg(long)]
+		provider: String,
+		#[arg(long)]
+		project: String,
+		#[arg(long)]
+		game: String,
+		#[arg(long)]
+		digest: String,
+		#[arg(long)]
+		severity: String,
+		#[arg(long)]
+		category: String,
+		#[arg(long, default_value_t = false)]
+		block: bool,
+		#[arg(long)]
+		evidence: Option<String>,
+	},
 	/// Sign a withdrawal for a release; the release record stays intact.
 	Withdraw {
 		#[arg(long)]
@@ -172,6 +206,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				&channel,
 				&file,
 				loader,
+			)
+			.await
+		}
+		Command::Provider { key, home, id, api_key } => commands::provider(&key, &home, &id, api_key).await,
+		Command::Advisory {
+			key,
+			home,
+			provider,
+			project,
+			game,
+			digest,
+			severity,
+			category,
+			block,
+			evidence,
+		} => {
+			commands::advisory(
+				&key, &home, &provider, &project, &game, &digest, &severity, &category, block, evidence,
 			)
 			.await
 		}

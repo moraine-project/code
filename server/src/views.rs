@@ -161,6 +161,7 @@ struct ReleaseView {
 	dependencies: Vec<DependencyView>,
 	rights: Option<RightsView>,
 	withdrawal: Option<WithdrawalView>,
+	advisories: Vec<crate::advisories::AdvisoryView>,
 }
 
 #[derive(Serialize)]
@@ -225,6 +226,19 @@ async fn release_view(State(state): State<AppState>, Path((id, hex_digest)): Pat
 		Ok(withdrawal) => withdrawal,
 		Err(error) => return storage_error(error),
 	};
+	let mut advisories = Vec::new();
+	let mut seen = std::collections::HashSet::new();
+	for artifact in &release.artifacts {
+		let rows = match state.metadata.advisories_for_digest(&artifact.digest).await {
+			Ok(rows) => rows,
+			Err(error) => return storage_error(error),
+		};
+		for row in rows {
+			if seen.insert(row.digest.clone()) {
+				advisories.push(crate::advisories::advisory_view(row));
+			}
+		}
+	}
 	let view = ReleaseView {
 		project_id: release.project_id,
 		human_version: release.human_version,
@@ -273,6 +287,7 @@ async fn release_view(State(state): State<AppState>, Path((id, hex_digest)): Pat
 			note: withdrawal.note,
 			declared_time: withdrawal.declared_time,
 		}),
+		advisories,
 	};
 	Json(view).into_response()
 }

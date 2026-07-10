@@ -94,6 +94,20 @@ cargo run -p moraine-publish -- publish --key publisher.key --home http://127.0.
   --project <project-id> --object <profile-id> --kind profile-updated
 ```
 
+As a provider, pin a key on a home and publish an advisory:
+
+```sh
+cargo run -p moraine-publish -- provider --key scanner.key --home http://127.0.0.1:8080 \
+  --id my-scanner --api-key $MORAINE_API_KEY
+cargo run -p moraine-publish -- advisory --key scanner.key --home http://127.0.0.1:8080 \
+  --provider my-scanner --project <project-id> --game <game-id> \
+  --digest sha256:<hex> --severity high --category malware --block
+```
+
+An advisory is attributed evidence, not a takedown: it is shown on the release
+page and in the advisories API, and it never changes the signed record. Only
+`malware` at `high` or `critical` may block promotion.
+
 Withdraw a release without rewriting it:
 
 ```sh

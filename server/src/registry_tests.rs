@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::body::{Body, to_bytes};
 use axum::http::header;
 use moraine_crypto::{ObjectKind as Kind, SigningKey, object_id};
+use moraine_model::advisory::{Advisory, Affected, Category, Severity};
 use moraine_model::artifact::Artifact;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
 use moraine_model::delegation::{Delegation, KeyDelegation, OwnerRef, OwnershipTransfer};
@@ -777,4 +778,70 @@ async fn feed_titles_a_withdrawal() {
 	let response = application.oneshot(request).await.expect("response");
 	let page = body_json(response).await;
 	assert_eq!(page["entries"][0]["title"], "withdrawn: compromise");
+}
+
+#[tokio::test]
+async fn release_view_lists_pinned_provider_advisories() {
+	let (application, _directory) = app().await;
+	let signer = key(14);
+	let provider = key(15);
+	let (project_id, release_digest) = publish_project(&application, &signer).await;
+	let (session, csrf) = login(&application, "provider@example.org").await;
+	let cookie = format!("moraine_session={session}; moraine_csrf={csrf}");
+
+	let pin = axum::http::Request::post("/v1/providers/scanner/keys")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, &cookie)
+		.header("x-csrf-token", &csrf)
+		.body(Body::from(
+			serde_json::json!({ "public_key": hex::encode(provider.verifying_key().to_bytes()) }).to_string(),
+		))
+		.expect("request");
+	let response = application.clone().oneshot(pin).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let advisory = Advisory {
+		protocol: 1,
+		provider_id: "scanner".to_string(),
+		project_id: project_id.clone(),
+		game_id: sample_id("minecraft"),
+		affected: Affected {
+			digest: Some(vec![0xAB; 32]),
+			predicate: None,
+		},
+		severity: Severity::High,
+		category: Category::Malware,
+		taxonomy_version: 1,
+		block_promotion: true,
+		evidence_ref: None,
+		published_at: 1_760_000_300,
+		expires_at: None,
+		retracted_at: None,
+	};
+	let signed = sign_payload(Kind::Advisory, &advisory, &[&provider]);
+	let request = axum::http::Request::post("/v1/advisories")
+		.body(Body::from(signed.wire_bytes()))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let request = axum::http::Request::get(format!("/v1/projects/{project_id}/releases/{}", hex::encode(release_digest)))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	let view = body_json(response).await;
+	assert_eq!(view["advisories"].as_array().expect("advisories").len(), 1);
+	assert_eq!(view["advisories"][0]["provider_id"], "scanner");
+	assert_eq!(view["advisories"][0]["block_promotion"], true);
+
+	let unknown = Advisory {
+		provider_id: "ghost".to_string(),
+		..advisory
+	};
+	let signed = sign_payload(Kind::Advisory, &unknown, &[&provider]);
+	let request = axum::http::Request::post("/v1/advisories")
+		.body(Body::from(signed.wire_bytes()))
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CONFLICT);
 }

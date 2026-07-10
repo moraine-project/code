@@ -46,6 +46,17 @@
 	{#if data.error}
 		<div role="alert" class="alert alert-error"><span>{data.error}</span></div>
 	{:else if data.release}
+		{#each data.release.advisories ?? [] as advisory (advisory.advisory)}
+			<div role="alert" class="alert alert-warning">
+				<span>
+					<strong>{advisory.provider_id}</strong>
+					reports {advisory.severity} {advisory.category}{advisory.block_promotion
+						? ' and blocks promotion'
+						: ''}. Evidence, not a verdict.
+				</span>
+			</div>
+		{/each}
+
 		{#if data.release.withdrawal}
 			<div role="alert" class="alert alert-error">
 				<span>

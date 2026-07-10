@@ -88,6 +88,18 @@ export const withdrawalSchema = z.object({
 	declared_time: z.number()
 });
 
+export const advisorySchema = z.object({
+	advisory: z.string(),
+	provider_id: z.string(),
+	project_id: z.string(),
+	severity: z.string(),
+	category: z.string(),
+	block_promotion: z.boolean(),
+	affected_digest: z.string().nullable().optional(),
+	published_at: z.number(),
+	retracted_at: z.number().nullable().optional()
+});
+
 export const releaseSchema = z.object({
 	project_id: z.string(),
 	human_version: z.string(),
@@ -99,7 +111,8 @@ export const releaseSchema = z.object({
 	compatibility: z.array(compatibilitySchema),
 	dependencies: z.array(dependencySchema),
 	rights: rightsSchema.nullable().optional(),
-	withdrawal: withdrawalSchema.nullable().optional()
+	withdrawal: withdrawalSchema.nullable().optional(),
+	advisories: z.array(advisorySchema).optional()
 });
 
 export const searchResultSchema = z.object({

@@ -1,4 +1,5 @@
 mod accounts;
+mod advisories;
 mod auth;
 mod blob;
 mod capability;

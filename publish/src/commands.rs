@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use moraine_crypto::ObjectKind;
+use moraine_model::advisory::{Advisory, Affected, Category, Severity, TAXONOMY_VERSION};
 use moraine_model::artifact::Artifact;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
 use moraine_model::delegation::{Delegation, OwnerRef, OwnershipTransfer};
@@ -143,6 +144,67 @@ pub async fn profile(
 	println!("profile: {}", receipt["id"].as_str().unwrap_or("?"));
 	println!("next: publish or submit it with --object <profile-id> --kind profile-updated");
 	Ok(())
+}
+
+pub async fn provider(key_path: &Path, home_url: &str, provider_id: &str, api_key: Option<String>) -> Result<(), String> {
+	let key = keyfile::load(key_path)?;
+	let home = Home::new(home_url)?;
+	let body = serde_json::json!({ "public_key": hex::encode(key.verifying_key().to_bytes()) }).to_string();
+	let receipt = home
+		.post_json_with_token(&format!("/v1/providers/{provider_id}/keys"), body, api_key.as_deref())
+		.await?;
+	println!("provider: {}", receipt["provider_id"].as_str().unwrap_or("?"));
+	Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn advisory(
+	key_path: &Path,
+	home_url: &str,
+	provider_id: &str,
+	project_id: &str,
+	game_id: &str,
+	digest: &str,
+	severity: &str,
+	category: &str,
+	block_promotion: bool,
+	evidence_ref: Option<String>,
+) -> Result<(), String> {
+	let key = keyfile::load(key_path)?;
+	let advisory = Advisory {
+		protocol: 1,
+		provider_id: provider_id.to_string(),
+		project_id: project_id.to_string(),
+		game_id: game_id.to_string(),
+		affected: Affected {
+			digest: Some(parse_sha256(digest)?.to_vec()),
+			predicate: None,
+		},
+		severity: Severity::parse(severity).ok_or_else(|| format!("unknown severity `{severity}`"))?,
+		category: Category::parse(category).ok_or_else(|| format!("unknown category `{category}`"))?,
+		taxonomy_version: TAXONOMY_VERSION,
+		block_promotion,
+		evidence_ref,
+		published_at: now(),
+		expires_at: None,
+		retracted_at: None,
+	};
+	let signed = sign_payload(ObjectKind::Advisory, &advisory, &[&key]);
+	let home = Home::new(home_url)?;
+	let receipt = home.post_wire("/v1/advisories", signed.wire_bytes()).await?;
+	println!("advisory: {}", receipt["advisory"].as_str().unwrap_or("?"));
+	Ok(())
+}
+
+fn parse_sha256(value: &str) -> Result<[u8; 32], String> {
+	let hex = value
+		.strip_prefix("sha256:")
+		.or_else(|| value.strip_prefix("gd:sha256:"))
+		.unwrap_or(value);
+	hex::decode(hex)
+		.map_err(|_| format!("`{value}` is not a sha256 digest"))?
+		.try_into()
+		.map_err(|_| format!("`{value}` must be 32 bytes"))
 }
 
 pub async fn withdraw(

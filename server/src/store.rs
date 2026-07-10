@@ -106,6 +106,24 @@ CREATE TABLE IF NOT EXISTS search_labels (
 	label_id TEXT NOT NULL,
 	PRIMARY KEY (project_id, label_kind, label_id)
 );
+CREATE TABLE IF NOT EXISTS providers (
+	provider_id TEXT PRIMARY KEY,
+	public_key BLOB NOT NULL,
+	added_by TEXT NOT NULL,
+	added_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS advisories (
+	digest BLOB PRIMARY KEY,
+	provider_id TEXT NOT NULL,
+	project_id TEXT NOT NULL,
+	game_id TEXT NOT NULL,
+	affected_digest BLOB,
+	severity TEXT NOT NULL,
+	category TEXT NOT NULL,
+	block_promotion INTEGER NOT NULL,
+	published_at INTEGER NOT NULL,
+	retracted_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS withdrawals (
 	project_id TEXT NOT NULL,
 	release_id TEXT NOT NULL,

@@ -39,6 +39,7 @@ pub fn router(state: AppState) -> Router {
 		.merge(crate::federation::routes())
 		.merge(crate::search::routes())
 		.merge(crate::orgs::routes())
+		.merge(crate::advisories::routes())
 		.with_state(state)
 		.layer(read_only_cors());
 	match web_dir {

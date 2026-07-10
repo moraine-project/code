@@ -49,6 +49,24 @@ impl Home {
 		read_json(response).await
 	}
 
+	pub async fn post_json_with_token(
+		&self,
+		path: &str,
+		body: String,
+		token: Option<&str>,
+	) -> Result<serde_json::Value, String> {
+		let mut request = self
+			.client
+			.post(format!("{}{path}", self.base))
+			.header(reqwest::header::CONTENT_TYPE, "application/json")
+			.body(body);
+		if let Some(token) = token {
+			request = request.bearer_auth(token);
+		}
+		let response = request.send().await.map_err(|error| error.to_string())?;
+		read_json(response).await
+	}
+
 	pub async fn post_blob(
 		&self,
 		path: &str,

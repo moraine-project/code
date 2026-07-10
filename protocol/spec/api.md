@@ -282,7 +282,32 @@ None of this touches signing. An org role manages a project page; it does not
 authorize a release. Signing authority still comes only from a key delegation
 under the project's root.
 
+## Advisories
+
+An advisory is a signed statement by a provider about one artifact digest. A
+provider is not a project, so it needs its own trust anchor.
+
+`POST /v1/providers/{provider_id}/keys` pins a provider's Ed25519 public key.
+It needs an authenticated account, and the pin is local to the instance: every
+instance chooses which providers it trusts, and the same provider may be pinned
+with a different key elsewhere. Pinning the same ID with a different key is a
+conflict.
+
+`POST /v1/advisories` accepts a signed advisory object. The server looks up the
+advisory's `provider_id`, verifies the signature against the pinned key, stores
+the object, and indexes it. An advisory for an unpinned provider is rejected
+with `409`, because an unanchored signature proves nothing.
+
+`GET /v1/advisories?project=<id>` or `?digest=<sha256>` returns attributed
+advisories with their provider, severity, category, `block_promotion` flag, and
+times. They also appear on the release view under `advisories`.
+
+Only `malware` at `high` or `critical` may set `block_promotion`, and it applies
+to the affected digest or range, never the project. An advisory is evidence: it
+never alters signed bytes, and a retraction is a later advisory about the same
+target.
+
 ## Not implemented yet
 
-Game and loader definition hosting, range caching of object documents,
-advisories, and notifications.
+Game and loader definition hosting, range caching of object documents, mirror
+commitments, and notifications.
