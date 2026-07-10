@@ -303,6 +303,9 @@ pub(crate) fn describe_stored(object: &StoredObject) -> Option<String> {
 			Ok(moraine_model::release::ReleaseObject::Release(release)) => {
 				Some(format!("{} ({})", release.human_version, release.channel))
 			}
+			Ok(moraine_model::release::ReleaseObject::Withdrawal(withdrawal)) => {
+				Some(format!("withdrawn: {}", withdrawal.reason))
+			}
 			_ => None,
 		},
 		"profile" => ProfileRevision::from_canonical_bytes(&object.payload)

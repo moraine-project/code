@@ -744,3 +744,37 @@ async fn withdrawal_marks_a_release_without_rewriting_it() {
 	assert_eq!(view["withdrawal"]["note"], "automated key leak");
 	assert_eq!(view["human_version"], "1.0.0");
 }
+
+#[tokio::test]
+async fn feed_titles_a_withdrawal() {
+	let (application, _directory) = app().await;
+	let signer = key(13);
+	let (project_id, _release_digest) = publish_project(&application, &signer).await;
+
+	let withdrawal = Withdrawal {
+		protocol: 1,
+		release_id: "gd:sha256:whatever".to_string(),
+		reason: "compromise".to_string(),
+		note: None,
+		declared_time: 1_760_000_200,
+	};
+	let signed = sign_payload(Kind::Release, &withdrawal, &[&signer]);
+	let digest = object_id(Kind::Release, &signed.payload_bytes);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+		.body(Body::from(signed.wire_bytes()))
+		.expect("request");
+	application.clone().oneshot(request).await.expect("response");
+
+	let entry = feed_wire_kind(&signer, &project_id, 1, None, digest, "release-withdrawn");
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(entry))
+		.expect("request");
+	application.clone().oneshot(request).await.expect("response");
+
+	let request = axum::http::Request::get(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	let page = body_json(response).await;
+	assert_eq!(page["entries"][0]["title"], "withdrawn: compromise");
+}

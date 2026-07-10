@@ -46,6 +46,19 @@
 	{#if data.error}
 		<div role="alert" class="alert alert-error"><span>{data.error}</span></div>
 	{:else if data.release}
+		{#if data.release.withdrawal}
+			<div role="alert" class="alert alert-error">
+				<span>
+					<strong>Withdrawn by the publisher</strong>
+					— {data.release.withdrawal.reason}{data.release.withdrawal.note
+						? `: ${data.release.withdrawal.note}`
+						: ''}
+					({formatTime(data.release.withdrawal.declared_time)}). The release record and its
+					digest are unchanged.
+				</span>
+			</div>
+		{/if}
+
 		<section class="card card-border">
 			<div class="card-body">
 				<h1 class="card-title">{data.release.human_version}</h1>

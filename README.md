@@ -153,7 +153,8 @@ cross-origin.
 
 A release page can hash a file you already downloaded and check it against the
 release's artifact digests. That is a byte check in the browser; the verifier
-CLI is still what checks the publisher's signature.
+CLI is still what checks the publisher's signature. A release marked withdrawn
+shows a warning at the top of its page, and the feed names the withdrawal.
 
 The account console (`/account`) and review queue (`/review`) use session
 cookies, so they work when the site is served by the registry under one origin

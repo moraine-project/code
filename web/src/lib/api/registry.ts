@@ -82,6 +82,12 @@ export const rightsSchema = z.object({
 	attribution_required: z.boolean()
 });
 
+export const withdrawalSchema = z.object({
+	reason: z.string(),
+	note: z.string().nullable().optional(),
+	declared_time: z.number()
+});
+
 export const releaseSchema = z.object({
 	project_id: z.string(),
 	human_version: z.string(),
@@ -92,7 +98,8 @@ export const releaseSchema = z.object({
 	artifacts: z.array(artifactSchema),
 	compatibility: z.array(compatibilitySchema),
 	dependencies: z.array(dependencySchema),
-	rights: rightsSchema.nullable().optional()
+	rights: rightsSchema.nullable().optional(),
+	withdrawal: withdrawalSchema.nullable().optional()
 });
 
 export const searchResultSchema = z.object({
