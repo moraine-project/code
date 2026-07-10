@@ -18,6 +18,7 @@
 		<div class="navbar-end gap-2">
 			<a class="btn btn-ghost" href="/search">Search</a>
 			<a class="btn btn-ghost" href="/publish">Publish</a>
+			<a class="btn btn-ghost" href="/notifications">Notifications</a>
 			<a class="btn btn-ghost" href="/account">Account</a>
 			<span class="badge badge-ghost">federated registry</span>
 		</div>

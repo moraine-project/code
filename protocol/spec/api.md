@@ -329,7 +329,21 @@ them, so the endpoint reports evidence, not a promise. A consumer may fetch
 from any hint because it checks the digest, but the decision to distribute
 still belongs to the operator and the publisher.
 
+## Follows and notifications
+
+A signed-in user can follow a project with `POST /v1/follows/{project_id}`
+(`DELETE` to stop, `GET /v1/follows` to list). When a feed entry is accepted —
+on the home, through review, or during a sync — the server records a
+notification for every follower of that project.
+
+`GET /v1/notifications?unread=true` lists them newest first; `POST
+/v1/notifications/{id}/read` marks one read and `POST /v1/notifications/read-all`
+marks all. A notification names the project, the event kind, the referenced
+object, and the feed sequence, and is a local convenience: the feed remains the
+source of truth and every notification is reproducible from it. Notifications
+are meant to be pruned after 90 days; that pruning is not yet scheduled.
+
 ## Not implemented yet
 
-Game and loader definition hosting, range caching of object documents, and
-notifications.
+Game and loader definition hosting, range caching of object documents,
+outbound webhooks, and scheduled notification pruning.

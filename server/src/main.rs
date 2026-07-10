@@ -6,6 +6,7 @@ mod capability;
 mod config;
 mod federation;
 mod mirrors;
+mod notifications;
 mod orgs;
 mod password;
 mod registry;

@@ -399,6 +399,11 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	if row.kind == "release-withdrawn" {
 		apply_withdrawal(state, &row.project_id, &row.object_digest).await?;
 	}
+	if let Err(error) =
+		crate::notifications::notify_followers(state, &row.project_id, &row.kind, &row.object_digest, row.seq).await
+	{
+		return Err(Box::new(storage_error(error)));
+	}
 	Ok((row.seq, entry_id))
 }
 

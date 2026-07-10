@@ -106,6 +106,22 @@ CREATE TABLE IF NOT EXISTS search_labels (
 	label_id TEXT NOT NULL,
 	PRIMARY KEY (project_id, label_kind, label_id)
 );
+CREATE TABLE IF NOT EXISTS follows (
+	user_id TEXT NOT NULL,
+	project_id TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	PRIMARY KEY (user_id, project_id)
+);
+CREATE TABLE IF NOT EXISTS notifications (
+	id TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL,
+	project_id TEXT NOT NULL,
+	event_kind TEXT NOT NULL,
+	object_digest BLOB,
+	feed_seq INTEGER,
+	created_at INTEGER NOT NULL,
+	read_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS locations (
 	artifact_digest BLOB NOT NULL,
 	url TEXT NOT NULL,
