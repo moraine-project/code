@@ -5,6 +5,7 @@ mod blob;
 mod capability;
 mod config;
 mod federation;
+mod mirrors;
 mod orgs;
 mod password;
 mod registry;

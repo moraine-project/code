@@ -522,14 +522,32 @@ pub(crate) fn parse_hex_digest(value: &str) -> Option<[u8; 32]> {
 pub(crate) async fn store_object_record(state: &AppState, object: &verify::VerifiedObject) -> Result<(), sqlx::Error> {
 	state.metadata.put_object(&stored(object)).await?;
 	if object.kind == ObjectKind::Release
-		&& let Ok(moraine_model::release::ReleaseObject::Release(release)) =
-			moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload_bytes)
+		&& let Ok(release_object) = moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload_bytes)
 	{
-		for artifact in &release.artifacts {
-			state
-				.metadata
-				.index_artifact(&artifact.digest, &release.project_id, &object.digest)
-				.await?;
+		match release_object {
+			moraine_model::release::ReleaseObject::Release(release) => {
+				for artifact in &release.artifacts {
+					state
+						.metadata
+						.index_artifact(&artifact.digest, &release.project_id, &object.digest)
+						.await?;
+				}
+			}
+			moraine_model::release::ReleaseObject::Location(location) => {
+				for entry in &location.locations {
+					state
+						.metadata
+						.index_location(
+							&location.artifact_digest,
+							&entry.url,
+							entry.kind.as_str(),
+							entry.operator_id.as_deref(),
+							&object.digest,
+						)
+						.await?;
+				}
+			}
+			moraine_model::release::ReleaseObject::Withdrawal(_) => {}
 		}
 	}
 	Ok(())

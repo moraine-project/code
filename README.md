@@ -25,8 +25,9 @@ the tools that check it.
   objects, append feed entries with continuity checks, and read them back. It
   also has accounts (Argon2id passwords, server-side sessions with CSRF, and
   scoped revocable API keys), organizations with roles and nested teams,
-  admission review with a `review`/`open` setting, and a pull-based federation
-  sync that fetches, verifies, and indexes a remote home's feed.
+  admission review with a `review`/`open` setting, publisher withdrawals,
+  provider advisories and mirror commitments with pinned keys, and a pull-based
+  federation sync that fetches, verifies, and indexes a remote home's feed.
 
 ## Try it
 

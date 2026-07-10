@@ -307,7 +307,29 @@ to the affected digest or range, never the project. An advisory is evidence: it
 never alters signed bytes, and a retraction is a later advisory about the same
 target.
 
+## Mirrors and locations
+
+Two different things are kept apart, and this is where they are read.
+
+A **location record** is publisher-signed (kind `release`, `type: location`). It
+names where an artifact digest may be fetched. The server indexes it when the
+object is stored, so `GET /v1/mirrors/{sha256}` lists a digest's locations with
+their kind and operator.
+
+A **mirror commitment** is the mirror's own signed statement that it holds the
+bytes. A mirror is not a project, so its key is pinned like a provider's:
+`POST /v1/mirrors/{mirror_id}/keys` records an Ed25519 key for an authenticated
+account, unique to the instance. `POST /v1/mirror-commitments` accepts a signed
+commitment, verifies it against the pinned key, and records it; an unpinned
+mirror is rejected.
+
+`GET /v1/mirrors/{sha256}` returns `{ digest, locations, commitments }`. A
+commitment proves the mirror stored the bytes once, never that it will keep
+them, so the endpoint reports evidence, not a promise. A consumer may fetch
+from any hint because it checks the digest, but the decision to distribute
+still belongs to the operator and the publisher.
+
 ## Not implemented yet
 
-Game and loader definition hosting, range caching of object documents, mirror
-commitments, and notifications.
+Game and loader definition hosting, range caching of object documents, and
+notifications.
