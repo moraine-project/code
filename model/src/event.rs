@@ -3,6 +3,8 @@ use moraine_codec::Value;
 use crate::canonical::{Canonical, Fields, expect_bytes, expect_i64, expect_text, expect_u32, expect_u64, map_of};
 use crate::error::{ModelError, RejectReason};
 
+pub const WEBHOOK_DOMAIN: &[u8] = b"GAMEDIST/v1/webhook\0";
+
 pub const NOTIFICATION_RETENTION_DAYS: u64 = 90;
 pub const WEBHOOK_RETENTION_DAYS: u64 = 30;
 pub const COUNT_WINDOW_DAYS: u64 = 30;
@@ -17,6 +19,7 @@ pub enum EventKind {
 	Migration,
 	Advisory,
 	ForkDetected,
+	OwnershipTransferred,
 }
 
 impl EventKind {
@@ -30,6 +33,7 @@ impl EventKind {
 			Self::Migration => "migration",
 			Self::Advisory => "advisory",
 			Self::ForkDetected => "fork-detected",
+			Self::OwnershipTransferred => "ownership-transferred",
 		}
 	}
 
@@ -56,6 +60,7 @@ impl EventKind {
 				| Self::KeyChanged
 				| Self::Migration
 				| Self::Recovery
+				| Self::OwnershipTransferred
 		)
 	}
 }
@@ -66,7 +71,7 @@ pub struct Event {
 	pub event_id: String,
 	pub event_kind: EventKind,
 	pub project_id: String,
-	pub game_id: String,
+	pub game_id: Option<String>,
 	pub feed_seq: Option<u64>,
 	pub object_digest: Option<Vec<u8>>,
 	pub advisory_digest: Option<Vec<u8>>,
@@ -74,11 +79,18 @@ pub struct Event {
 }
 
 impl Event {
+	/// The bytes an instance signs when it delivers this event to a webhook.
+	pub fn signing_message(&self) -> Vec<u8> {
+		let mut message = WEBHOOK_DOMAIN.to_vec();
+		message.extend_from_slice(&self.to_canonical_bytes());
+		message
+	}
+
 	pub fn validate(&self) -> Result<(), ModelError> {
 		if self.protocol != 1 {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "protocol"));
 		}
-		if self.event_id.is_empty() || self.project_id.is_empty() || self.game_id.is_empty() {
+		if self.event_id.is_empty() || self.project_id.is_empty() {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "event_id"));
 		}
 		if self.event_kind.is_feed_derived() && self.feed_seq.is_none() {
@@ -108,8 +120,10 @@ impl Canonical for Event {
 			("event_id", Value::text(self.event_id.clone())),
 			("event_kind", Value::text(self.event_kind.as_str())),
 			("project_id", Value::text(self.project_id.clone())),
-			("game_id", Value::text(self.game_id.clone())),
 		];
+		if let Some(game_id) = &self.game_id {
+			pairs.push(("game_id", Value::text(game_id.clone())));
+		}
 		if let Some(feed_seq) = self.feed_seq {
 			pairs.push(("feed_seq", Value::int(feed_seq as i64)));
 		}
@@ -142,7 +156,10 @@ impl Canonical for Event {
 			event_kind: EventKind::parse(&event_kind_text)
 				.ok_or_else(|| ModelError::field(RejectReason::InvalidFieldValue, "event_kind"))?,
 			project_id: expect_text(fields.required("project_id")?, "project_id")?,
-			game_id: expect_text(fields.required("game_id")?, "game_id")?,
+			game_id: fields
+				.optional("game_id")
+				.map(|value| expect_text(value, "game_id"))
+				.transpose()?,
 			feed_seq: fields.optional("feed_seq").map(|v| expect_u64(v, "feed_seq")).transpose()?,
 			object_digest: fields
 				.optional("object_digest")
@@ -170,7 +187,7 @@ mod tests {
 			event_id: "e1".to_string(),
 			event_kind: EventKind::ReleasePublished,
 			project_id: "p".to_string(),
-			game_id: "g".to_string(),
+			game_id: Some("g".to_string()),
 			feed_seq: None,
 			object_digest: None,
 			advisory_digest: None,

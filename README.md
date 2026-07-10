@@ -27,8 +27,8 @@ the tools that check it.
   scoped revocable API keys), organizations with roles and nested teams,
   admission review with a `review`/`open` setting, publisher withdrawals,
   provider advisories and mirror commitments with pinned keys, follows with
-  local notifications, and a pull-based federation sync that fetches, verifies,
-  and indexes a remote home's feed.
+  local notifications and signed outbound webhooks, and a pull-based federation
+  sync that fetches, verifies, and indexes a remote home's feed.
 
 ## Try it
 

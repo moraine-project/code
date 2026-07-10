@@ -343,7 +343,32 @@ object, and the feed sequence, and is a local convenience: the feed remains the
 source of truth and every notification is reproducible from it. Notifications
 are meant to be pruned after 90 days; that pruning is not yet scheduled.
 
+## Webhooks
+
+An operator can register an outbound webhook with `POST /v1/webhooks`, giving a
+URL and an optional list of event kinds to receive (empty means all). `GET
+/v1/webhooks` lists the caller's hooks and `DELETE /v1/webhooks/{id}` revokes
+one. URLs must be HTTPS, or loopback when the operator explicitly enabled
+insecure local fetches; redirects are not followed.
+
+When a feed entry is accepted, the instance builds the shared event payload and
+enqueues one signed delivery per matching webhook. A worker retries with
+exponential backoff for up to eight attempts, then marks the delivery failed. A
+delivery body is:
+
+```json
+{ "protocol": 1, "event_id": "…", "event_kind": "release-published",
+  "project_id": "gd:sha256:…", "payload": "<canonical CBOR, hex>",
+  "signature": "<hex>" }
+```
+
+The signature covers `GAMEDIST/v1/webhook\0 || payload`, and the instance's
+public key is advertised as `webhook_public_key` in the capability document so
+a receiver can pin it. The receiver treats a delivery as a hint and re-fetches
+the referenced record before acting; idempotency is by `event_id`. Delivery
+records are meant to be pruned after 30 days, which is not yet scheduled.
+
 ## Not implemented yet
 
 Game and loader definition hosting, range caching of object documents,
-outbound webhooks, and scheduled notification pruning.
+scheduled notification and delivery pruning, and the dependency resolver.

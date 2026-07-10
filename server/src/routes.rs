@@ -42,6 +42,7 @@ pub fn router(state: AppState) -> Router {
 		.merge(crate::advisories::routes())
 		.merge(crate::mirrors::routes())
 		.merge(crate::notifications::routes())
+		.merge(crate::webhooks::routes())
 		.with_state(state)
 		.layer(read_only_cors());
 	match web_dir {

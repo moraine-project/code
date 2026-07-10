@@ -404,6 +404,10 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	{
 		return Err(Box::new(storage_error(error)));
 	}
+	if let Err(error) = crate::webhooks::enqueue_event(state, &row.kind, &row.project_id, &row.object_digest, row.seq).await
+	{
+		return Err(Box::new(storage_error(error)));
+	}
 	Ok((row.seq, entry_id))
 }
 

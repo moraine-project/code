@@ -106,6 +106,26 @@ CREATE TABLE IF NOT EXISTS search_labels (
 	label_id TEXT NOT NULL,
 	PRIMARY KEY (project_id, label_kind, label_id)
 );
+CREATE TABLE IF NOT EXISTS webhooks (
+	id TEXT PRIMARY KEY,
+	owner_id TEXT NOT NULL,
+	url TEXT NOT NULL,
+	event_kinds TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	revoked_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+	id TEXT PRIMARY KEY,
+	webhook_id TEXT NOT NULL,
+	event_id TEXT NOT NULL UNIQUE,
+	url TEXT NOT NULL,
+	body TEXT NOT NULL,
+	attempt INTEGER NOT NULL DEFAULT 0,
+	status TEXT NOT NULL,
+	next_attempt_at INTEGER NOT NULL,
+	created_at INTEGER NOT NULL,
+	delivered_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS follows (
 	user_id TEXT NOT NULL,
 	project_id TEXT NOT NULL,

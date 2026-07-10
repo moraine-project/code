@@ -16,6 +16,7 @@ mod search;
 mod store;
 mod verify;
 mod views;
+mod webhooks;
 
 use std::sync::Arc;
 
@@ -40,7 +41,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		capability,
 		web_dir: config.web_dir.clone().map(Arc::new),
 	};
+	let worker_state = state.clone();
 	let app = routes::router(state);
+
+	tokio::spawn(async move {
+		let mut ticker = tokio::time::interval(std::time::Duration::from_secs(10));
+		loop {
+			ticker.tick().await;
+			if let Err(error) = webhooks::deliver_pending(&worker_state, 20).await {
+				tracing::warn!(%error, "webhook dispatch failed");
+			}
+		}
+	});
 
 	let listener = tokio::net::TcpListener::bind(config.bind).await?;
 	tracing::info!(address = %config.bind, "moraine-server listening");
