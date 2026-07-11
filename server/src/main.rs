@@ -42,6 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		web_dir: config.web_dir.clone().map(Arc::new),
 	};
 	let worker_state = state.clone();
+	let prune_state = state.clone();
 	let app = routes::router(state);
 
 	tokio::spawn(async move {
@@ -54,8 +55,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		}
 	});
 
+	tokio::spawn(async move {
+		let mut ticker = tokio::time::interval(std::time::Duration::from_secs(3600));
+		loop {
+			ticker.tick().await;
+			let now = unix_now();
+			let notifications_before = now - (moraine_model::event::NOTIFICATION_RETENTION_DAYS * 86_400) as i64;
+			let deliveries_before = now - (moraine_model::event::WEBHOOK_RETENTION_DAYS * 86_400) as i64;
+			if let Ok(pruned) = prune_state.metadata.prune_notifications(notifications_before).await
+				&& pruned > 0
+			{
+				tracing::info!(pruned, "pruned notifications");
+			}
+			if let Ok(pruned) = prune_state.metadata.prune_deliveries(deliveries_before).await
+				&& pruned > 0
+			{
+				tracing::info!(pruned, "pruned webhook deliveries");
+			}
+		}
+	});
+
 	let listener = tokio::net::TcpListener::bind(config.bind).await?;
 	tracing::info!(address = %config.bind, "moraine-server listening");
 	axum::serve(listener, app).await?;
 	Ok(())
+}
+
+fn unix_now() -> i64 {
+	std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|duration| duration.as_secs() as i64)
+		.unwrap_or(0)
 }

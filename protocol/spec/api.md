@@ -340,8 +340,8 @@ notification for every follower of that project.
 /v1/notifications/{id}/read` marks one read and `POST /v1/notifications/read-all`
 marks all. A notification names the project, the event kind, the referenced
 object, and the feed sequence, and is a local convenience: the feed remains the
-source of truth and every notification is reproducible from it. Notifications
-are meant to be pruned after 90 days; that pruning is not yet scheduled.
+source of truth and every notification is reproducible from it. A background
+maintenance task prunes notifications older than 90 days.
 
 ## Webhooks
 
@@ -366,9 +366,8 @@ The signature covers `GAMEDIST/v1/webhook\0 || payload`, and the instance's
 public key is advertised as `webhook_public_key` in the capability document so
 a receiver can pin it. The receiver treats a delivery as a hint and re-fetches
 the referenced record before acting; idempotency is by `event_id`. Delivery
-records are meant to be pruned after 30 days, which is not yet scheduled.
+records are pruned after 30 days by the same maintenance task.
 
 ## Not implemented yet
 
-Game and loader definition hosting, range caching of object documents,
-scheduled notification and delivery pruning, and the dependency resolver.
+Game and loader definition hosting and range caching of object documents.

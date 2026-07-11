@@ -117,6 +117,14 @@ impl MetadataStore {
 			.await?;
 		Ok(())
 	}
+
+	pub async fn prune_notifications(&self, before: i64) -> Result<u64, sqlx::Error> {
+		let result = sqlx::query("DELETE FROM notifications WHERE created_at < ?1")
+			.bind(before)
+			.execute(&self.pool)
+			.await?;
+		Ok(result.rows_affected())
+	}
 }
 
 /// Records a notification for every follower of a project. Notifications are a
@@ -486,5 +494,40 @@ mod tests {
 		let response = application.oneshot(listing).await.expect("response");
 		let list = body_json(response).await;
 		assert!(list.as_array().expect("notifications").is_empty());
+	}
+}
+
+#[cfg(test)]
+mod prune_tests {
+	use super::*;
+
+	#[tokio::test]
+	async fn prunes_notifications_past_retention() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = MetadataStore::open(directory.path().join("metadata.sqlite"))
+			.await
+			.expect("store");
+		let old = NotificationRow {
+			id: "old".to_string(),
+			project_id: "p".to_string(),
+			event_kind: "release-published".to_string(),
+			object_digest: None,
+			feed_seq: Some(1),
+			created_at: 1_000,
+			read_at: None,
+		};
+		let fresh = NotificationRow {
+			id: "fresh".to_string(),
+			created_at: now(),
+			..old.clone()
+		};
+		store.insert_notification(&old, "u").await.expect("old");
+		store.insert_notification(&fresh, "u").await.expect("fresh");
+
+		let pruned = store.prune_notifications(now() - 90 * 86_400).await.expect("prune");
+		assert_eq!(pruned, 1);
+		let remaining = store.notifications("u", false, 10).await.expect("list");
+		assert_eq!(remaining.len(), 1);
+		assert_eq!(remaining[0].id, "fresh");
 	}
 }

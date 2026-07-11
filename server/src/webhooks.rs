@@ -124,6 +124,14 @@ impl MetadataStore {
 			.collect())
 	}
 
+	pub async fn prune_deliveries(&self, before: i64) -> Result<u64, sqlx::Error> {
+		let result = sqlx::query("DELETE FROM webhook_deliveries WHERE created_at < ?1")
+			.bind(before)
+			.execute(&self.pool)
+			.await?;
+		Ok(result.rows_affected())
+	}
+
 	async fn finish_delivery(
 		&self,
 		id: &str,
@@ -618,5 +626,29 @@ mod tests {
 
 		let again = deliver_pending(&state, 10).await.expect("deliver");
 		assert_eq!(again, 0);
+	}
+}
+
+#[cfg(test)]
+mod prune_tests {
+	use super::*;
+
+	#[tokio::test]
+	async fn prunes_delivery_records_past_retention() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = MetadataStore::open(directory.path().join("metadata.sqlite"))
+			.await
+			.expect("store");
+		store
+			.enqueue_delivery("old", "wh", "e1", "https://mirror.example", "{}", 1_000)
+			.await
+			.expect("old");
+		store
+			.enqueue_delivery("fresh", "wh", "e2", "https://mirror.example", "{}", now())
+			.await
+			.expect("fresh");
+
+		let pruned = store.prune_deliveries(now() - 30 * 86_400).await.expect("prune");
+		assert_eq!(pruned, 1);
 	}
 }
