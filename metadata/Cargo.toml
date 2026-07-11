@@ -1,0 +1,13 @@
+[package]
+name = "moraine-metadata"
+description = "Safe metadata extraction from mod archives, without executing game code"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml = "0.8"
+zip = { version = "2", default-features = false, features = ["deflate"] }

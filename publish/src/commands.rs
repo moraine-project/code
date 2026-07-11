@@ -146,6 +146,19 @@ pub async fn profile(
 	Ok(())
 }
 
+pub fn inspect(file: &Path) -> Result<(), String> {
+	let bytes = std::fs::read(file).map_err(|error| format!("{}: {error}", file.display()))?;
+	let metadata = moraine_metadata::extract(&bytes).map_err(|error| error.to_string())?;
+	println!("loader: {}", metadata.loader.as_deref().unwrap_or("unknown"));
+	println!("mod_id: {}", metadata.mod_id.as_deref().unwrap_or("(none)"));
+	println!("name: {}", metadata.name.as_deref().unwrap_or("(none)"));
+	println!("version: {}", metadata.version.as_deref().unwrap_or("(none)"));
+	if let Some(environment) = &metadata.environment {
+		println!("environment: {environment}");
+	}
+	Ok(())
+}
+
 pub async fn provider(key_path: &Path, home_url: &str, provider_id: &str, api_key: Option<String>) -> Result<(), String> {
 	let key = keyfile::load(key_path)?;
 	let home = Home::new(home_url)?;

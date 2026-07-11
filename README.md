@@ -76,6 +76,16 @@ cargo run -p moraine-server -- --data-dir ./data --web-dir web/build
 `--web-dir` serves files and falls back to `index.html` for client-side routes;
 API paths still get API responses.
 
+Read a mod archive's manifest without running it:
+
+```sh
+cargo run -p moraine-publish -- inspect mod.jar
+```
+
+It reads `fabric.mod.json`, `quilt.mod.json`, or `META-INF/mods.toml` and prints
+the mod ID, name, version, and loader. It never executes archive contents and
+refuses any metadata entry over a size limit.
+
 Publish a release with the CLI:
 
 ```sh
@@ -192,6 +202,7 @@ model/          typed, validated protocol objects
 verify/         moraine-verify CLI and vector runner
 publish/        moraine-publish CLI that signs and publishes releases
 resolver/       deterministic dependency resolution and lockfiles
+metadata/       safe mod-archive metadata extraction
 server/         moraine-server registry, directory, and worker binary
 web/            SvelteKit website with static and Cloudflare build targets
 protocol/

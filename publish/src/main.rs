@@ -119,6 +119,10 @@ enum Command {
 		#[arg(long)]
 		to: String,
 	},
+	/// Read a mod archive's manifest without executing it.
+	Inspect {
+		file: PathBuf,
+	},
 	/// Upload an artifact to a home's blob store.
 	Upload {
 		#[arg(long)]
@@ -243,6 +247,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			from,
 			to,
 		} => commands::transfer(&key, &cosign_key, &home, &project, &from, &to).await,
+		Command::Inspect { file } => commands::inspect(&file),
 		Command::Upload { home, file, api_key } => commands::upload(&home, &file, api_key).await,
 		Command::Profile {
 			key,
