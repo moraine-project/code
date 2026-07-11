@@ -1,0 +1,15 @@
+[package]
+name = "moraine-resolver"
+description = "Deterministic dependency resolution and lockfiles for Moraine projects"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+moraine-model = { path = "../model" }
+hex.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

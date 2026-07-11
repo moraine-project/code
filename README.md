@@ -189,6 +189,7 @@ crypto/         keys, signatures, domain separation, object IDs
 model/          typed, validated protocol objects
 verify/         moraine-verify CLI and vector runner
 publish/        moraine-publish CLI that signs and publishes releases
+resolver/       deterministic dependency resolution and lockfiles
 server/         moraine-server registry, directory, and worker binary
 web/            SvelteKit website with static and Cloudflare build targets
 protocol/

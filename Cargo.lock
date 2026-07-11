@@ -1109,6 +1109,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "moraine-resolver"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "moraine-model",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "moraine-server"
 version = "0.1.0"
 dependencies = [
