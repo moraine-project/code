@@ -28,8 +28,9 @@ the tools that check it.
   admission review with a `review`/`open` setting, publisher withdrawals,
   provider advisories and mirror commitments with pinned keys, follows with
   local notifications and signed outbound webhooks, game/loader/runtime
-  definition hosting, and a pull-based federation sync that fetches, verifies,
-  and indexes a remote home's feed.
+  definition hosting, signed modpack manifests with validated overrides, and a
+  pull-based federation sync that fetches, verifies, and indexes a remote
+  home's feed.
 
 ## Try it
 

@@ -7,6 +7,7 @@ use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
 use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::Genesis;
+use moraine_model::modpack::ModpackManifest;
 use moraine_model::profile::ProfileRevision;
 use moraine_model::release::ReleaseObject;
 use moraine_model::signed::{SignedObject, TrustedKey, verify_envelope};
@@ -64,6 +65,7 @@ pub fn verify_object(kind: ObjectKind, wire: &[u8], root: &RootSet) -> Result<Ve
 		ObjectKind::GameDef => verify_typed::<GameDef>(kind, wire, root),
 		ObjectKind::LoaderDef => verify_typed::<LoaderObject>(kind, wire, root),
 		ObjectKind::RuntimeDef => verify_typed::<RuntimeDef>(kind, wire, root),
+		ObjectKind::Modpack => verify_typed::<ModpackManifest>(kind, wire, root),
 		other => Err(VerifyError::UnsupportedKind(other)),
 	}
 }
@@ -90,6 +92,7 @@ pub fn verify_object_authorized(
 			ObjectKind::GameDef => verify_delegated::<GameDef>(kind, wire, delegations, now, error),
 			ObjectKind::LoaderDef => verify_delegated::<LoaderObject>(kind, wire, delegations, now, error),
 			ObjectKind::RuntimeDef => verify_delegated::<RuntimeDef>(kind, wire, delegations, now, error),
+			ObjectKind::Modpack => verify_delegated::<ModpackManifest>(kind, wire, delegations, now, error),
 			other => Err(VerifyError::UnsupportedKind(other)),
 		},
 		Err(other) => Err(other),

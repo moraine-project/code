@@ -12,6 +12,7 @@ pub mod feed;
 pub mod genesis;
 pub mod location;
 pub mod moderation;
+pub mod modpack;
 pub mod profile;
 pub mod reference;
 pub mod release;

@@ -4,6 +4,7 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use moraine_codec::Value;
 use moraine_model::Canonical;
 use moraine_model::advisory::Advisory;
 use moraine_model::delegation::Delegation;
@@ -20,6 +21,61 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/projects/{id}/releases/{hex}", get(release_view))
 		.route("/v1/lookup", get(lookup))
 		.route("/v1/objects/{hex}", get(object_bytes))
+		.route("/v1/packs/{hex}", get(pack_view))
+}
+
+#[derive(Serialize)]
+struct PackView {
+	pack: String,
+	payload: serde_json::Value,
+}
+
+async fn pack_view(State(state): State<AppState>, Path(hex_digest): Path<String>) -> Response {
+	let Some(digest) = parse_hex_digest(&hex_digest) else {
+		return (StatusCode::BAD_REQUEST, "invalid digest").into_response();
+	};
+	let Some(object) = (match state.metadata.object(&digest).await {
+		Ok(object) => object,
+		Err(error) => return storage_error(error),
+	}) else {
+		return (StatusCode::NOT_FOUND, "no such pack").into_response();
+	};
+	if object.kind != "modpack" {
+		return (StatusCode::NOT_FOUND, "object is not a modpack manifest").into_response();
+	}
+	let payload = match payload_json(&object.payload) {
+		Ok(payload) => payload,
+		Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, error).into_response(),
+	};
+	Json(PackView {
+		pack: id_for(&digest),
+		payload,
+	})
+	.into_response()
+}
+
+pub(crate) fn payload_json(bytes: &[u8]) -> Result<serde_json::Value, String> {
+	let value = moraine_codec::decode(bytes).map_err(|error| error.to_string())?;
+	Ok(value_to_json(&value))
+}
+
+fn value_to_json(value: &Value) -> serde_json::Value {
+	match value {
+		Value::Integer(number) => serde_json::Value::from(*number),
+		Value::Bytes(bytes) => serde_json::Value::from(hex::encode(bytes)),
+		Value::Text(text) => serde_json::Value::from(text.clone()),
+		Value::Bool(flag) => serde_json::Value::from(*flag),
+		Value::Null => serde_json::Value::Null,
+		Value::Array(items) => serde_json::Value::Array(items.iter().map(value_to_json).collect()),
+		Value::Map(pairs) => {
+			let mut object = serde_json::Map::new();
+			for (key, item) in pairs {
+				let name = key.as_text().map(str::to_string).unwrap_or_else(|| format!("{key:?}"));
+				object.insert(name, value_to_json(item));
+			}
+			serde_json::Value::Object(object)
+		}
+	}
 }
 
 #[derive(Deserialize)]

@@ -4,7 +4,6 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use moraine_codec::Value;
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
 use moraine_model::genesis::{Genesis, GenesisKind};
@@ -212,7 +211,7 @@ async fn get_definition(state: &AppState, expected: GenesisKind, id: &str) -> Re
 	}) else {
 		return (StatusCode::INTERNAL_SERVER_ERROR, "definition object is missing").into_response();
 	};
-	let payload = match payload_json(&object.payload) {
+	let payload = match crate::views::payload_json(&object.payload) {
 		Ok(payload) => payload,
 		Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, error).into_response(),
 	};
@@ -234,30 +233,6 @@ async fn load_definition(state: &AppState, expected: GenesisKind, id: &str) -> R
 		)),
 		Ok(None) => Err(Box::new((StatusCode::NOT_FOUND, "no such definition").into_response())),
 		Err(error) => Err(Box::new(storage_error(error))),
-	}
-}
-
-fn payload_json(bytes: &[u8]) -> Result<serde_json::Value, String> {
-	let value = moraine_codec::decode(bytes).map_err(|error| error.to_string())?;
-	Ok(value_to_json(&value))
-}
-
-fn value_to_json(value: &Value) -> serde_json::Value {
-	match value {
-		Value::Integer(number) => serde_json::Value::from(*number),
-		Value::Bytes(bytes) => serde_json::Value::from(hex::encode(bytes)),
-		Value::Text(text) => serde_json::Value::from(text.clone()),
-		Value::Bool(flag) => serde_json::Value::from(*flag),
-		Value::Null => serde_json::Value::Null,
-		Value::Array(items) => serde_json::Value::Array(items.iter().map(value_to_json).collect()),
-		Value::Map(pairs) => {
-			let mut object = serde_json::Map::new();
-			for (key, item) in pairs {
-				let name = key.as_text().map(str::to_string).unwrap_or_else(|| format!("{key:?}"));
-				object.insert(name, value_to_json(item));
-			}
-			serde_json::Value::Object(object)
-		}
 	}
 }
 

@@ -397,6 +397,26 @@ definition, verifies both against the genesis root, and stores them. There is
 no subscription for definitions yet, so an operator pulls the identities it
 wants rather than following a catalog automatically.
 
+## Modpacks
+
+A modpack is a signed `modpack` object, not an ordinary release. It names the
+game and optional loader, an ordered list of entries, and a set of overrides.
+Each entry pins a target kind, a stable ID, an exact release ID, and a digest;
+each override is a content-addressed blob with a target path. The object is
+stored like any other signed object at
+`/v1/projects/{id}/objects/modpack`.
+
+`GET /v1/packs/{hex}` returns the manifest's canonical payload as JSON. Override
+bytes are fetched by digest from the blob endpoint. Override paths are validated
+when the manifest is decoded: a path must be relative and free of `..`
+segments, so a pack can never write outside the adapter's declared roots.
+
+A pack gains no authority over the projects it includes. Their own signatures,
+withdrawals, and rights still apply, and a pack that includes a project whose
+rights forbid redistribution must reference it as a link or leave it out. A
+lockfile is the resolved, client-specific instance of a manifest and is not a
+signed publisher object.
+
 ## Not implemented yet
 
 Definition subscriptions that fetch a catalog of identities automatically, and

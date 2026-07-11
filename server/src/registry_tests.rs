@@ -8,7 +8,9 @@ use moraine_model::artifact::Artifact;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
 use moraine_model::definition::{GameDef, VersionSyntax};
 use moraine_model::delegation::{Delegation, KeyDelegation, OwnerRef, OwnershipTransfer};
+use moraine_model::dependency::TargetKind;
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
+use moraine_model::modpack::{ModpackEntry, ModpackManifest, ModpackOverride};
 use moraine_model::release::{ReleasePayload, Withdrawal};
 use moraine_model::signed::sign_payload;
 use tokio::net::TcpListener;
@@ -933,4 +935,58 @@ async fn federation_syncs_a_game_definition() {
 	let view = body_json(response).await;
 	assert_eq!(view["payload"]["display_name"], "Minecraft");
 	assert_eq!(view["payload"]["version_ordering"], "semver");
+}
+
+#[tokio::test]
+async fn serves_a_modpack_manifest_and_rejects_an_escaping_override() {
+	let (application, _directory) = app().await;
+	let signer = key(17);
+	let (project_id, release_digest) = publish_project(&application, &signer).await;
+
+	let manifest = ModpackManifest {
+		protocol: 1,
+		project_id: project_id.clone(),
+		game_id: sample_id("minecraft"),
+		loader_id: None,
+		entries: vec![ModpackEntry {
+			ordinal: 0,
+			target_kind: TargetKind::Project,
+			target_id: project_id.clone(),
+			release_id: format!("gd:sha256:{}", hex::encode(release_digest)),
+			digest: release_digest.to_vec(),
+			applies_to: Side::Both,
+		}],
+		overrides: vec![ModpackOverride {
+			digest: vec![0x77; 32],
+			target_path: "config/example.toml".to_string(),
+			applies_to: Side::Client,
+		}],
+		server_manifest_digest: None,
+		declared_time: 1_760_000_500,
+	};
+	let signed = sign_payload(Kind::Modpack, &manifest, &[&signer]);
+	let pack_digest = object_id(Kind::Modpack, &signed.payload_bytes);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/modpack"))
+		.body(Body::from(signed.wire_bytes()))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let request = axum::http::Request::get(format!("/v1/packs/{}", hex::encode(pack_digest)))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let view = body_json(response).await;
+	assert_eq!(view["payload"]["entries"].as_array().expect("entries").len(), 1);
+	assert_eq!(view["payload"]["overrides"][0]["target_path"], "config/example.toml");
+
+	let mut escaping = manifest.clone();
+	escaping.overrides[0].target_path = "../escape.txt".to_string();
+	let signed = sign_payload(Kind::Modpack, &escaping, &[&signer]);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/modpack"))
+		.body(Body::from(signed.wire_bytes()))
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
