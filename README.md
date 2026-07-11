@@ -86,6 +86,15 @@ It reads `fabric.mod.json`, `quilt.mod.json`, or `META-INF/mods.toml` and prints
 the mod ID, name, version, and loader. It never executes archive contents and
 refuses any metadata entry over a size limit.
 
+Preview where files would be installed for a game:
+
+```sh
+cargo run -p moraine-publish -- plan --adapter minecraft/default \
+  --mod example.jar=sha256:<hex> --override config/example.toml=sha256:<hex>
+```
+
+The plan keeps every path inside the adapter's roots; nothing is written.
+
 Publish a release with the CLI:
 
 ```sh
@@ -203,6 +212,7 @@ verify/         moraine-verify CLI and vector runner
 publish/        moraine-publish CLI that signs and publishes releases
 resolver/       deterministic dependency resolution and lockfiles
 metadata/       safe mod-archive metadata extraction
+install/        per-game install placement planning with path containment
 server/         moraine-server registry, directory, and worker binary
 web/            SvelteKit website with static and Cloudflare build targets
 protocol/

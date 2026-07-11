@@ -1,0 +1,10 @@
+[package]
+name = "moraine-install"
+description = "Per-game install placement planning with strict path containment"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+moraine-model = { path = "../model" }

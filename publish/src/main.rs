@@ -123,6 +123,17 @@ enum Command {
 	Inspect {
 		file: PathBuf,
 	},
+	/// Preview where files would be placed for a game adapter.
+	Plan {
+		#[arg(long)]
+		adapter: String,
+		/// Repeatable `name.jar=sha256:<hex>`.
+		#[arg(long = "mod")]
+		mods: Vec<String>,
+		/// Repeatable `config/file.toml=sha256:<hex>`.
+		#[arg(long = "override")]
+		overrides: Vec<String>,
+	},
 	/// Upload an artifact to a home's blob store.
 	Upload {
 		#[arg(long)]
@@ -248,6 +259,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			to,
 		} => commands::transfer(&key, &cosign_key, &home, &project, &from, &to).await,
 		Command::Inspect { file } => commands::inspect(&file),
+		Command::Plan {
+			adapter,
+			mods,
+			overrides,
+		} => commands::plan(&adapter, &mods, &overrides),
 		Command::Upload { home, file, api_key } => commands::upload(&home, &file, api_key).await,
 		Command::Profile {
 			key,

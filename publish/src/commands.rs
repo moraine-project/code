@@ -146,6 +146,52 @@ pub async fn profile(
 	Ok(())
 }
 
+pub fn plan(adapter: &str, mods: &[String], overrides: &[String]) -> Result<(), String> {
+	let mod_files = mods
+		.iter()
+		.map(|entry| parse_placement(entry))
+		.collect::<Result<Vec<_>, _>>()?;
+	let override_files = overrides
+		.iter()
+		.map(|entry| parse_placement(entry))
+		.collect::<Result<Vec<_>, _>>()?;
+	let plan = moraine_install::plan(
+		adapter,
+		&mod_files
+			.into_iter()
+			.map(|(name, digest)| moraine_install::ModFile { digest, filename: name })
+			.collect::<Vec<_>>(),
+		&override_files
+			.into_iter()
+			.map(|(path, digest)| moraine_install::OverrideFile {
+				digest,
+				target_path: path,
+			})
+			.collect::<Vec<_>>(),
+	)
+	.map_err(|error| error.to_string())?;
+	println!("adapter: {}", plan.adapter);
+	for placement in plan.placements {
+		println!(
+			"{} <- sha256:{}",
+			placement.relative_path.display(),
+			hex::encode(placement.digest)
+		);
+	}
+	Ok(())
+}
+
+fn parse_placement(entry: &str) -> Result<(String, [u8; 32]), String> {
+	let (name, digest) = entry
+		.split_once('=')
+		.ok_or_else(|| format!("`{entry}` must be name=sha256:<hex>"))?;
+	let digest = parse_sha256(digest)?;
+	if name.is_empty() {
+		return Err(format!("`{entry}` is missing a name"));
+	}
+	Ok((name.to_string(), digest))
+}
+
 pub fn inspect(file: &Path) -> Result<(), String> {
 	let bytes = std::fs::read(file).map_err(|error| format!("{}: {error}", file.display()))?;
 	let metadata = moraine_metadata::extract(&bytes).map_err(|error| error.to_string())?;
