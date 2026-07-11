@@ -6,6 +6,7 @@ use moraine_crypto::{ObjectKind as Kind, SigningKey, object_id};
 use moraine_model::advisory::{Advisory, Affected, Category, Severity};
 use moraine_model::artifact::Artifact;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
+use moraine_model::definition::{GameDef, VersionSyntax};
 use moraine_model::delegation::{Delegation, KeyDelegation, OwnerRef, OwnershipTransfer};
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::release::{ReleasePayload, Withdrawal};
@@ -67,6 +68,42 @@ async fn app_mode(
 }
 
 const PROJECT_KINDS: &[&str] = &["delegation", "release", "profile"];
+
+fn game_genesis_wire(key: &SigningKey) -> Vec<u8> {
+	let genesis = Genesis {
+		protocol: 1,
+		kind: GenesisKind::Game,
+		nonce: vec![0x21; 16],
+		roots: vec![RootKey::from_public_key(key.verifying_key().to_bytes().to_vec()).expect("root")],
+		threshold: 1,
+		authorized_kinds: vec!["delegation".to_string(), "game-def".to_string()],
+		home_hint: None,
+		contacts: None,
+		created_at: 1_760_000_000,
+	};
+	sign_payload(Kind::Genesis, &genesis, &[key]).wire_bytes()
+}
+
+fn game_definition_wire(key: &SigningKey, game_id: &str) -> Vec<u8> {
+	let definition = GameDef {
+		protocol: 1,
+		game_id: game_id.to_string(),
+		display_name: "Minecraft".to_string(),
+		version_syntax: VersionSyntax {
+			kind: "semver".to_string(),
+			pattern: None,
+		},
+		version_ordering: "semver".to_string(),
+		loaders_allowed: true,
+		loader_authorities: Vec::new(),
+		categories: Vec::new(),
+		tags: Vec::new(),
+		metadata_extractor: None,
+		install_adapter: None,
+		declared_time: 1_760_000_000,
+	};
+	sign_payload(Kind::GameDef, &definition, &[key]).wire_bytes()
+}
 
 fn genesis_wire(signer: &SigningKey, kinds: &[&str]) -> Vec<u8> {
 	genesis_wire_roots(&[signer], kinds)
@@ -844,4 +881,56 @@ async fn release_view_lists_pinned_provider_advisories() {
 		.expect("request");
 	let response = application.oneshot(request).await.expect("response");
 	assert_eq!(response.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn federation_syncs_a_game_definition() {
+	let (home, _home_directory) = app().await;
+	let key = key(16);
+	let request = axum::http::Request::post("/v1/games")
+		.body(Body::from(game_genesis_wire(&key)))
+		.expect("request");
+	let response = home.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+	let game_id = body_json(response).await["id"].as_str().expect("game id").to_string();
+
+	let request = axum::http::Request::post(format!("/v1/games/{game_id}/definitions"))
+		.body(Body::from(game_definition_wire(&key, &game_id)))
+		.expect("request");
+	let response = home.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+	let address = listener.local_addr().expect("addr");
+	let serving = home.clone();
+	tokio::spawn(async move {
+		let _ = axum::serve(listener, serving).await;
+	});
+
+	let (directory, _directory_dir) = app_mode(crate::config::Publishing::Open, true).await;
+	let (session, csrf) = login(&directory, "ops@example.org").await;
+	let sync = axum::http::Request::post("/v1/federation/sync-definition")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.header("x-csrf-token", csrf)
+		.body(Body::from(
+			serde_json::json!({
+				"home_url": format!("http://127.0.0.1:{}", address.port()),
+				"id": game_id,
+				"kind": "game",
+			})
+			.to_string(),
+		))
+		.expect("request");
+	let response = directory.clone().oneshot(sync).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+
+	let get = axum::http::Request::get(format!("/v1/games/{game_id}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = directory.oneshot(get).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let view = body_json(response).await;
+	assert_eq!(view["payload"]["display_name"], "Minecraft");
+	assert_eq!(view["payload"]["version_ordering"], "semver");
 }

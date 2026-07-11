@@ -8,6 +8,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use moraine_crypto::ObjectKind;
+use moraine_model::Canonical;
+use moraine_model::genesis::{Genesis, GenesisKind};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -21,7 +23,116 @@ use crate::verify;
 pub fn routes() -> Router<AppState> {
 	Router::new()
 		.route("/v1/federation/sync", post(sync_handler))
+		.route("/v1/federation/sync-definition", post(sync_definition_handler))
 		.route("/v1/subscriptions", get(list_subscriptions))
+}
+
+#[derive(Deserialize)]
+struct SyncDefinitionRequest {
+	home_url: String,
+	id: String,
+	kind: String,
+}
+
+#[derive(Deserialize)]
+struct DefinitionSummary {
+	id: String,
+	genesis: String,
+	current: String,
+}
+
+#[derive(Serialize)]
+struct DefinitionReport {
+	id: String,
+	kind: String,
+	definition: String,
+}
+
+async fn sync_definition_handler(
+	State(state): State<AppState>,
+	user: AuthenticatedUser,
+	Json(request): Json<SyncDefinitionRequest>,
+) -> Response {
+	if !user.allows("federation:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
+	let home_url = request.home_url.trim_end_matches('/').to_string();
+	match sync_definition(&state, &home_url, &request.id, &request.kind).await {
+		Ok(report) => Json(report).into_response(),
+		Err(error) => {
+			let status = match error {
+				FederationError::InvalidUrl(_) => StatusCode::BAD_REQUEST,
+				FederationError::Rejected(_) => StatusCode::CONFLICT,
+				_ => StatusCode::BAD_GATEWAY,
+			};
+			(status, error.to_string()).into_response()
+		}
+	}
+}
+
+async fn sync_definition(
+	state: &AppState,
+	home_url: &str,
+	id: &str,
+	kind: &str,
+) -> Result<DefinitionReport, FederationError> {
+	let (genesis_kind, definition_kind) = match kind {
+		"game" => (GenesisKind::Game, ObjectKind::GameDef),
+		"loader" => (GenesisKind::Loader, ObjectKind::LoaderDef),
+		"runtime" => (GenesisKind::Runtime, ObjectKind::RuntimeDef),
+		_ => return Err(FederationError::InvalidUrl(format!("unknown definition kind `{kind}`"))),
+	};
+	let client = HomeClient::new(home_url, state.capability.allow_insecure_federation_local)?;
+	let summary = client.get_json::<DefinitionSummary>(&format!("/v1/{kind}s/{id}")).await?;
+	if summary.id != id {
+		return Err(FederationError::Verify("home returned a different definition id".to_string()));
+	}
+	let genesis_wire = client
+		.get_bytes(&format!("/v1/objects/{}", hex_of(&summary.genesis)?))
+		.await?;
+	let (root, genesis_object) =
+		verify::verify_genesis(&genesis_wire).map_err(|error| FederationError::Verify(error.to_string()))?;
+	let genesis = Genesis::from_canonical_bytes(&genesis_object.payload_bytes)
+		.map_err(|error| FederationError::Verify(error.to_string()))?;
+	if genesis.kind != genesis_kind {
+		return Err(FederationError::Verify("genesis is not that kind of definition".to_string()));
+	}
+	match state.metadata.definition(id).await.map_err(storage)? {
+		Some(existing) if existing.genesis_digest != genesis_object.digest.to_vec() => {
+			return Err(FederationError::Verify(
+				"local definition has a different genesis".to_string(),
+			));
+		}
+		Some(_) => {}
+		None => {
+			state
+				.metadata
+				.put_object(&registry::stored(&genesis_object))
+				.await
+				.map_err(storage)?;
+			state
+				.metadata
+				.create_definition(id, kind, &genesis_object.digest, now())
+				.await
+				.map_err(storage)?;
+		}
+	}
+	let current_wire = client
+		.get_bytes(&format!("/v1/objects/{}", hex_of(&summary.current)?))
+		.await?;
+	let object = verify::verify_object(definition_kind, &current_wire, &root)
+		.map_err(|error| FederationError::Verify(error.to_string()))?;
+	state.metadata.put_object(&registry::stored(&object)).await.map_err(storage)?;
+	state
+		.metadata
+		.set_definition_current(id, &object.digest)
+		.await
+		.map_err(storage)?;
+	Ok(DefinitionReport {
+		id: id.to_string(),
+		kind: kind.to_string(),
+		definition: object.id,
+	})
 }
 
 #[derive(Debug)]

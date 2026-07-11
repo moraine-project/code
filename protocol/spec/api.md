@@ -217,6 +217,9 @@ re-verifies everything it does fetch. The cursor only advances after the
 entries are durably stored. `GET /v1/subscriptions` lists the followed homes
 and their cursors. Both routes need the `federation:manage` scope.
 
+A game, loader, or runtime identity is pulled the same way with
+`POST /v1/federation/sync-definition`.
+
 A home URL must use HTTPS. Plain HTTP is rejected unless it points at loopback
 and the operator explicitly enabled it, which exists for development. The
 client does not follow redirects, and every fetch has a timeout. Response size
@@ -387,11 +390,14 @@ signed payload. The rendering is a convenience for display; the signed bytes
 remain the source of truth. A definition is not authoritative because this
 instance serves it, only because it verifies against a pinned identity.
 
-Federating definitions between instances needs a dedicated definition sync,
-because a definition is not part of a project feed; that is not built yet, and
-a follower currently ships a curated set.
+A definition is not part of a project feed, so it syncs on its own:
+`POST /v1/federation/sync-definition` takes a `home_url`, an `id`, and a `kind`
+(`game`, `loader`, or `runtime`), fetches the identity's genesis and current
+definition, verifies both against the genesis root, and stores them. There is
+no subscription for definitions yet, so an operator pulls the identities it
+wants rather than following a catalog automatically.
 
 ## Not implemented yet
 
-Federation of game and loader definitions between instances, and range caching
-of object documents.
+Definition subscriptions that fetch a catalog of identities automatically, and
+range caching of object documents.
