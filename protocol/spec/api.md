@@ -368,6 +368,30 @@ a receiver can pin it. The receiver treats a delivery as a hint and re-fetches
 the referenced record before acting; idempotency is by `event_id`. Delivery
 records are pruned after 30 days by the same maintenance task.
 
+## Game, loader, and runtime definitions
+
+A game, loader, or runtime is a signed identity of its own, separate from any
+project. `POST /v1/games`, `POST /v1/loaders`, and `POST /v1/runtimes` each
+import a signed genesis of that kind; the object's digest becomes the ID, and
+importing the same ID with different genesis bytes is a `409`.
+
+`POST /v1/{games|loaders|runtimes}/{id}/definitions` stores a signed definition
+object, verified against that identity's root. A game takes a `game-def`, a
+loader takes any `loader-def` shape (definition, release, or acceptance
+mapping), and a runtime takes a `runtime-def`. The stored object becomes the
+identity's current definition; earlier revisions remain addressable by digest.
+
+`GET /v1/{games|loaders|runtimes}/{id}` returns the identity, its genesis ID,
+the current definition ID, and `payload`, a JSON rendering of the canonical
+signed payload. The rendering is a convenience for display; the signed bytes
+remain the source of truth. A definition is not authoritative because this
+instance serves it, only because it verifies against a pinned identity.
+
+Federating definitions between instances needs a dedicated definition sync,
+because a definition is not part of a project feed; that is not built yet, and
+a follower currently ships a curated set.
+
 ## Not implemented yet
 
-Game and loader definition hosting and range caching of object documents.
+Federation of game and loader definitions between instances, and range caching
+of object documents.

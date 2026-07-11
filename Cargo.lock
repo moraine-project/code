@@ -1130,6 +1130,7 @@ dependencies = [
  "getrandom 0.3.4",
  "hex",
  "http-body-util",
+ "moraine-codec",
  "moraine-crypto",
  "moraine-model",
  "reqwest",

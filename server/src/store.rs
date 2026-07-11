@@ -106,6 +106,13 @@ CREATE TABLE IF NOT EXISTS search_labels (
 	label_id TEXT NOT NULL,
 	PRIMARY KEY (project_id, label_kind, label_id)
 );
+CREATE TABLE IF NOT EXISTS definitions (
+	id TEXT PRIMARY KEY,
+	kind TEXT NOT NULL,
+	genesis_digest BLOB NOT NULL,
+	current_digest BLOB,
+	created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS webhooks (
 	id TEXT PRIMARY KEY,
 	owner_id TEXT NOT NULL,
