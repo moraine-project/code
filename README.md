@@ -95,6 +95,16 @@ cargo run -p moraine-publish -- plan --adapter minecraft/default \
 
 The plan keeps every path inside the adapter's roots; nothing is written.
 
+Install a lockfile from a directory of blobs named by digest:
+
+```sh
+cargo run -p moraine-launcher -- install --lockfile lock.json --blobs ./downloads \
+  --root ./instance --adapter minecraft/default --dry-run
+```
+
+Without `--dry-run` it writes the plan under the root, but only after every
+locked artifact's size and SHA-256 digest have been checked.
+
 Publish a release with the CLI:
 
 ```sh
@@ -213,6 +223,7 @@ publish/        moraine-publish CLI that signs and publishes releases
 resolver/       deterministic dependency resolution and lockfiles
 metadata/       safe mod-archive metadata extraction
 install/        per-game install placement planning with path containment
+launcher/       game-agnostic installer core that verifies locked bytes and applies a plan
 server/         moraine-server registry, directory, and worker binary
 web/            SvelteKit website with static and Cloudflare build targets
 protocol/

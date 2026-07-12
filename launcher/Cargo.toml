@@ -1,0 +1,22 @@
+[package]
+name = "moraine-launcher"
+description = "Game-agnostic installer core that verifies locked artifacts and applies a per-game plan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "moraine-launcher"
+path = "src/main.rs"
+
+[dependencies]
+moraine-install = { path = "../install" }
+moraine-resolver = { path = "../resolver" }
+clap.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

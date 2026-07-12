@@ -1145,6 +1145,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "moraine-launcher"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "hex",
+ "moraine-install",
+ "moraine-resolver",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+]
+
+[[package]]
 name = "moraine-metadata"
 version = "0.1.0"
 dependencies = [
