@@ -103,7 +103,9 @@ cargo run -p moraine-launcher -- install --lockfile lock.json --blobs ./download
 ```
 
 Without `--dry-run` it writes the plan under the root, but only after every
-locked artifact's size and SHA-256 digest have been checked.
+locked artifact's size and SHA-256 digest have been checked. Use
+`--home https://home.example` instead of `--blobs` to fetch the bytes from a
+registry; plain HTTP is only allowed for loopback with `--allow-http-local`.
 
 Publish a release with the CLI:
 

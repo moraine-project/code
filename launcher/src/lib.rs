@@ -144,6 +144,64 @@ impl BlobSource for FilesystemBlobs {
 	}
 }
 
+pub struct HttpBlobs {
+	client: reqwest::blocking::Client,
+	base: String,
+}
+
+impl HttpBlobs {
+	pub fn new(base: &str, allow_http_local: bool) -> Result<Self, String> {
+		validate_url(base, allow_http_local)?;
+		let client = reqwest::blocking::Client::builder()
+			.timeout(std::time::Duration::from_secs(30))
+			.redirect(reqwest::redirect::Policy::none())
+			.build()
+			.map_err(|error| error.to_string())?;
+		Ok(Self {
+			client,
+			base: base.trim_end_matches('/').to_string(),
+		})
+	}
+}
+
+impl BlobSource for HttpBlobs {
+	fn fetch(&self, digest: &[u8; 32]) -> Result<Vec<u8>, String> {
+		let response = self
+			.client
+			.get(format!("{}/v1/blobs/sha256/{}", self.base, hex::encode(digest)))
+			.send()
+			.map_err(|error| error.to_string())?;
+		if !response.status().is_success() {
+			return Err(format!("home returned {}", response.status()));
+		}
+		response
+			.bytes()
+			.map(|bytes| bytes.to_vec())
+			.map_err(|error| error.to_string())
+	}
+}
+
+fn validate_url(value: &str, allow_http_local: bool) -> Result<(), String> {
+	let url = reqwest::Url::parse(value).map_err(|error| error.to_string())?;
+	match url.scheme() {
+		"https" => Ok(()),
+		"http" => {
+			let host = url.host_str().unwrap_or_default().to_string();
+			let loopback = host == "localhost"
+				|| host
+					.parse::<std::net::IpAddr>()
+					.map(|address| address.is_loopback())
+					.unwrap_or(false);
+			if allow_http_local && loopback {
+				Ok(())
+			} else {
+				Err("http is only allowed for loopback when explicitly enabled".to_string())
+			}
+		}
+		_ => Err("home url must use https".to_string()),
+	}
+}
+
 fn parse_digest(value: &str) -> Result<[u8; 32], InstallError> {
 	let hex = value.strip_prefix("sha256:").unwrap_or(value);
 	hex::decode(hex)
@@ -155,6 +213,8 @@ fn parse_digest(value: &str) -> Result<[u8; 32], InstallError> {
 #[cfg(test)]
 mod tests {
 	use std::collections::BTreeMap;
+	use std::io::{Read, Write};
+	use std::net::TcpListener;
 
 	use moraine_resolver::{LockedArtifact, LockedRelease};
 
@@ -218,5 +278,28 @@ mod tests {
 		blobs.entries.insert(digest, b"tampered".to_vec());
 		let error = plan_install(&lockfile(digest, 8), &blobs, "minecraft/default").expect_err("reject");
 		assert!(matches!(error, InstallError::DigestMismatch(_)));
+	}
+
+	#[test]
+	fn fetches_a_blob_over_loopback_http() {
+		let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+		let address = listener.local_addr().expect("addr");
+		let body = b"blob bytes".to_vec();
+		let served = body.clone();
+		let handle = std::thread::spawn(move || {
+			let (mut socket, _) = listener.accept().expect("accept");
+			let mut request = [0u8; 1024];
+			let _ = socket.read(&mut request);
+			let header = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", served.len());
+			let _ = socket.write_all(header.as_bytes());
+			let _ = socket.write_all(&served);
+		});
+
+		let blobs = HttpBlobs::new(&format!("http://127.0.0.1:{}", address.port()), true).expect("client");
+		let digest: [u8; 32] = Sha256::digest(&body).into();
+		assert_eq!(blobs.fetch(&digest).expect("fetch"), body);
+		handle.join().expect("join");
+
+		assert!(HttpBlobs::new("http://example.org", false).is_err());
 	}
 }

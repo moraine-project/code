@@ -15,6 +15,7 @@ moraine-install = { path = "../install" }
 moraine-resolver = { path = "../resolver" }
 clap.workspace = true
 hex.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
 serde_json.workspace = true
 sha2.workspace = true
 
