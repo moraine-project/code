@@ -1150,7 +1150,9 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "hex",
+ "moraine-codec",
  "moraine-install",
+ "moraine-model",
  "moraine-resolver",
  "reqwest",
  "serde_json",

@@ -51,3 +51,10 @@ object and never substitutes for the signed records it points at: a resolver
 consumer re-fetches and verifies those records, and a lockfile only records
 which ones it chose. A mirror URL is a retrievable hint, never the identity of
 a locked file.
+
+A launcher can build a lockfile from a home by walking the root project's
+required dependency closure through that home's feed and feeding the decoded
+release payloads to the solver. That pass does not verify signatures; it only
+selects, and verification happens against the lockfile's digests when the
+launcher installs, and against the publisher keys when the verifier checks a
+release.

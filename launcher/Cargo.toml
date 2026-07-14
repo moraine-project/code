@@ -11,7 +11,9 @@ name = "moraine-launcher"
 path = "src/main.rs"
 
 [dependencies]
+moraine-codec = { path = "../codec" }
 moraine-install = { path = "../install" }
+moraine-model = { path = "../model" }
 moraine-resolver = { path = "../resolver" }
 clap.workspace = true
 hex.workspace = true

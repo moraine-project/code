@@ -1,3 +1,5 @@
+pub mod catalog;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

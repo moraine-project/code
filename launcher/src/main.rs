@@ -36,6 +36,31 @@ enum Command {
 		#[arg(long, default_value_t = false)]
 		dry_run: bool,
 	},
+	/// Resolve a root project's dependency closure from a home into a lockfile.
+	Resolve {
+		#[arg(long)]
+		home: String,
+		#[arg(long)]
+		project: String,
+		#[arg(long)]
+		game: String,
+		#[arg(long)]
+		game_version: String,
+		#[arg(long)]
+		loader: Option<String>,
+		#[arg(long)]
+		loader_version: Option<String>,
+		#[arg(long)]
+		runtime: Option<String>,
+		#[arg(long)]
+		runtime_version: Option<String>,
+		#[arg(long, default_value = "client")]
+		side: String,
+		#[arg(long, default_value_t = false)]
+		allow_http_local: bool,
+		#[arg(long)]
+		output: Option<PathBuf>,
+	},
 }
 
 fn main() -> std::process::ExitCode {
@@ -67,6 +92,54 @@ fn run(cli: Cli) -> Result<(), String> {
 			&adapter,
 			dry_run,
 		),
+		Command::Resolve {
+			home,
+			project,
+			game,
+			game_version,
+			loader,
+			loader_version,
+			runtime,
+			runtime_version,
+			side,
+			allow_http_local,
+			output,
+		} => resolve(
+			&home,
+			&project,
+			&game,
+			&game_version,
+			loader.map(|id| (id, loader_version)),
+			runtime.map(|id| (id, runtime_version)),
+			&side,
+			allow_http_local,
+			output.as_deref(),
+		),
+	}
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve(
+	home: &str,
+	project: &str,
+	game: &str,
+	game_version: &str,
+	loader: Option<(String, Option<String>)>,
+	runtime: Option<(String, Option<String>)>,
+	side: &str,
+	allow_http_local: bool,
+	output: Option<&Path>,
+) -> Result<(), String> {
+	let source = moraine_launcher::catalog::HttpHome::new(home, allow_http_local)?;
+	let request = moraine_launcher::catalog::request_for(game, game_version, project, side, loader, runtime)?;
+	let lockfile = moraine_launcher::catalog::resolve_from_home(&source, &request)?;
+	let json = serde_json::to_string_pretty(&lockfile).map_err(|error| error.to_string())?;
+	match output {
+		Some(path) => std::fs::write(path, format!("{json}\n")).map_err(|error| format!("{}: {error}", path.display())),
+		None => {
+			println!("{json}");
+			Ok(())
+		}
 	}
 }
 

@@ -107,6 +107,16 @@ locked artifact's size and SHA-256 digest have been checked. Use
 `--home https://home.example` instead of `--blobs` to fetch the bytes from a
 registry; plain HTTP is only allowed for loopback with `--allow-http-local`.
 
+Build a lockfile from a home without one:
+
+```sh
+cargo run -p moraine-launcher -- resolve --home https://home.example \
+  --project <project-id> --game <game-id> --game-version 1.20.1 --output lock.json
+```
+
+Resolution follows the root project's required dependency closure through the
+home's feed, then runs the same deterministic solver as `moraine-resolver`.
+
 Publish a release with the CLI:
 
 ```sh
