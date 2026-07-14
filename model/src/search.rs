@@ -123,10 +123,6 @@ pub struct MergedSearch {
 	pub results: Vec<MergedResult>,
 }
 
-/// Merge keeps attribution: one project ID yields one result, and every source
-/// keeps its own listing state and annotations. Popularity is never summed or
-/// averaged across instances, because no shared user identity exists to
-/// deduplicate it.
 pub fn merge(responses: impl IntoIterator<Item = SearchResponse>) -> MergedSearch {
 	let mut merged = MergedSearch::default();
 	for response in responses {

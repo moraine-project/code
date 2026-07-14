@@ -16,12 +16,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-	/// Generate a publisher key file.
 	Keygen {
 		#[arg(long, default_value = "publisher.key")]
 		key: PathBuf,
 	},
-	/// Create a project from a fresh genesis and import it at a home.
+
 	Init {
 		#[arg(long)]
 		key: PathBuf,
@@ -30,7 +29,7 @@ enum Command {
 		#[arg(long)]
 		home_hint: Option<String>,
 	},
-	/// Sign a release for a local artifact and store it at a home.
+
 	Release {
 		#[arg(long)]
 		key: PathBuf,
@@ -40,7 +39,7 @@ enum Command {
 		project: String,
 		#[arg(long)]
 		game: String,
-		/// A game version this release targets. Repeatable.
+
 		#[arg(long = "game-version")]
 		game_versions: Vec<String>,
 		#[arg(long)]
@@ -52,7 +51,7 @@ enum Command {
 		#[arg(long)]
 		loader: Option<String>,
 	},
-	/// Pin a provider public key on a home so its advisories are accepted.
+
 	Provider {
 		#[arg(long)]
 		key: PathBuf,
@@ -63,7 +62,7 @@ enum Command {
 		#[arg(long, env = "MORAINE_API_KEY")]
 		api_key: Option<String>,
 	},
-	/// Sign and publish an advisory about one artifact digest.
+
 	Advisory {
 		#[arg(long)]
 		key: PathBuf,
@@ -86,7 +85,7 @@ enum Command {
 		#[arg(long)]
 		evidence: Option<String>,
 	},
-	/// Sign a withdrawal for a release; the release record stays intact.
+
 	Withdraw {
 		#[arg(long)]
 		key: PathBuf,
@@ -96,13 +95,13 @@ enum Command {
 		project: String,
 		#[arg(long)]
 		release: String,
-		/// One of compromise, harmful, broken, legal, author-preference.
+
 		#[arg(long)]
 		reason: String,
 		#[arg(long)]
 		note: Option<String>,
 	},
-	/// Transfer project ownership; needs the previous and new owner keys.
+
 	Transfer {
 		#[arg(long)]
 		key: PathBuf,
@@ -112,29 +111,29 @@ enum Command {
 		home: String,
 		#[arg(long)]
 		project: String,
-		/// Previous owner as `user:<id>` or `org:<id>`.
+
 		#[arg(long)]
 		from: String,
-		/// New owner as `user:<id>` or `org:<id>`.
+
 		#[arg(long)]
 		to: String,
 	},
-	/// Read a mod archive's manifest without executing it.
+
 	Inspect {
 		file: PathBuf,
 	},
-	/// Preview where files would be placed for a game adapter.
+
 	Plan {
 		#[arg(long)]
 		adapter: String,
-		/// Repeatable `name.jar=sha256:<hex>`.
+
 		#[arg(long = "mod")]
 		mods: Vec<String>,
-		/// Repeatable `config/file.toml=sha256:<hex>`.
+
 		#[arg(long = "override")]
 		overrides: Vec<String>,
 	},
-	/// Upload an artifact to a home's blob store.
+
 	Upload {
 		#[arg(long)]
 		home: String,
@@ -143,7 +142,7 @@ enum Command {
 		#[arg(long, env = "MORAINE_API_KEY")]
 		api_key: Option<String>,
 	},
-	/// Sign and store a project profile revision.
+
 	Profile {
 		#[arg(long)]
 		key: PathBuf,
@@ -164,7 +163,7 @@ enum Command {
 		#[arg(long = "tag")]
 		tags: Vec<String>,
 	},
-	/// Append a feed entry that publishes a stored object.
+
 	Publish {
 		#[arg(long)]
 		key: PathBuf,
@@ -177,7 +176,7 @@ enum Command {
 		#[arg(long, default_value = "release-published")]
 		kind: String,
 	},
-	/// Submit a signed feed entry for admission review.
+
 	Submit {
 		#[arg(long)]
 		key: PathBuf,

@@ -15,28 +15,27 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-	/// Verify a lockfile against a blob directory and install under a root.
 	Install {
 		#[arg(long)]
 		lockfile: PathBuf,
-		/// Directory of blobs named by their sha256 hex digest.
+
 		#[arg(long)]
 		blobs: Option<PathBuf>,
-		/// Home registry to fetch blobs from instead of a local directory.
+
 		#[arg(long)]
 		home: Option<String>,
 		#[arg(long, default_value_t = false)]
 		allow_http_local: bool,
-		/// Instance root the adapter places files under.
+
 		#[arg(long)]
 		root: PathBuf,
 		#[arg(long)]
 		adapter: String,
-		/// Verify and print the plan without writing anything.
+
 		#[arg(long, default_value_t = false)]
 		dry_run: bool,
 	},
-	/// Resolve a root project's dependency closure from a home into a lockfile.
+
 	Resolve {
 		#[arg(long)]
 		home: String,

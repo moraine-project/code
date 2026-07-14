@@ -78,9 +78,6 @@ fn validate_url(value: &str, allow_http_local: bool) -> Result<(), String> {
 	}
 }
 
-/// Downloads the root project's releases and its required dependency closure,
-/// then resolves them. Candidates are not trusted here; the launcher verifies
-/// digests before installing, and the verifier checks signatures separately.
 pub fn resolve_from_home(fetcher: &dyn HomeFetcher, request: &Request) -> Result<Lockfile, String> {
 	let mut queue = vec![request.root_project.clone()];
 	let mut visited = BTreeSet::new();

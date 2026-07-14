@@ -70,9 +70,6 @@ pub fn verify_object(kind: ObjectKind, wire: &[u8], root: &RootSet) -> Result<Ve
 	}
 }
 
-/// Accepts an object signed by the root threshold or by a delegated key the
-/// root authorized for this object kind. Delegations must already have been
-/// verified against the root; this function only enforces scope and expiry.
 pub fn verify_object_authorized(
 	kind: ObjectKind,
 	wire: &[u8],

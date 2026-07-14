@@ -127,9 +127,6 @@ impl MetadataStore {
 	}
 }
 
-/// Records a notification for every follower of a project. Notifications are a
-/// local convenience derived from the validated feed; the feed stays the
-/// source of truth and a notification is reproducible from it.
 pub(crate) async fn notify_followers(
 	state: &AppState,
 	project_id: &str,

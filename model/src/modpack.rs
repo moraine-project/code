@@ -96,8 +96,6 @@ impl Canonical for ModpackOverride {
 	}
 }
 
-/// An override path is relative and never escapes its root. Absolute paths and
-/// `..` segments are rejected before an adapter ever sees them.
 pub fn valid_override_path(path: &str) -> bool {
 	!path.is_empty()
 		&& !path.starts_with('/')

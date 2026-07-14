@@ -59,8 +59,6 @@ pub enum Reason {
 	Unknown,
 }
 
-/// A reason code from a higher taxonomy version is shown as unknown and never
-/// mapped onto a code this consumer understands.
 pub fn classify_reason(code: &str, taxonomy_version: u32) -> Reason {
 	if taxonomy_version != REASON_TAXONOMY_VERSION {
 		return Reason::Unknown;
@@ -192,8 +190,6 @@ pub enum HandleDecision {
 	Dispute,
 }
 
-/// A protected name is not renamed away from its owner; a collision with a
-/// protected name routes to the impersonation and trademark process.
 pub fn decide_handle_claim(taken: bool, protected: bool) -> HandleDecision {
 	if protected {
 		HandleDecision::Dispute

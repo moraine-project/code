@@ -59,7 +59,6 @@ enum Command {
 		threshold: usize,
 	},
 
-	/// Verify a downloaded file against a signed release.
 	Artifact {
 		#[arg(long)]
 		release: PathBuf,

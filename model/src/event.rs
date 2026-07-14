@@ -79,7 +79,6 @@ pub struct Event {
 }
 
 impl Event {
-	/// The bytes an instance signs when it delivers this event to a webhook.
 	pub fn signing_message(&self) -> Vec<u8> {
 		let mut message = WEBHOOK_DOMAIN.to_vec();
 		message.extend_from_slice(&self.to_canonical_bytes());

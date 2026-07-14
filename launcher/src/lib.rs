@@ -63,8 +63,6 @@ pub struct PreparedInstall {
 	pub bytes: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
-/// Verifies every locked artifact and computes the install plan without
-/// touching the disk.
 pub fn plan_install(lockfile: &Lockfile, blobs: &dyn BlobSource, adapter: &str) -> Result<PreparedInstall, InstallError> {
 	let mut mods = Vec::with_capacity(lockfile.releases.len());
 	let mut bytes_by_digest = BTreeMap::new();
@@ -108,8 +106,6 @@ pub fn plan_install(lockfile: &Lockfile, blobs: &dyn BlobSource, adapter: &str) 
 	})
 }
 
-/// Verifies then writes a plan under an instance root. Every destination is
-/// contained by `safe_join`; a path that escapes is refused.
 pub fn apply_install(prepared: &PreparedInstall, instance_root: &Path) -> Result<Vec<PathBuf>, InstallError> {
 	let mut written = Vec::with_capacity(prepared.report.placements.len());
 	for placement in &prepared.report.placements {

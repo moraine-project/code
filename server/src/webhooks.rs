@@ -163,9 +163,6 @@ fn webhook_from_row(row: sqlx::sqlite::SqliteRow) -> WebhookRow {
 	}
 }
 
-/// Signs and enqueues one delivery per matching webhook. A webhook with an
-/// empty event list receives every event. The receiver treats the delivery as
-/// a hint and re-fetches the referenced record before acting on it.
 pub(crate) async fn enqueue_event(
 	state: &AppState,
 	event_kind: &str,

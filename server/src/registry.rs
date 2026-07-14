@@ -186,8 +186,6 @@ async fn transfer(State(state): State<AppState>, Path(id): Path<String>, body: B
 		.into_response()
 }
 
-/// Records a withdrawal when its feed entry is accepted. The release record
-/// itself is untouched; the withdrawal is a newer statement about it.
 async fn apply_withdrawal(state: &AppState, project_id: &str, object_digest: &[u8]) -> Result<(), Box<Response>> {
 	let object = match state.metadata.object(object_digest).await {
 		Ok(Some(object)) => object,
@@ -223,8 +221,6 @@ async fn apply_withdrawal(state: &AppState, project_id: &str, object_digest: &[u
 	}
 }
 
-/// Applies an accepted `ownership-transferred` entry. The transfer object is
-/// re-verified here, so a syncing directory applies the same rule as the home.
 async fn apply_ownership_transfer(state: &AppState, project_id: &str, object_digest: &[u8]) -> Result<(), Box<Response>> {
 	let project = match state.metadata.project(project_id).await {
 		Ok(Some(project)) => project,
@@ -319,9 +315,6 @@ pub(crate) struct PreparedFeed {
 	pub object: verify::VerifiedObject,
 }
 
-/// Verifies a feed entry, its authorization, and that the referenced object is
-/// stored. Continuity against the head is checked separately, at the moment of
-/// commit, because the head can move between submission and acceptance.
 pub(crate) async fn prepare_feed(state: &AppState, project_id: &str, body: &[u8]) -> Result<PreparedFeed, Box<Response>> {
 	let project = match state.metadata.project(project_id).await {
 		Ok(Some(project)) => project,
@@ -526,8 +519,6 @@ pub(crate) fn parse_hex_digest(value: &str) -> Option<[u8; 32]> {
 	hex::decode(value).ok()?.try_into().ok()
 }
 
-/// Stores a verified object and, for a release, indexes each artifact digest so
-/// a file can be resolved back to the release that published it.
 pub(crate) async fn store_object_record(state: &AppState, object: &verify::VerifiedObject) -> Result<(), sqlx::Error> {
 	state.metadata.put_object(&stored(object)).await?;
 	if object.kind == ObjectKind::Release

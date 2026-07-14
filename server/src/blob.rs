@@ -58,8 +58,6 @@ impl BlobStore {
 		self.blobs.join(hex::encode(digest))
 	}
 
-	/// Streams an upload into private staging, computing the digest and size,
-	/// and verifies the size before the bytes can be committed.
 	pub async fn put_staged<R>(&self, mut reader: R, max_bytes: u64) -> Result<StagedBlob, BlobError>
 	where
 		R: AsyncRead + Unpin,
@@ -90,8 +88,6 @@ impl BlobStore {
 		Ok(StagedBlob { path, digest, size })
 	}
 
-	/// Makes a staged object available under its digest. Content-addressed, so
-	/// committing the same bytes twice is a no-op.
 	pub async fn commit(&self, staged: StagedBlob) -> io::Result<[u8; 32]> {
 		let destination = self.blob_path(&staged.digest);
 		match tokio::fs::rename(&staged.path, &destination).await {

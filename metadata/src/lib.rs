@@ -32,9 +32,6 @@ impl std::fmt::Display for MetadataError {
 
 impl std::error::Error for MetadataError {}
 
-/// Reads known mod manifests from an archive by name. Nothing in the archive is
-/// executed, and any candidate entry above the size limit is refused rather
-/// than decompressed.
 pub fn extract(bytes: &[u8]) -> Result<ModMetadata, MetadataError> {
 	let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| MetadataError::NotAnArchive)?;
 	if let Some(metadata) = fabric(&mut archive)? {

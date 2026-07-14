@@ -45,8 +45,6 @@ pub struct AuthenticatedUser {
 }
 
 impl AuthenticatedUser {
-	/// A session carries the whole account; an API key carries only the scopes
-	/// it was granted, and can never include a signing scope.
 	pub fn allows(&self, scope: &str) -> bool {
 		self.session_id.is_some() || self.scopes.iter().any(|granted| granted == scope)
 	}

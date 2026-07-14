@@ -47,8 +47,6 @@ impl std::error::Error for InstallError {}
 
 pub const MINECRAFT_ADAPTER: &str = "minecraft/default";
 
-/// Computes where each file goes for a game adapter. It only plans; writing to
-/// a user's disk is the launcher's job, after the bytes are verified.
 pub fn plan(adapter: &str, mods: &[ModFile], overrides: &[OverrideFile]) -> Result<InstallPlan, InstallError> {
 	match adapter {
 		MINECRAFT_ADAPTER => plan_minecraft(mods, overrides),
@@ -80,9 +78,6 @@ fn plan_minecraft(mods: &[ModFile], overrides: &[OverrideFile]) -> Result<Instal
 	})
 }
 
-/// Joins a planned relative path onto an instance root and guarantees the
-/// result stays inside that root. A path is rejected, not normalized, if it
-/// escapes.
 pub fn safe_join(root: &Path, relative: &Path) -> Option<PathBuf> {
 	let mut result = PathBuf::from(root);
 	for component in relative.components() {
@@ -95,7 +90,6 @@ pub fn safe_join(root: &Path, relative: &Path) -> Option<PathBuf> {
 	(result.starts_with(root)).then_some(result)
 }
 
-/// A mod file name is a single path segment with no traversal or separators.
 pub fn safe_filename(name: &str) -> Option<&str> {
 	if name.is_empty()
 		|| name == "."
