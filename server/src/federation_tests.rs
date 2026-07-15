@@ -111,3 +111,62 @@ async fn federation_syncs_a_game_definition() {
 	assert_eq!(view["payload"]["display_name"], "Minecraft");
 	assert_eq!(view["payload"]["version_ordering"], "semver");
 }
+
+#[tokio::test]
+async fn subscribes_to_and_lists_a_definition() {
+	let (home, _home_directory) = app().await;
+	let signer = key(19);
+	let request = axum::http::Request::post("/v1/games")
+		.body(Body::from(game_genesis_wire(&signer)))
+		.expect("request");
+	let response = home.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+	let game_id = body_json(response).await["id"].as_str().expect("game id").to_string();
+
+	let request = axum::http::Request::post(format!("/v1/games/{game_id}/definitions"))
+		.body(Body::from(game_definition_wire(&signer, &game_id)))
+		.expect("request");
+	let response = home.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+	let address = listener.local_addr().expect("addr");
+	let serving = home.clone();
+	tokio::spawn(async move {
+		let _ = axum::serve(listener, serving).await;
+	});
+
+	let (directory, _directory_dir) = app_mode(crate::config::Publishing::Open, true).await;
+	let (session, csrf) = login(&directory, "ops@example.org").await;
+	let subscribe = axum::http::Request::post("/v1/federation/subscribe-definition")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.header("x-csrf-token", csrf.clone())
+		.body(Body::from(
+			serde_json::json!({
+				"home_url": format!("http://127.0.0.1:{}", address.port()),
+				"id": game_id,
+				"kind": "game",
+			})
+			.to_string(),
+		))
+		.expect("request");
+	let response = directory.clone().oneshot(subscribe).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+
+	let listing = axum::http::Request::get("/v1/definition-subscriptions")
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = directory.clone().oneshot(listing).await.expect("response");
+	let list = body_json(response).await;
+	assert_eq!(list.as_array().expect("subscriptions").len(), 1);
+	assert_eq!(list[0]["id"], game_id);
+
+	let get = axum::http::Request::get(format!("/v1/games/{game_id}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = directory.oneshot(get).await.expect("response");
+	let view = body_json(response).await;
+	assert_eq!(view["payload"]["display_name"], "Minecraft");
+}

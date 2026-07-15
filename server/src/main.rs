@@ -75,6 +75,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			{
 				tracing::info!(pruned, "pruned webhook deliveries");
 			}
+			if let Ok(synced) = federation::resync_definitions(&prune_state).await
+				&& synced > 0
+			{
+				tracing::info!(synced, "resynced definitions");
+			}
 		}
 	});
 

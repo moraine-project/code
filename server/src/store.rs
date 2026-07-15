@@ -106,6 +106,13 @@ CREATE TABLE IF NOT EXISTS search_labels (
 	label_id TEXT NOT NULL,
 	PRIMARY KEY (project_id, label_kind, label_id)
 );
+CREATE TABLE IF NOT EXISTS definition_subscriptions (
+	home_url TEXT NOT NULL,
+	id TEXT NOT NULL,
+	kind TEXT NOT NULL,
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY (home_url, id)
+);
 CREATE TABLE IF NOT EXISTS definitions (
 	id TEXT PRIMARY KEY,
 	kind TEXT NOT NULL,

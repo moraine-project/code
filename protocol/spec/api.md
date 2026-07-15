@@ -395,9 +395,13 @@ instance serves it, only because it verifies against a pinned identity.
 A definition is not part of a project feed, so it syncs on its own:
 `POST /v1/federation/sync-definition` takes a `home_url`, an `id`, and a `kind`
 (`game`, `loader`, or `runtime`), fetches the identity's genesis and current
-definition, verifies both against the genesis root, and stores them. There is
-no subscription for definitions yet, so an operator pulls the identities it
-wants rather than following a catalog automatically.
+definition, verifies both against the genesis root, and stores them.
+
+`POST /v1/federation/subscribe-definition` syncs once and records the identity,
+so a periodic task refreshes it; `GET /v1/definition-subscriptions` lists the
+followed identities. Both need the `federation:manage` scope. An operator pulls
+the identities it wants rather than following another instance's whole catalog,
+which keeps a definition curated rather than implicitly trusted.
 
 ## Modpacks
 
@@ -421,4 +425,6 @@ signed publisher object.
 
 ## Not implemented yet
 
-Definition subscriptions that fetch a catalog of identities automatically.
+The desktop launcher GUI. The verifier, resolver, installer core, metadata
+extractors, and install adapters are built; only the toolkit choice and its
+prototype remain, deliberately, until installer requirements are known.

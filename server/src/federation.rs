@@ -24,7 +24,126 @@ pub fn routes() -> Router<AppState> {
 	Router::new()
 		.route("/v1/federation/sync", post(sync_handler))
 		.route("/v1/federation/sync-definition", post(sync_definition_handler))
+		.route("/v1/federation/subscribe-definition", post(subscribe_definition_handler))
+		.route("/v1/definition-subscriptions", get(list_definition_subscriptions))
 		.route("/v1/subscriptions", get(list_subscriptions))
+}
+
+#[derive(Debug, Clone)]
+pub struct DefinitionSubscriptionRow {
+	pub home_url: String,
+	pub id: String,
+	pub kind: String,
+	pub updated_at: i64,
+}
+
+impl MetadataStore {
+	pub async fn upsert_definition_subscription(
+		&self,
+		home_url: &str,
+		id: &str,
+		kind: &str,
+		updated_at: i64,
+	) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"INSERT INTO definition_subscriptions (home_url, id, kind, updated_at) VALUES (?1, ?2, ?3, ?4)
+			 ON CONFLICT(home_url, id) DO UPDATE SET kind = ?3, updated_at = ?4",
+		)
+		.bind(home_url)
+		.bind(id)
+		.bind(kind)
+		.bind(updated_at)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
+	pub async fn definition_subscriptions(&self) -> Result<Vec<DefinitionSubscriptionRow>, sqlx::Error> {
+		let rows = sqlx::query("SELECT home_url, id, kind, updated_at FROM definition_subscriptions ORDER BY home_url, id")
+			.fetch_all(&self.pool)
+			.await?;
+		Ok(rows
+			.into_iter()
+			.map(|row| DefinitionSubscriptionRow {
+				home_url: row.get("home_url"),
+				id: row.get("id"),
+				kind: row.get("kind"),
+				updated_at: row.get("updated_at"),
+			})
+			.collect())
+	}
+}
+
+#[derive(Deserialize)]
+struct SubscribeDefinitionRequest {
+	home_url: String,
+	id: String,
+	kind: String,
+}
+
+async fn subscribe_definition_handler(
+	State(state): State<AppState>,
+	user: AuthenticatedUser,
+	Json(request): Json<SubscribeDefinitionRequest>,
+) -> Response {
+	if !user.allows("federation:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
+	let home_url = request.home_url.trim_end_matches('/').to_string();
+	match sync_definition(&state, &home_url, &request.id, &request.kind).await {
+		Ok(report) => {
+			if let Err(error) = state
+				.metadata
+				.upsert_definition_subscription(&home_url, &request.id, &request.kind, now())
+				.await
+			{
+				return storage_error(error);
+			}
+			Json(report).into_response()
+		}
+		Err(error) => {
+			let status = match error {
+				FederationError::InvalidUrl(_) => StatusCode::BAD_REQUEST,
+				FederationError::Rejected(_) => StatusCode::CONFLICT,
+				_ => StatusCode::BAD_GATEWAY,
+			};
+			(status, error.to_string()).into_response()
+		}
+	}
+}
+
+async fn list_definition_subscriptions(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
+	if !user.allows("federation:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
+	match state.metadata.definition_subscriptions().await {
+		Ok(rows) => Json(
+			rows.into_iter()
+				.map(|row| {
+					serde_json::json!({
+						"home_url": row.home_url,
+						"id": row.id,
+						"kind": row.kind,
+						"updated_at": row.updated_at,
+					})
+				})
+				.collect::<Vec<_>>(),
+		)
+		.into_response(),
+		Err(error) => storage_error(error),
+	}
+}
+
+pub(crate) async fn resync_definitions(state: &AppState) -> Result<usize, FederationError> {
+	let subscriptions = state.metadata.definition_subscriptions().await.map_err(storage)?;
+	let mut synced = 0;
+	for subscription in subscriptions {
+		match sync_definition(state, &subscription.home_url, &subscription.id, &subscription.kind).await {
+			Ok(_) => synced += 1,
+			Err(error) => tracing::warn!(%error, id = %subscription.id, "definition resync failed"),
+		}
+	}
+	Ok(synced)
 }
 
 #[derive(Deserialize)]
@@ -42,7 +161,7 @@ struct DefinitionSummary {
 }
 
 #[derive(Serialize)]
-struct DefinitionReport {
+pub(crate) struct DefinitionReport {
 	id: String,
 	kind: String,
 	definition: String,
@@ -70,7 +189,7 @@ async fn sync_definition_handler(
 	}
 }
 
-async fn sync_definition(
+pub(crate) async fn sync_definition(
 	state: &AppState,
 	home_url: &str,
 	id: &str,
