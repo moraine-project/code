@@ -214,7 +214,7 @@ fn parse_digest(value: &str) -> Option<[u8; 32]> {
 	bytes.try_into().ok()
 }
 
-fn parse_range(value: &str, length: u64) -> Option<Result<(u64, u64), ()>> {
+pub(crate) fn parse_range(value: &str, length: u64) -> Option<Result<(u64, u64), ()>> {
 	let spec = value.strip_prefix("bytes=")?;
 	if spec.contains(',') {
 		return None;

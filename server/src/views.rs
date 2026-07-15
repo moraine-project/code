@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -20,7 +20,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/projects/{id}/profile", get(project_profile))
 		.route("/v1/projects/{id}/releases/{hex}", get(release_view))
 		.route("/v1/lookup", get(lookup))
-		.route("/v1/objects/{hex}", get(object_bytes))
+		.route("/v1/objects/{hex}", get(object_bytes).head(object_head))
 		.route("/v1/packs/{hex}", get(pack_view))
 }
 
@@ -348,24 +348,74 @@ async fn release_view(State(state): State<AppState>, Path((id, hex_digest)): Pat
 	Json(view).into_response()
 }
 
-async fn object_bytes(State(state): State<AppState>, Path(hex_digest): Path<String>) -> Response {
-	let Some(digest) = parse_hex_digest(&hex_digest) else {
+async fn object_bytes(
+	State(state): State<AppState>,
+	Path(hex_digest): Path<String>,
+	headers: HeaderMap,
+	method: Method,
+) -> Response {
+	object_response(&state, &hex_digest, &headers, method == Method::HEAD).await
+}
+
+async fn object_head(State(state): State<AppState>, Path(hex_digest): Path<String>, headers: HeaderMap) -> Response {
+	object_response(&state, &hex_digest, &headers, true).await
+}
+
+async fn object_response(state: &AppState, hex_digest: &str, headers: &HeaderMap, head: bool) -> Response {
+	let Some(digest) = parse_hex_digest(hex_digest) else {
 		return (StatusCode::BAD_REQUEST, "invalid digest").into_response();
 	};
 	match state.metadata.object(&digest).await {
-		Ok(Some(object)) => {
-			let mut response = Response::new(Body::from(object.wire));
-			let headers = response.headers_mut();
-			headers.insert(header::CONTENT_TYPE, OBJECT_CONTENT_TYPE.parse().expect("valid header"));
-			headers.insert(
-				header::CACHE_CONTROL,
-				"public, max-age=31536000, immutable".parse().expect("valid header"),
-			);
-			response
-		}
+		Ok(Some(object)) => serve_bytes(object.wire, headers, head),
 		Ok(None) => (StatusCode::NOT_FOUND, "no such object").into_response(),
 		Err(error) => storage_error(error),
 	}
+}
+
+fn serve_bytes(bytes: Vec<u8>, headers: &HeaderMap, head: bool) -> Response {
+	let length = bytes.len() as u64;
+	let requested = headers
+		.get(header::RANGE)
+		.and_then(|value| value.to_str().ok())
+		.and_then(|value| crate::routes::parse_range(value, length));
+	let (status, start, end) = match requested {
+		Some(Ok((start, end))) => (StatusCode::PARTIAL_CONTENT, start, end),
+		Some(Err(())) => {
+			let mut response = (StatusCode::RANGE_NOT_SATISFIABLE, Body::empty()).into_response();
+			response.headers_mut().insert(
+				header::CONTENT_RANGE,
+				format!("bytes */{length}").parse().expect("valid header"),
+			);
+			return response;
+		}
+		None => (StatusCode::OK, 0, length.saturating_sub(1)),
+	};
+	let content_length = if length == 0 { 0 } else { end - start + 1 };
+	let body = if head {
+		Body::empty()
+	} else {
+		Body::from(bytes[start as usize..=end as usize].to_vec())
+	};
+	let mut response = Response::new(body);
+	*response.status_mut() = status;
+	let response_headers = response.headers_mut();
+	response_headers.insert(header::CONTENT_TYPE, OBJECT_CONTENT_TYPE.parse().expect("valid header"));
+	response_headers.insert(header::ACCEPT_RANGES, "bytes".parse().expect("valid header"));
+	response_headers.insert(
+		header::CACHE_CONTROL,
+		"public, max-age=31536000, immutable".parse().expect("valid header"),
+	);
+	response_headers.insert(
+		header::CONTENT_LENGTH,
+		content_length.to_string().parse().expect("valid header"),
+	);
+	if status == StatusCode::PARTIAL_CONTENT {
+		response_headers.insert(
+			header::CONTENT_RANGE,
+			format!("bytes {start}-{end}/{length}").parse().expect("valid header"),
+		);
+	}
+	response
 }
 
 pub(crate) fn describe_stored(object: &StoredObject) -> Option<String> {

@@ -93,7 +93,9 @@ referenced object (a release's version and channel, a profile's display name,
 an advisory's severity and category, a delegation's purpose), so a page can say
 what changed without fetching every object. The title is a convenience for
 display; the object digest next to it is the fact. `GET /v1/objects/{hex}` returns the exact signed wire
-bytes with immutable caching.
+bytes with immutable caching, and supports `HEAD` and single byte ranges, so a
+large object can be resumed like a blob. A `416` reports an unsatisfiable
+range.
 
 Two read-only projections decode a stored signed object into JSON so a browser
 does not have to reimplement the canonical decoder. They are display views, not
@@ -419,5 +421,4 @@ signed publisher object.
 
 ## Not implemented yet
 
-Definition subscriptions that fetch a catalog of identities automatically, and
-range caching of object documents.
+Definition subscriptions that fetch a catalog of identities automatically.

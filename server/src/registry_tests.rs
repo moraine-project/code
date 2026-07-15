@@ -644,3 +644,32 @@ async fn serves_a_modpack_manifest_and_rejects_an_escaping_override() {
 	let response = application.oneshot(request).await.expect("response");
 	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn object_documents_support_range_and_head() {
+	let (application, _directory) = app().await;
+	let signer = key(18);
+	let (_project_id, release_digest) = publish_project(&application, &signer).await;
+	let path = format!("/v1/objects/{}", hex::encode(release_digest));
+
+	let head = axum::http::Request::head(&path).body(Body::empty()).expect("request");
+	let response = application.clone().oneshot(head).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	assert!(response.headers().get(header::CONTENT_LENGTH).is_some());
+
+	let ranged = axum::http::Request::get(&path)
+		.header(header::RANGE, "bytes=0-3")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(ranged).await.expect("response");
+	assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+	let content_range = response.headers()[header::CONTENT_RANGE].to_str().expect("range");
+	assert!(content_range.starts_with("bytes 0-3/"));
+
+	let beyond = axum::http::Request::get(&path)
+		.header(header::RANGE, "bytes=99999999-")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(beyond).await.expect("response");
+	assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+}
