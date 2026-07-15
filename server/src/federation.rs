@@ -514,3 +514,7 @@ fn subscription_from_row(row: sqlx::sqlite::SqliteRow) -> SubscriptionRow {
 		updated_at: row.get("updated_at"),
 	}
 }
+
+#[cfg(test)]
+#[path = "federation_tests.rs"]
+mod tests;

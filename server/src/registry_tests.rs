@@ -1,210 +1,18 @@
-use std::sync::Arc;
-
-use axum::body::{Body, to_bytes};
+use axum::body::Body;
 use axum::http::header;
-use moraine_crypto::{ObjectKind as Kind, SigningKey, object_id};
+use moraine_crypto::{ObjectKind as Kind, object_id};
 use moraine_model::advisory::{Advisory, Affected, Category, Severity};
-use moraine_model::artifact::Artifact;
-use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
-use moraine_model::definition::{GameDef, VersionSyntax};
+use moraine_model::compatibility::Side;
 use moraine_model::delegation::{Delegation, KeyDelegation, OwnerRef, OwnershipTransfer};
 use moraine_model::dependency::TargetKind;
-use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
+use moraine_model::genesis::RootKey;
 use moraine_model::modpack::{ModpackEntry, ModpackManifest, ModpackOverride};
-use moraine_model::release::{ReleasePayload, Withdrawal};
+use moraine_model::release::Withdrawal;
 use moraine_model::signed::sign_payload;
-use tokio::net::TcpListener;
 use tower::ServiceExt;
 
 use super::*;
-use crate::blob::BlobStore;
-use crate::capability::Capability;
-use crate::store::MetadataStore;
-
-fn key(byte: u8) -> SigningKey {
-	SigningKey::from_seed(&[byte; 32])
-}
-
-fn sample_id(label: &str) -> String {
-	format!(
-		"gd:sha256:{}",
-		hex::encode(moraine_crypto::object_id(Kind::Release, label.as_bytes()))
-	)
-}
-
-async fn app() -> (Router, tempfile::TempDir) {
-	app_mode(crate::config::Publishing::Open, false).await
-}
-
-async fn app_review() -> (Router, tempfile::TempDir) {
-	app_mode(crate::config::Publishing::Review, false).await
-}
-
-async fn app_mode(
-	publishing: crate::config::Publishing,
-	allow_insecure_federation_local: bool,
-) -> (Router, tempfile::TempDir) {
-	let directory = tempfile::tempdir().expect("tempdir");
-	let store = Arc::new(BlobStore::new(directory.path()).await.expect("blob store"));
-	let metadata = Arc::new(
-		MetadataStore::open(directory.path().join("metadata.sqlite"))
-			.await
-			.expect("metadata"),
-	);
-	let config = crate::config::Config {
-		bind: "127.0.0.1:0".parse().expect("addr"),
-		data_dir: directory.path().to_path_buf(),
-		max_artifact_bytes: 1024,
-		max_feed_page_entries: 100,
-		allow_insecure_federation_local,
-		publishing,
-		web_dir: None,
-	};
-	let state = AppState {
-		store,
-		metadata,
-		capability: Arc::new(Capability::discover(&config)),
-		web_dir: None,
-	};
-	(crate::routes::router(state), directory)
-}
-
-const PROJECT_KINDS: &[&str] = &["delegation", "release", "profile"];
-
-fn game_genesis_wire(key: &SigningKey) -> Vec<u8> {
-	let genesis = Genesis {
-		protocol: 1,
-		kind: GenesisKind::Game,
-		nonce: vec![0x21; 16],
-		roots: vec![RootKey::from_public_key(key.verifying_key().to_bytes().to_vec()).expect("root")],
-		threshold: 1,
-		authorized_kinds: vec!["delegation".to_string(), "game-def".to_string()],
-		home_hint: None,
-		contacts: None,
-		created_at: 1_760_000_000,
-	};
-	sign_payload(Kind::Genesis, &genesis, &[key]).wire_bytes()
-}
-
-fn game_definition_wire(key: &SigningKey, game_id: &str) -> Vec<u8> {
-	let definition = GameDef {
-		protocol: 1,
-		game_id: game_id.to_string(),
-		display_name: "Minecraft".to_string(),
-		version_syntax: VersionSyntax {
-			kind: "semver".to_string(),
-			pattern: None,
-		},
-		version_ordering: "semver".to_string(),
-		loaders_allowed: true,
-		loader_authorities: Vec::new(),
-		categories: Vec::new(),
-		tags: Vec::new(),
-		metadata_extractor: None,
-		install_adapter: None,
-		declared_time: 1_760_000_000,
-	};
-	sign_payload(Kind::GameDef, &definition, &[key]).wire_bytes()
-}
-
-fn genesis_wire(signer: &SigningKey, kinds: &[&str]) -> Vec<u8> {
-	genesis_wire_roots(&[signer], kinds)
-}
-
-fn genesis_wire_roots(roots: &[&SigningKey], kinds: &[&str]) -> Vec<u8> {
-	let genesis = Genesis {
-		protocol: 1,
-		kind: GenesisKind::Project,
-		nonce: vec![0x11; 16],
-		roots: roots
-			.iter()
-			.map(|signer| RootKey::from_public_key(signer.verifying_key().to_bytes().to_vec()).expect("root"))
-			.collect(),
-		threshold: 1,
-		authorized_kinds: kinds.iter().map(|kind| kind.to_string()).collect(),
-		home_hint: None,
-		contacts: None,
-		created_at: 1_760_000_000,
-	};
-	sign_payload(Kind::Genesis, &genesis, roots.to_vec().as_slice()).wire_bytes()
-}
-
-fn release_wire(signer: &SigningKey, project_id: &str) -> (Vec<u8>, [u8; 32]) {
-	let release = ReleasePayload {
-		protocol: 1,
-		project_id: project_id.to_string(),
-		game_id: sample_id("minecraft"),
-		release_nonce: vec![0x42; 16],
-		human_version: "1.0.0".to_string(),
-		channel: "release".to_string(),
-		kind: "mod".to_string(),
-		declared_time: 1_760_000_000,
-		compatibility: vec![Compatibility {
-			game_version_predicate: Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]),
-			loader_id: None,
-			loader_version_predicate: None,
-			side: Side::Both,
-			runtime_predicate: None,
-			os_predicate: None,
-			arch_predicate: None,
-		}],
-		artifacts: vec![Artifact {
-			digest: vec![0xAB; 32],
-			size: 10,
-			media_type: "application/java-archive".to_string(),
-			filename: "example.jar".to_string(),
-			is_primary: true,
-			os_predicate: None,
-			arch_predicate: None,
-		}],
-		dependencies: Vec::new(),
-		source_reference: None,
-		changelog_digest: None,
-		license_expression: None,
-		rights: None,
-		sbom_digest: None,
-		minimum_verifier_version: 1,
-		critical_extensions: Vec::new(),
-	};
-	let signed = sign_payload(Kind::Release, &release, &[signer]);
-	let digest = object_id(Kind::Release, &signed.payload_bytes);
-	(signed.wire_bytes(), digest)
-}
-
-fn feed_wire(
-	signer: &SigningKey,
-	project_id: &str,
-	sequence: u64,
-	previous: Option<[u8; 32]>,
-	object_digest: [u8; 32],
-) -> Vec<u8> {
-	feed_wire_kind(signer, project_id, sequence, previous, object_digest, "release-published")
-}
-
-fn feed_wire_kind(
-	signer: &SigningKey,
-	project_id: &str,
-	sequence: u64,
-	previous: Option<[u8; 32]>,
-	object_digest: [u8; 32],
-	kind: &str,
-) -> Vec<u8> {
-	let entry = FeedEntry {
-		protocol: 1,
-		project_id: project_id.to_string(),
-		sequence,
-		previous: previous.map(|digest| digest.to_vec()),
-		kind: kind.to_string(),
-		object_digest: object_digest.to_vec(),
-		declared_at: 1_760_000_000 + sequence as i64,
-	};
-	sign_payload(Kind::FeedEntry, &entry, &[signer]).wire_bytes()
-}
-
-async fn body_json(response: Response) -> serde_json::Value {
-	let bytes = to_bytes(response.into_body(), 64 * 1024).await.expect("body");
-	serde_json::from_slice(&bytes).expect("json")
-}
+use crate::test_support::*;
 
 #[tokio::test]
 async fn publishes_project_object_and_feed_end_to_end() {
@@ -320,53 +128,6 @@ async fn accepts_a_delegated_release_key_and_rejects_an_unrelated_one() {
 	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-async fn login(application: &Router, email: &str) -> (String, String) {
-	let credentials = serde_json::json!({ "email": email, "password": "correct horse battery" }).to_string();
-	let register = axum::http::Request::post("/v1/auth/register")
-		.header(header::CONTENT_TYPE, "application/json")
-		.body(Body::from(credentials.clone()))
-		.expect("request");
-	application.clone().oneshot(register).await.expect("response");
-	let login = axum::http::Request::post("/v1/auth/session")
-		.header(header::CONTENT_TYPE, "application/json")
-		.body(Body::from(credentials))
-		.expect("request");
-	let response = application.clone().oneshot(login).await.expect("response");
-	let session = set_cookie(&response, "moraine_session");
-	let csrf = set_cookie(&response, "moraine_csrf");
-	(session, csrf)
-}
-
-fn set_cookie(response: &Response, name: &str) -> String {
-	response
-		.headers()
-		.get_all(header::SET_COOKIE)
-		.iter()
-		.find_map(|value| {
-			let cookie = value.to_str().ok()?;
-			cookie
-				.split(';')
-				.next()?
-				.strip_prefix(&format!("{name}="))
-				.map(str::to_string)
-		})
-		.unwrap_or_default()
-}
-
-async fn publish_project(application: &Router, signer: &SigningKey) -> (String, [u8; 32]) {
-	let request = axum::http::Request::post("/v1/projects")
-		.body(Body::from(genesis_wire(signer, PROJECT_KINDS)))
-		.expect("request");
-	let response = application.clone().oneshot(request).await.expect("response");
-	let receipt = body_json(response).await;
-	let project_id = receipt["project_id"].as_str().expect("project id").to_string();
-	let (release, release_digest) = release_wire(signer, &project_id);
-	let path = format!("/v1/projects/{project_id}/objects/release");
-	let request = axum::http::Request::post(&path).body(Body::from(release)).expect("request");
-	application.clone().oneshot(request).await.expect("response");
-	(project_id, release_digest)
-}
-
 #[tokio::test]
 async fn review_mode_queues_then_accepts() {
 	let (application, _directory) = app_review().await;
@@ -463,61 +224,6 @@ async fn reject_requires_a_reason_code() {
 		.expect("request");
 	let response = application.oneshot(review).await.expect("response");
 	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn federation_syncs_a_home_feed() {
-	let home_signer = key(6);
-	let (home, _home_directory) = app().await;
-	let (project_id, release_digest) = publish_project(&home, &home_signer).await;
-	let feed = feed_wire(&home_signer, &project_id, 1, None, release_digest);
-	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
-		.body(Body::from(feed))
-		.expect("request");
-	let response = home.clone().oneshot(request).await.expect("response");
-	assert_eq!(response.status(), StatusCode::CREATED);
-
-	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-	let address = listener.local_addr().expect("addr");
-	let serving = home.clone();
-	tokio::spawn(async move {
-		let _ = axum::serve(listener, serving).await;
-	});
-
-	let (directory, _directory_dir) = app_mode(crate::config::Publishing::Review, true).await;
-	let (session, csrf) = login(&directory, "ops@example.org").await;
-	let sync = axum::http::Request::post("/v1/federation/sync")
-		.header(header::CONTENT_TYPE, "application/json")
-		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
-		.header("x-csrf-token", csrf)
-		.body(Body::from(
-			serde_json::json!({
-				"home_url": format!("http://127.0.0.1:{}", address.port()),
-				"project_id": project_id,
-			})
-			.to_string(),
-		))
-		.expect("request");
-	let response = directory.clone().oneshot(sync).await.expect("response");
-	assert_eq!(response.status(), StatusCode::OK);
-	let report = body_json(response).await;
-	assert_eq!(report["applied"], 1);
-
-	let feed_request = axum::http::Request::get(format!("/v1/projects/{project_id}/feed"))
-		.body(Body::empty())
-		.expect("request");
-	let response = directory.clone().oneshot(feed_request).await.expect("response");
-	let page = body_json(response).await;
-	assert_eq!(page["head_seq"], 1);
-
-	let subscriptions = axum::http::Request::get("/v1/subscriptions")
-		.header(header::COOKIE, format!("moraine_session={session}"))
-		.body(Body::empty())
-		.expect("request");
-	let response = directory.oneshot(subscriptions).await.expect("response");
-	let list = body_json(response).await;
-	assert_eq!(list.as_array().expect("subscriptions").len(), 1);
-	assert_eq!(list[0]["cursor_seq"], 1);
 }
 
 #[tokio::test]
@@ -883,58 +589,6 @@ async fn release_view_lists_pinned_provider_advisories() {
 		.expect("request");
 	let response = application.oneshot(request).await.expect("response");
 	assert_eq!(response.status(), StatusCode::CONFLICT);
-}
-
-#[tokio::test]
-async fn federation_syncs_a_game_definition() {
-	let (home, _home_directory) = app().await;
-	let key = key(16);
-	let request = axum::http::Request::post("/v1/games")
-		.body(Body::from(game_genesis_wire(&key)))
-		.expect("request");
-	let response = home.clone().oneshot(request).await.expect("response");
-	assert_eq!(response.status(), StatusCode::CREATED);
-	let game_id = body_json(response).await["id"].as_str().expect("game id").to_string();
-
-	let request = axum::http::Request::post(format!("/v1/games/{game_id}/definitions"))
-		.body(Body::from(game_definition_wire(&key, &game_id)))
-		.expect("request");
-	let response = home.clone().oneshot(request).await.expect("response");
-	assert_eq!(response.status(), StatusCode::CREATED);
-
-	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-	let address = listener.local_addr().expect("addr");
-	let serving = home.clone();
-	tokio::spawn(async move {
-		let _ = axum::serve(listener, serving).await;
-	});
-
-	let (directory, _directory_dir) = app_mode(crate::config::Publishing::Open, true).await;
-	let (session, csrf) = login(&directory, "ops@example.org").await;
-	let sync = axum::http::Request::post("/v1/federation/sync-definition")
-		.header(header::CONTENT_TYPE, "application/json")
-		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
-		.header("x-csrf-token", csrf)
-		.body(Body::from(
-			serde_json::json!({
-				"home_url": format!("http://127.0.0.1:{}", address.port()),
-				"id": game_id,
-				"kind": "game",
-			})
-			.to_string(),
-		))
-		.expect("request");
-	let response = directory.clone().oneshot(sync).await.expect("response");
-	assert_eq!(response.status(), StatusCode::OK);
-
-	let get = axum::http::Request::get(format!("/v1/games/{game_id}"))
-		.body(Body::empty())
-		.expect("request");
-	let response = directory.oneshot(get).await.expect("response");
-	assert_eq!(response.status(), StatusCode::OK);
-	let view = body_json(response).await;
-	assert_eq!(view["payload"]["display_name"], "Minecraft");
-	assert_eq!(view["payload"]["version_ordering"], "semver");
 }
 
 #[tokio::test]

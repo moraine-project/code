@@ -15,6 +15,8 @@ mod review;
 mod routes;
 mod search;
 mod store;
+#[cfg(test)]
+mod test_support;
 mod verify;
 mod views;
 mod webhooks;
