@@ -11,6 +11,23 @@ pub trait BlobSource {
 	fn fetch(&self, digest: &[u8; 32]) -> Result<Vec<u8>, String>;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstallEvent {
+	Verifying(String),
+	Placing(String),
+}
+
+pub trait Progress {
+	fn event(&mut self, _event: InstallEvent) {}
+	fn cancelled(&self) -> bool {
+		false
+	}
+}
+
+pub struct NoProgress;
+
+impl Progress for NoProgress {}
+
 #[derive(Debug)]
 pub enum InstallError {
 	Fetch {
@@ -27,6 +44,7 @@ pub enum InstallError {
 	Plan(PlanError),
 	UnsafePath(String),
 	Io(String),
+	Cancelled,
 }
 
 impl std::fmt::Display for InstallError {
@@ -45,6 +63,7 @@ impl std::fmt::Display for InstallError {
 			Self::Plan(error) => write!(f, "{error}"),
 			Self::UnsafePath(path) => write!(f, "placement escapes the instance root: {path}"),
 			Self::Io(detail) => write!(f, "filesystem error: {detail}"),
+			Self::Cancelled => f.write_str("install cancelled"),
 		}
 	}
 }
@@ -63,10 +82,18 @@ pub struct PreparedInstall {
 	pub bytes: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
-pub fn plan_install(lockfile: &Lockfile, blobs: &dyn BlobSource, adapter: &str) -> Result<PreparedInstall, InstallError> {
+pub fn plan_install(
+	lockfile: &Lockfile,
+	blobs: &dyn BlobSource,
+	adapter: &str,
+	progress: &mut dyn Progress,
+) -> Result<PreparedInstall, InstallError> {
 	let mut mods = Vec::with_capacity(lockfile.releases.len());
 	let mut bytes_by_digest = BTreeMap::new();
 	for release in &lockfile.releases {
+		if progress.cancelled() {
+			return Err(InstallError::Cancelled);
+		}
 		let digest = parse_digest(&release.artifact.digest)?;
 		if bytes_by_digest.contains_key(&digest) {
 			mods.push(ModFile {
@@ -75,6 +102,7 @@ pub fn plan_install(lockfile: &Lockfile, blobs: &dyn BlobSource, adapter: &str) 
 			});
 			continue;
 		}
+		progress.event(InstallEvent::Verifying(release.artifact.digest.clone()));
 		let bytes = blobs.fetch(&digest).map_err(|detail| InstallError::Fetch {
 			digest: release.artifact.digest.clone(),
 			detail,
@@ -106,9 +134,16 @@ pub fn plan_install(lockfile: &Lockfile, blobs: &dyn BlobSource, adapter: &str) 
 	})
 }
 
-pub fn apply_install(prepared: &PreparedInstall, instance_root: &Path) -> Result<Vec<PathBuf>, InstallError> {
+pub fn apply_install(
+	prepared: &PreparedInstall,
+	instance_root: &Path,
+	progress: &mut dyn Progress,
+) -> Result<Vec<PathBuf>, InstallError> {
 	let mut written = Vec::with_capacity(prepared.report.placements.len());
 	for placement in &prepared.report.placements {
+		if progress.cancelled() {
+			return Err(InstallError::Cancelled);
+		}
 		let destination = safe_join(instance_root, &placement.relative_path)
 			.ok_or_else(|| InstallError::UnsafePath(placement.relative_path.display().to_string()))?;
 		let bytes = prepared.bytes.get(&placement.digest).ok_or_else(|| InstallError::Fetch {
@@ -118,12 +153,25 @@ pub fn apply_install(prepared: &PreparedInstall, instance_root: &Path) -> Result
 		if let Some(parent) = destination.parent() {
 			std::fs::create_dir_all(parent).map_err(|error| InstallError::Io(error.to_string()))?;
 		}
+		progress.event(InstallEvent::Placing(placement.relative_path.display().to_string()));
 		let staging = destination.with_extension("part");
 		std::fs::write(&staging, bytes).map_err(|error| InstallError::Io(error.to_string()))?;
 		std::fs::rename(&staging, &destination).map_err(|error| InstallError::Io(error.to_string()))?;
 		written.push(destination);
 	}
 	Ok(written)
+}
+
+pub fn install(
+	lockfile: &Lockfile,
+	blobs: &dyn BlobSource,
+	adapter: &str,
+	instance_root: &Path,
+	progress: &mut dyn Progress,
+) -> Result<InstallReport, InstallError> {
+	let prepared = plan_install(lockfile, blobs, adapter, progress)?;
+	apply_install(&prepared, instance_root, progress)?;
+	Ok(prepared.report)
 }
 
 pub struct FilesystemBlobs {
@@ -262,9 +310,9 @@ mod tests {
 		blobs.entries.insert(digest, bytes);
 		let directory = tempfile::tempdir().expect("tempdir");
 
-		let prepared = plan_install(&lockfile(digest, 9), &blobs, "minecraft/default").expect("plan");
+		let prepared = plan_install(&lockfile(digest, 9), &blobs, "minecraft/default", &mut NoProgress).expect("plan");
 		assert_eq!(prepared.report.verified, 1);
-		let written = apply_install(&prepared, directory.path()).expect("apply");
+		let written = apply_install(&prepared, directory.path(), &mut NoProgress).expect("apply");
 		assert_eq!(written, vec![directory.path().join("mods/example.jar")]);
 		assert!(written[0].exists());
 	}
@@ -274,7 +322,7 @@ mod tests {
 		let digest: [u8; 32] = Sha256::digest(b"real").into();
 		let mut blobs = MemoryBlobs::default();
 		blobs.entries.insert(digest, b"tampered".to_vec());
-		let error = plan_install(&lockfile(digest, 8), &blobs, "minecraft/default").expect_err("reject");
+		let error = plan_install(&lockfile(digest, 8), &blobs, "minecraft/default", &mut NoProgress).expect_err("reject");
 		assert!(matches!(error, InstallError::DigestMismatch(_)));
 	}
 
@@ -299,5 +347,61 @@ mod tests {
 		handle.join().expect("join");
 
 		assert!(HttpBlobs::new("http://example.org", false).is_err());
+	}
+
+	struct Recording {
+		events: Vec<InstallEvent>,
+		cancel_after: usize,
+	}
+
+	impl Progress for Recording {
+		fn event(&mut self, event: InstallEvent) {
+			self.events.push(event);
+		}
+
+		fn cancelled(&self) -> bool {
+			self.events.len() >= self.cancel_after
+		}
+	}
+
+	#[test]
+	fn reports_progress_and_honours_cancellation() {
+		let bytes = b"mod bytes".to_vec();
+		let digest: [u8; 32] = Sha256::digest(&bytes).into();
+		let mut blobs = MemoryBlobs::default();
+		blobs.entries.insert(digest, bytes);
+		let directory = tempfile::tempdir().expect("tempdir");
+
+		let mut cancelled = Recording {
+			events: Vec::new(),
+			cancel_after: 0,
+		};
+		let error = install(
+			&lockfile(digest, 9),
+			&blobs,
+			"minecraft/default",
+			directory.path(),
+			&mut cancelled,
+		)
+		.expect_err("cancel");
+		assert!(matches!(error, InstallError::Cancelled));
+		assert!(!directory.path().join("mods").exists());
+
+		let mut progress = Recording {
+			events: Vec::new(),
+			cancel_after: usize::MAX,
+		};
+		install(
+			&lockfile(digest, 9),
+			&blobs,
+			"minecraft/default",
+			directory.path(),
+			&mut progress,
+		)
+		.expect("install");
+		assert_eq!(progress.events.len(), 2);
+		assert!(matches!(progress.events[0], InstallEvent::Verifying(_)));
+		assert!(matches!(progress.events[1], InstallEvent::Placing(_)));
+		assert!(directory.path().join("mods/example.jar").exists());
 	}
 }

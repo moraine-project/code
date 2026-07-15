@@ -159,7 +159,8 @@ fn install(
 		(None, Some(url)) => Box::new(moraine_launcher::HttpBlobs::new(url, allow_http_local)?),
 		(None, None) => return Err("pass --blobs <dir> or --home <url>".to_string()),
 	};
-	let prepared = plan_install(&lockfile, source.as_ref(), adapter).map_err(|error| error.to_string())?;
+	let prepared = plan_install(&lockfile, source.as_ref(), adapter, &mut moraine_launcher::NoProgress)
+		.map_err(|error| error.to_string())?;
 	println!("verified {} artifact(s)", prepared.report.verified);
 	if dry_run {
 		for placement in &prepared.report.placements {
@@ -171,7 +172,7 @@ fn install(
 		}
 		return Ok(());
 	}
-	let written = apply_install(&prepared, root).map_err(|error| error.to_string())?;
+	let written = apply_install(&prepared, root, &mut moraine_launcher::NoProgress).map_err(|error| error.to_string())?;
 	for path in written {
 		println!("wrote {}", path.display());
 	}

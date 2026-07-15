@@ -37,7 +37,11 @@ roots. The adapter's declared roots are the only places it may place files.
 The launcher core verifies before it writes. It fetches each locked artifact,
 checks its byte length and SHA-256 digest against the lockfile, and only then
 applies the plan, staging each file and renaming it into place. A mismatch
-stops the install with nothing written for that artifact. Signature
+stops the install with nothing written for that artifact.
+
+The core is UI-neutral: it emits a `Verifying` event per artifact and a
+`Placing` event per destination, and checks a cancellation flag between steps,
+so a GUI can show progress and stop a run without embedding any install logic. Signature
 verification is a separate step, done by the verifier with a pinned root; the
 launcher's digest check proves byte identity, not authorship.
 
