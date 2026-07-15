@@ -13,6 +13,14 @@ takes.
 The document is a hint about limits, not an authority. A rejected request still
 answers with its own status.
 
+## Limits and timeouts
+
+Every request is bounded. Metadata request bodies are limited to 256 KiB, and
+the server enforces a 30-second request timeout. Blob uploads and downloads
+stream and are bounded instead by the artifact limit advertised in the
+capability document; the byte-serving endpoints are not buffered, so a large
+file does not count against the metadata body limit.
+
 ## Health
 
 `GET /healthz` answers `ok` when the process is up. `GET /readyz` answers `ok`

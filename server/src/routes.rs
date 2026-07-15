@@ -1,7 +1,8 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -12,10 +13,14 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::{ReaderStream, StreamReader};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::timeout::TimeoutLayer;
 
 use crate::blob::{BlobError, BlobStore};
 use crate::capability::Capability;
 use crate::store::MetadataStore;
+
+const MAX_REQUEST_BODY_BYTES: usize = 256 * 1024;
+const REQUEST_TIMEOUT_SECONDS: u64 = 30;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -45,7 +50,12 @@ pub fn router(state: AppState) -> Router {
 		.merge(crate::webhooks::routes())
 		.merge(crate::definitions::routes())
 		.with_state(state)
-		.layer(read_only_cors());
+		.layer(read_only_cors())
+		.layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
+		.layer(TimeoutLayer::with_status_code(
+			StatusCode::REQUEST_TIMEOUT,
+			Duration::from_secs(REQUEST_TIMEOUT_SECONDS),
+		));
 	match web_dir {
 		Some(directory) => {
 			let index = directory.join("index.html");
@@ -415,5 +425,16 @@ mod tests {
 			.expect("request");
 		let response = app.oneshot(api_miss).await.expect("response");
 		assert_eq!(response.status(), StatusCode::NOT_FOUND);
+	}
+
+	#[tokio::test]
+	async fn rejects_an_oversized_request_body() {
+		let (app, _directory) = test_app().await;
+		let body = vec![0u8; MAX_REQUEST_BODY_BYTES + 1];
+		let request = axum::http::Request::post("/v1/projects")
+			.body(Body::from(body))
+			.expect("request");
+		let response = app.oneshot(request).await.expect("response");
+		assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
 	}
 }
