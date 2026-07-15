@@ -27,6 +27,7 @@ pub struct AppState {
 	pub store: Arc<BlobStore>,
 	pub metadata: Arc<MetadataStore>,
 	pub capability: Arc<Capability>,
+	pub login_limiter: Arc<crate::auth::LoginLimiter>,
 	pub web_dir: Option<Arc<std::path::PathBuf>>,
 }
 
@@ -285,6 +286,7 @@ mod tests {
 			store,
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
+			login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
 			web_dir: web_dir.map(Arc::new),
 		};
 		(router(state), directory)

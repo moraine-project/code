@@ -194,6 +194,7 @@ pub(crate) async fn app_mode(
 		store,
 		metadata,
 		capability: Arc::new(Capability::discover(&config)),
+		login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
 		web_dir: None,
 	};
 	(crate::routes::router(state), directory)

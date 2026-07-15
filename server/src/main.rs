@@ -42,6 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		store,
 		metadata,
 		capability,
+		login_limiter: Arc::new(auth::LoginLimiter::new()),
 		web_dir: config.web_dir.clone().map(Arc::new),
 	};
 	let worker_state = state.clone();

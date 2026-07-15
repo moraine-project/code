@@ -17,7 +17,52 @@ const IDLE_SECONDS: i64 = 30 * 24 * 3600;
 const ABSOLUTE_SECONDS: i64 = 90 * 24 * 3600;
 const API_KEY_DEFAULT_EXPIRY: i64 = 90 * 24 * 3600;
 const MIN_PASSWORD_LENGTH: usize = 12;
-const KNOWN_SCOPES: &[&str] = &[
+const LOGIN_MAX_ATTEMPTS: u32 = 10;
+const LOGIN_WINDOW_SECONDS: i64 = 15 * 60;
+
+pub struct LoginLimiter {
+	attempts: std::sync::Mutex<std::collections::HashMap<String, (u32, i64)>>,
+}
+
+impl LoginLimiter {
+	pub fn new() -> Self {
+		Self {
+			attempts: std::sync::Mutex::new(std::collections::HashMap::new()),
+		}
+	}
+
+	fn check(&self, key: &str, now: i64) -> Result<(), i64> {
+		let attempts = self.attempts.lock().expect("login limiter");
+		if let Some((count, start)) = attempts.get(key)
+			&& now - start < LOGIN_WINDOW_SECONDS
+			&& *count >= LOGIN_MAX_ATTEMPTS
+		{
+			return Err(start + LOGIN_WINDOW_SECONDS - now);
+		}
+		Ok(())
+	}
+
+	fn record_failure(&self, key: &str, now: i64) {
+		let mut attempts = self.attempts.lock().expect("login limiter");
+		let entry = attempts.entry(key.to_string()).or_insert((0, now));
+		if now - entry.1 >= LOGIN_WINDOW_SECONDS {
+			*entry = (0, now);
+		}
+		entry.0 += 1;
+	}
+
+	fn clear(&self, key: &str) {
+		self.attempts.lock().expect("login limiter").remove(key);
+	}
+}
+
+impl Default for LoginLimiter {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
+pub const KNOWN_SCOPES: &[&str] = &[
 	"account:read",
 	"keys:manage",
 	"projects:write",
@@ -146,14 +191,24 @@ async fn register(State(state): State<AppState>, Json(credentials): Json<Credent
 
 async fn login(State(state): State<AppState>, Json(credentials): Json<Credentials>) -> Response {
 	let email = credentials.email.trim().to_lowercase();
+	if let Err(retry_after) = state.login_limiter.check(&email, now()) {
+		let mut response = (StatusCode::TOO_MANY_REQUESTS, "too many login attempts").into_response();
+		response.headers_mut().insert(
+			header::RETRY_AFTER,
+			retry_after.max(1).to_string().parse().expect("valid header"),
+		);
+		return response;
+	}
 	let user = match state.metadata.user_by_email(&email).await {
 		Ok(Some(user)) => user,
 		Ok(None) => return (StatusCode::UNAUTHORIZED, "invalid credentials").into_response(),
 		Err(error) => return storage_error(error),
 	};
 	if !password::verify_password(&credentials.password, &user.password_hash) {
+		state.login_limiter.record_failure(&email, now());
 		return (StatusCode::UNAUTHORIZED, "invalid credentials").into_response();
 	}
+	state.login_limiter.clear(&email);
 	let token = random_token();
 	let csrf = random_token();
 	let current = now();
@@ -407,6 +462,7 @@ fn storage_error(error: sqlx::Error) -> Response {
 
 #[cfg(test)]
 mod tests {
+
 	use std::sync::Arc;
 
 	use axum::body::{Body, to_bytes};
@@ -438,6 +494,7 @@ mod tests {
 			store,
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
+			login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
 			web_dir: None,
 		};
 		(crate::routes::router(state), directory)
@@ -564,5 +621,35 @@ mod tests {
 			.expect("request");
 		let response = application.oneshot(create).await.expect("response");
 		assert_eq!(response.status(), StatusCode::FORBIDDEN);
+	}
+
+	#[tokio::test]
+	async fn login_is_rate_limited_per_account() {
+		let (application, _directory) = app().await;
+		let register = json_request(
+			"POST",
+			"/v1/auth/register",
+			serde_json::json!({ "email": "limit@example.org", "password": "correct horse battery" }),
+		);
+		application.clone().oneshot(register).await.expect("response");
+
+		for _ in 0..10 {
+			let wrong = json_request(
+				"POST",
+				"/v1/auth/session",
+				serde_json::json!({ "email": "limit@example.org", "password": "wrong password here" }),
+			);
+			let response = application.clone().oneshot(wrong).await.expect("response");
+			assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+		}
+
+		let correct = json_request(
+			"POST",
+			"/v1/auth/session",
+			serde_json::json!({ "email": "limit@example.org", "password": "correct horse battery" }),
+		);
+		let response = application.oneshot(correct).await.expect("response");
+		assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+		assert!(response.headers().get(header::RETRY_AFTER).is_some());
 	}
 }

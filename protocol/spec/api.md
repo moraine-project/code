@@ -186,6 +186,11 @@ idle-limited to 30 days and absolutely limited to 90 days.
 
 `DELETE /v1/auth/session` revokes the session and clears both cookies.
 
+Failed sign-ins are budgeted per account: ten wrong passwords within fifteen
+minutes exhaust the budget, and further attempts are refused with `429` and a
+`Retry-After` header until the window passes. A successful sign-in clears the
+budget.
+
 `GET /v1/auth/me` returns the account and whether the request authenticated
 with a session or an API key.
 
