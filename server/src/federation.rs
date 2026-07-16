@@ -201,7 +201,11 @@ pub(crate) async fn sync_definition(
 		"runtime" => (GenesisKind::Runtime, ObjectKind::RuntimeDef),
 		_ => return Err(FederationError::InvalidUrl(format!("unknown definition kind `{kind}`"))),
 	};
-	let client = HomeClient::new(home_url, state.capability.allow_insecure_federation_local)?;
+	let client = HomeClient::new(
+		home_url,
+		state.capability.allow_insecure_federation_local,
+		state.capability.max_response_bytes,
+	)?;
 	let summary = client.get_json::<DefinitionSummary>(&format!("/v1/{kind}s/{id}")).await?;
 	if summary.id != id {
 		return Err(FederationError::Verify("home returned a different definition id".to_string()));
@@ -360,7 +364,11 @@ struct SubscriptionView {
 }
 
 pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<SyncReport, FederationError> {
-	let client = HomeClient::new(home_url, state.capability.allow_insecure_federation_local)?;
+	let client = HomeClient::new(
+		home_url,
+		state.capability.allow_insecure_federation_local,
+		state.capability.max_response_bytes,
+	)?;
 	let summary = client
 		.get_json::<ProjectSummary>(&format!("/v1/projects/{project_id}"))
 		.await?;
@@ -455,10 +463,11 @@ struct HomeClient {
 	client: reqwest::Client,
 	base: Url,
 	allow_local: bool,
+	max_response_bytes: u64,
 }
 
 impl HomeClient {
-	fn new(base: &str, allow_http_local: bool) -> Result<Self, FederationError> {
+	fn new(base: &str, allow_http_local: bool, max_response_bytes: u64) -> Result<Self, FederationError> {
 		let url = validate_home(base, allow_http_local)?;
 		let client = reqwest::Client::builder()
 			.timeout(Duration::from_secs(10))
@@ -469,6 +478,7 @@ impl HomeClient {
 			client,
 			base: url,
 			allow_local: allow_http_local,
+			max_response_bytes,
 		})
 	}
 
@@ -486,7 +496,7 @@ impl HomeClient {
 		crate::egress::guard(&url, self.allow_local)
 			.await
 			.map_err(FederationError::Http)?;
-		let response = self
+		let mut response = self
 			.client
 			.get(url)
 			.send()
@@ -495,11 +505,23 @@ impl HomeClient {
 		if !response.status().is_success() {
 			return Err(FederationError::Http(format!("{} returned {}", path, response.status())));
 		}
-		response
-			.bytes()
+		if let Some(length) = response.content_length()
+			&& length > self.max_response_bytes
+		{
+			return Err(FederationError::Http(format!("{path} exceeds the response size limit")));
+		}
+		let mut body = Vec::new();
+		while let Some(chunk) = response
+			.chunk()
 			.await
-			.map(|bytes| bytes.to_vec())
-			.map_err(|error| FederationError::Http(error.to_string()))
+			.map_err(|error| FederationError::Http(error.to_string()))?
+		{
+			if body.len() as u64 + chunk.len() as u64 > self.max_response_bytes {
+				return Err(FederationError::Http(format!("{path} exceeds the response size limit")));
+			}
+			body.extend_from_slice(&chunk);
+		}
+		Ok(body)
 	}
 
 	async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, FederationError> {

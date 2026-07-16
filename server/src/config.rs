@@ -33,6 +33,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_MAX_FEED_PAGE_ENTRIES", default_value_t = 100)]
 	pub max_feed_page_entries: u32,
 
+	#[arg(long, env = "MORAINE_MAX_RESPONSE_BYTES", default_value_t = 16_777_216)]
+	pub max_response_bytes: u64,
+
 	#[arg(long, env = "MORAINE_PUBLISHING", value_enum, default_value_t = Publishing::Review)]
 	pub publishing: Publishing,
 

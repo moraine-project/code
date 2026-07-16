@@ -170,3 +170,19 @@ async fn subscribes_to_and_lists_a_definition() {
 	let view = body_json(response).await;
 	assert_eq!(view["payload"]["display_name"], "Minecraft");
 }
+
+#[tokio::test]
+async fn bounds_the_home_response_body() {
+	let mock = axum::Router::new()
+		.route("/small", axum::routing::get(|| async { b"ok".to_vec() }))
+		.route("/huge", axum::routing::get(|| async { vec![b'x'; 4096] }));
+	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+	let address = listener.local_addr().expect("addr");
+	tokio::spawn(async move {
+		let _ = axum::serve(listener, mock).await;
+	});
+	let base = format!("http://127.0.0.1:{}", address.port());
+	let client = super::HomeClient::new(&base, true, 1024).expect("client");
+	assert_eq!(client.get_bytes("small").await.expect("small"), b"ok");
+	assert!(client.get_bytes("huge").await.is_err());
+}
