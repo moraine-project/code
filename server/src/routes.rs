@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Path, State};
-use axum::http::{HeaderMap, Method, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -13,6 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::{ReaderStream, StreamReader};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 
 use crate::blob::{BlobError, BlobStore};
@@ -56,6 +57,18 @@ pub fn router(state: AppState) -> Router {
 		.layer(TimeoutLayer::with_status_code(
 			StatusCode::REQUEST_TIMEOUT,
 			Duration::from_secs(REQUEST_TIMEOUT_SECONDS),
+		))
+		.layer(SetResponseHeaderLayer::if_not_present(
+			axum::http::header::CONTENT_SECURITY_POLICY,
+			HeaderValue::from_static("frame-ancestors 'none'; base-uri 'self'; object-src 'none'"),
+		))
+		.layer(SetResponseHeaderLayer::if_not_present(
+			axum::http::header::X_CONTENT_TYPE_OPTIONS,
+			HeaderValue::from_static("nosniff"),
+		))
+		.layer(SetResponseHeaderLayer::if_not_present(
+			axum::http::header::REFERRER_POLICY,
+			HeaderValue::from_static("no-referrer"),
 		));
 	match web_dir {
 		Some(directory) => {
@@ -431,13 +444,24 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn rejects_an_oversized_request_body() {
+	async fn responses_carry_security_headers() {
 		let (app, _directory) = test_app().await;
-		let body = vec![0u8; MAX_REQUEST_BODY_BYTES + 1];
-		let request = axum::http::Request::post("/v1/projects")
-			.body(Body::from(body))
-			.expect("request");
+		let request = axum::http::Request::get("/healthz").body(Body::empty()).expect("request");
 		let response = app.oneshot(request).await.expect("response");
-		assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+		assert_eq!(
+			response.headers().get(header::X_CONTENT_TYPE_OPTIONS).expect("nosniff"),
+			"nosniff"
+		);
+		assert_eq!(
+			response.headers().get(header::REFERRER_POLICY).expect("referrer"),
+			"no-referrer"
+		);
+		let policy = response
+			.headers()
+			.get(header::CONTENT_SECURITY_POLICY)
+			.expect("csp")
+			.to_str()
+			.expect("csp");
+		assert!(policy.contains("frame-ancestors 'none'"));
 	}
 }

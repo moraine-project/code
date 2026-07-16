@@ -33,6 +33,13 @@ bounce a request to an address that the initial check allowed. A home response
 is additionally capped at the advertised `max_response_bytes` budget; the
 worker refuses a response whose declared or streamed length exceeds it.
 
+Every response also carries `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: no-referrer`, and a `Content-Security-Policy` that forbids
+framing, plugin objects, and a non-self base URI. The website build embeds a
+hash-based policy that additionally restricts scripts, styles, images, fonts,
+and connections to the site itself.
+
+
 ## Health
 
 `GET /healthz` answers `ok` when the process is up. `GET /readyz` answers `ok`
