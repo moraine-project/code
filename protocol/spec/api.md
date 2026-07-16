@@ -21,6 +21,16 @@ stream and are bounded instead by the artifact limit advertised in the
 capability document; the byte-serving endpoints are not buffered, so a large
 file does not count against the metadata body limit.
 
+## Outbound requests
+
+When the server fetches a home or delivers a webhook it resolves the target
+host and refuses the request if any resolved address is loopback, private,
+link-local, shared (carrier-grade NAT), unspecified, or multicast. This keeps a
+publisher-supplied URL from reaching internal services or cloud instance
+metadata. Loopback is permitted only when the operator explicitly enables
+insecure local federation. Redirects are never followed, so a target cannot
+bounce a request to an address that the initial check allowed.
+
 ## Health
 
 `GET /healthz` answers `ok` when the process is up. `GET /readyz` answers `ok`

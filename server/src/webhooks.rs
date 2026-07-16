@@ -231,7 +231,18 @@ pub async fn deliver_pending(state: &AppState, limit: i64) -> Result<usize, Stri
 		.map_err(|error| error.to_string())?;
 	let mut delivered = 0;
 	for delivery in due {
-		if validate_url(&delivery.url, state.capability.allow_insecure_federation_local).is_err() {
+		let allow_local = state.capability.allow_insecure_federation_local;
+		let target = match validate_url(&delivery.url, allow_local) {
+			Ok(url) => url,
+			Err(()) => {
+				let _ = state
+					.metadata
+					.finish_delivery(&delivery.id, delivery.attempt + 1, "failed", now(), None)
+					.await;
+				continue;
+			}
+		};
+		if crate::egress::guard(&target, allow_local).await.is_err() {
 			let _ = state
 				.metadata
 				.finish_delivery(&delivery.id, delivery.attempt + 1, "failed", now(), None)
@@ -239,7 +250,7 @@ pub async fn deliver_pending(state: &AppState, limit: i64) -> Result<usize, Stri
 			continue;
 		}
 		let result = client
-			.post(&delivery.url)
+			.post(target)
 			.header(reqwest::header::CONTENT_TYPE, "application/json")
 			.body(delivery.body)
 			.send()

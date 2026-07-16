@@ -454,6 +454,7 @@ fn object_kind_for_event(event: &str) -> Option<ObjectKind> {
 struct HomeClient {
 	client: reqwest::Client,
 	base: Url,
+	allow_local: bool,
 }
 
 impl HomeClient {
@@ -464,7 +465,11 @@ impl HomeClient {
 			.redirect(reqwest::redirect::Policy::none())
 			.build()
 			.map_err(|error| FederationError::Http(error.to_string()))?;
-		Ok(Self { client, base: url })
+		Ok(Self {
+			client,
+			base: url,
+			allow_local: allow_http_local,
+		})
 	}
 
 	fn endpoint(&self, path: &str) -> Url {
@@ -477,9 +482,13 @@ impl HomeClient {
 	}
 
 	async fn get_bytes(&self, path: &str) -> Result<Vec<u8>, FederationError> {
+		let url = self.endpoint(path);
+		crate::egress::guard(&url, self.allow_local)
+			.await
+			.map_err(FederationError::Http)?;
 		let response = self
 			.client
-			.get(self.endpoint(path))
+			.get(url)
 			.send()
 			.await
 			.map_err(|error| FederationError::Http(error.to_string()))?;

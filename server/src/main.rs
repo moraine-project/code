@@ -5,6 +5,7 @@ mod blob;
 mod capability;
 mod config;
 mod definitions;
+mod egress;
 mod federation;
 mod mirrors;
 mod notifications;
