@@ -7,6 +7,7 @@ mod config;
 mod definitions;
 mod egress;
 mod federation;
+mod metrics;
 mod mirrors;
 mod notifications;
 mod orgs;
@@ -44,6 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		metadata,
 		capability,
 		login_limiter: Arc::new(auth::LoginLimiter::new()),
+		metrics: Arc::new(metrics::Metrics::new()),
 		web_dir: config.web_dir.clone().map(Arc::new),
 	};
 	let worker_state = state.clone();

@@ -496,6 +496,7 @@ mod tests {
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
 			login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
+			metrics: Arc::new(crate::metrics::Metrics::new()),
 			web_dir: None,
 		};
 		(crate::routes::router(state), directory)

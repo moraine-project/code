@@ -629,6 +629,69 @@ async fn insert_feed_entry(transaction: &mut Transaction<'_, sqlx::Sqlite>, entr
 	Ok(())
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MetricsSnapshot {
+	pub projects: i64,
+	pub objects: i64,
+	pub submissions: i64,
+	pub submissions_pending: i64,
+	pub review_decisions: i64,
+	pub subscriptions: i64,
+	pub deliveries_pending: i64,
+	pub definitions: i64,
+	pub advisories: i64,
+	pub mirrors: i64,
+	pub artifacts: i64,
+}
+
+impl MetricsSnapshot {
+	pub fn lines(&self) -> Vec<(&'static str, i64)> {
+		vec![
+			("moraine_projects_total", self.projects),
+			("moraine_objects_total", self.objects),
+			("moraine_submissions_total", self.submissions),
+			("moraine_submissions_pending", self.submissions_pending),
+			("moraine_review_decisions_total", self.review_decisions),
+			("moraine_subscriptions_total", self.subscriptions),
+			("moraine_deliveries_pending", self.deliveries_pending),
+			("moraine_definitions_total", self.definitions),
+			("moraine_advisories_total", self.advisories),
+			("moraine_mirrors_total", self.mirrors),
+			("moraine_artifacts_total", self.artifacts),
+		]
+	}
+}
+
+impl MetadataStore {
+	pub async fn metrics_snapshot(&self) -> Result<MetricsSnapshot, sqlx::Error> {
+		Ok(MetricsSnapshot {
+			projects: self.table_count("projects").await?,
+			objects: self.table_count("objects").await?,
+			submissions: self.table_count("submissions").await?,
+			submissions_pending: self
+				.scalar_count("SELECT COUNT(*) FROM submissions WHERE state = 'submitted'")
+				.await?,
+			review_decisions: self.table_count("review_decisions").await?,
+			subscriptions: self.table_count("subscriptions").await?,
+			deliveries_pending: self
+				.scalar_count("SELECT COUNT(*) FROM webhook_deliveries WHERE status = 'pending'")
+				.await?,
+			definitions: self.table_count("definitions").await?,
+			advisories: self.table_count("advisories").await?,
+			mirrors: self.table_count("mirrors").await?,
+			artifacts: self.table_count("artifact_index").await?,
+		})
+	}
+
+	async fn table_count(&self, table: &str) -> Result<i64, sqlx::Error> {
+		self.scalar_count(&format!("SELECT COUNT(*) FROM {table}")).await
+	}
+
+	async fn scalar_count(&self, query: &str) -> Result<i64, sqlx::Error> {
+		sqlx::query_scalar::<_, i64>(query).fetch_one(&self.pool).await
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;

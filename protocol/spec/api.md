@@ -46,6 +46,12 @@ and connections to the site itself.
 only when the blob store can be read, and `503` otherwise. Readiness is
 deliberately about storage: a server that cannot serve bytes is not ready.
 
+`GET /metrics` renders Prometheus text with the object, submission, review,
+subscription, delivery, definition, advisory, mirror, and artifact counts the
+store holds, plus process uptime, total requests, and 5xx responses. It carries
+no account or topology detail and is meant to be scraped from inside the
+operator's network or restricted at the reverse proxy.
+
 ## Blobs
 
 Artifacts are content addressed. An artifact digest renders as

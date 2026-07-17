@@ -29,6 +29,7 @@ pub struct AppState {
 	pub metadata: Arc<MetadataStore>,
 	pub capability: Arc<Capability>,
 	pub login_limiter: Arc<crate::auth::LoginLimiter>,
+	pub metrics: Arc<crate::metrics::Metrics>,
 	pub web_dir: Option<Arc<std::path::PathBuf>>,
 }
 
@@ -51,6 +52,8 @@ pub fn router(state: AppState) -> Router {
 		.merge(crate::notifications::routes())
 		.merge(crate::webhooks::routes())
 		.merge(crate::definitions::routes())
+		.merge(crate::metrics::routes())
+		.layer(axum::middleware::from_fn_with_state(state.clone(), crate::metrics::track))
 		.with_state(state)
 		.layer(read_only_cors())
 		.layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
@@ -301,6 +304,7 @@ mod tests {
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
 			login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
+			metrics: std::sync::Arc::new(crate::metrics::Metrics::new()),
 			web_dir: web_dir.map(Arc::new),
 		};
 		(router(state), directory)
