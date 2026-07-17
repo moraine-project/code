@@ -14,6 +14,7 @@ pub struct Metrics {
 	started: Instant,
 	requests: AtomicU64,
 	server_errors: AtomicU64,
+	signature_failures: AtomicU64,
 }
 
 impl Metrics {
@@ -22,7 +23,12 @@ impl Metrics {
 			started: Instant::now(),
 			requests: AtomicU64::new(0),
 			server_errors: AtomicU64::new(0),
+			signature_failures: AtomicU64::new(0),
 		}
+	}
+
+	pub fn record_signature_failure(&self) {
+		self.signature_failures.fetch_add(1, Ordering::Relaxed);
 	}
 
 	fn observe(&self, status: u16) {
@@ -74,6 +80,10 @@ async fn render(State(state): State<AppState>) -> Response {
 			"moraine_server_errors_total",
 			state.metrics.server_errors.load(Ordering::Relaxed),
 		),
+		(
+			"moraine_signature_failures_total",
+			state.metrics.signature_failures.load(Ordering::Relaxed),
+		),
 	] {
 		body.push_str("# TYPE ");
 		body.push_str(name);
@@ -83,12 +93,33 @@ async fn render(State(state): State<AppState>) -> Response {
 		body.push_str(&value.to_string());
 		body.push('\n');
 	}
+	let current = unix_now();
+	for (name, since) in [
+		("moraine_admission_oldest_seconds", snapshot.oldest_pending_submission),
+		("moraine_webhook_backlog_oldest_seconds", snapshot.oldest_pending_delivery),
+	] {
+		let age = since.map(|since| (current - since).max(0)).unwrap_or(0);
+		body.push_str("# TYPE ");
+		body.push_str(name);
+		body.push_str(" gauge\n");
+		body.push_str(name);
+		body.push(' ');
+		body.push_str(&age.to_string());
+		body.push('\n');
+	}
 	let mut response = body.into_response();
 	response.headers_mut().insert(
 		header::CONTENT_TYPE,
 		header::HeaderValue::from_static("text/plain; version=0.0.4"),
 	);
 	response
+}
+
+fn unix_now() -> i64 {
+	std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|elapsed| elapsed.as_secs() as i64)
+		.unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -107,7 +138,13 @@ mod tests {
 		assert_eq!(response.status(), axum::http::StatusCode::OK);
 		let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("body");
 		let text = String::from_utf8(body.to_vec()).expect("utf8");
-		for name in ["moraine_projects_total", "moraine_requests_total", "moraine_uptime_seconds"] {
+		for name in [
+			"moraine_projects_total",
+			"moraine_requests_total",
+			"moraine_uptime_seconds",
+			"moraine_admission_oldest_seconds",
+			"moraine_webhook_backlog_oldest_seconds",
+		] {
 			assert!(text.contains(name), "missing {name}");
 		}
 	}

@@ -642,6 +642,8 @@ pub struct MetricsSnapshot {
 	pub advisories: i64,
 	pub mirrors: i64,
 	pub artifacts: i64,
+	pub oldest_pending_submission: Option<i64>,
+	pub oldest_pending_delivery: Option<i64>,
 }
 
 impl MetricsSnapshot {
@@ -680,6 +682,12 @@ impl MetadataStore {
 			advisories: self.table_count("advisories").await?,
 			mirrors: self.table_count("mirrors").await?,
 			artifacts: self.table_count("artifact_index").await?,
+			oldest_pending_submission: self
+				.scalar_opt("SELECT MIN(created_at) FROM submissions WHERE state = 'submitted'")
+				.await?,
+			oldest_pending_delivery: self
+				.scalar_opt("SELECT MIN(next_attempt_at) FROM webhook_deliveries WHERE status = 'pending'")
+				.await?,
 		})
 	}
 
@@ -689,6 +697,10 @@ impl MetadataStore {
 
 	async fn scalar_count(&self, query: &str) -> Result<i64, sqlx::Error> {
 		sqlx::query_scalar::<_, i64>(query).fetch_one(&self.pool).await
+	}
+
+	async fn scalar_opt(&self, query: &str) -> Result<Option<i64>, sqlx::Error> {
+		sqlx::query_scalar::<_, Option<i64>>(query).fetch_one(&self.pool).await
 	}
 }
 

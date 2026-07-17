@@ -92,7 +92,7 @@ struct FeedQuery {
 async fn create_project(State(state): State<AppState>, body: Bytes) -> Response {
 	let (_, object) = match verify::verify_genesis(&body) {
 		Ok(verified) => verified,
-		Err(error) => return bad_request(error),
+		Err(error) => return bad_request(&state, error),
 	};
 	let digest = object.digest.to_vec();
 	match state.metadata.project(&object.id).await {
@@ -159,13 +159,13 @@ async fn transfer(State(state): State<AppState>, Path(id): Path<String>, body: B
 	};
 	let signed = match SignedObject::<Delegation>::from_bytes(&body) {
 		Ok(signed) => signed,
-		Err(error) => return bad_request(VerifyError::Decode(error)),
+		Err(error) => return bad_request(&state, VerifyError::Decode(error)),
 	};
 	if !matches!(signed.payload, Delegation::OwnershipTransfer(_)) {
 		return (StatusCode::BAD_REQUEST, "object is not an ownership transfer").into_response();
 	}
 	if let Err(error) = verify_ownership_transfer(&signed, &root) {
-		return bad_request(VerifyError::Signature(error));
+		return bad_request(&state, VerifyError::Signature(error));
 	}
 	let digest = object_id(ObjectKind::Delegation, &signed.payload_bytes);
 	let stored = StoredObject {
@@ -198,7 +198,7 @@ async fn apply_withdrawal(state: &AppState, project_id: &str, object_digest: &[u
 	};
 	let signed = match SignedObject::<moraine_model::release::ReleaseObject>::from_bytes(&object.wire) {
 		Ok(signed) => signed,
-		Err(error) => return Err(Box::new(bad_request(VerifyError::Decode(error)))),
+		Err(error) => return Err(Box::new(bad_request(state, VerifyError::Decode(error)))),
 	};
 	let moraine_model::release::ReleaseObject::Withdrawal(withdrawal) = signed.payload else {
 		return Err(Box::new(
@@ -238,7 +238,7 @@ async fn apply_ownership_transfer(state: &AppState, project_id: &str, object_dig
 	};
 	let signed = match SignedObject::<Delegation>::from_bytes(&object.wire) {
 		Ok(signed) => signed,
-		Err(error) => return Err(Box::new(bad_request(VerifyError::Decode(error)))),
+		Err(error) => return Err(Box::new(bad_request(state, VerifyError::Decode(error)))),
 	};
 	let Delegation::OwnershipTransfer(record) = &signed.payload else {
 		return Err(Box::new(
@@ -247,7 +247,7 @@ async fn apply_ownership_transfer(state: &AppState, project_id: &str, object_dig
 	};
 	let root = load_root(state, project_id).await?;
 	if let Err(error) = verify_ownership_transfer(&signed, &root) {
-		return Err(Box::new(bad_request(VerifyError::Signature(error))));
+		return Err(Box::new(bad_request(state, VerifyError::Signature(error))));
 	}
 	if let (Some(current_kind), Some(current_id)) = (&project.owner_kind, &project.owner_id)
 		&& (current_kind != &record.from_owner.kind || current_id != &record.from_owner.id)
@@ -283,7 +283,7 @@ async fn store_object(State(state): State<AppState>, Path((id, kind)): Path<(Str
 	};
 	let object = match verify::verify_object_authorized(kind, &body, &root, &delegations, unix_now()) {
 		Ok(object) => object,
-		Err(error) => return bad_request(error),
+		Err(error) => return bad_request(&state, error),
 	};
 	if let Err(error) = store_object_record(&state, &object).await {
 		return storage_error(error);
@@ -325,11 +325,11 @@ pub(crate) async fn prepare_feed(state: &AppState, project_id: &str, body: &[u8]
 	let delegations = load_delegations(state, project_id, &root).await?;
 	let object = match verify::verify_object_authorized(ObjectKind::FeedEntry, body, &root, &delegations, unix_now()) {
 		Ok(object) => object,
-		Err(error) => return Err(Box::new(bad_request(error))),
+		Err(error) => return Err(Box::new(bad_request(state, error))),
 	};
 	let entry = match FeedEntry::from_canonical_bytes(&object.payload_bytes) {
 		Ok(entry) => entry,
-		Err(error) => return Err(Box::new(bad_request(VerifyError::Decode(error)))),
+		Err(error) => return Err(Box::new(bad_request(state, VerifyError::Decode(error)))),
 	};
 	match state.metadata.object(&entry.object_digest).await {
 		Ok(Some(_)) => {}
@@ -464,7 +464,7 @@ async fn load_root(state: &AppState, project_id: &str) -> Result<RootSet, Box<Re
 	};
 	verify::verify_genesis(&genesis.wire)
 		.map(|(root, _)| root)
-		.map_err(|error| Box::new(bad_request(error)))
+		.map_err(|error| Box::new(bad_request(state, error)))
 }
 
 pub(crate) async fn load_delegations(
@@ -553,7 +553,10 @@ pub(crate) async fn store_object_record(state: &AppState, object: &verify::Verif
 	Ok(())
 }
 
-fn bad_request(error: VerifyError) -> Response {
+fn bad_request(state: &AppState, error: VerifyError) -> Response {
+	if matches!(error, VerifyError::Signature(_)) {
+		state.metrics.record_signature_failure();
+	}
 	(StatusCode::BAD_REQUEST, error.to_string()).into_response()
 }
 

@@ -124,8 +124,14 @@ async fn accepts_a_delegated_release_key_and_rejects_an_unrelated_one() {
 	let (forged, _) = release_wire(&intruder, &project_id);
 	let path = format!("/v1/projects/{project_id}/objects/release");
 	let request = axum::http::Request::post(&path).body(Body::from(forged)).expect("request");
-	let response = application.oneshot(request).await.expect("response");
+	let response = application.clone().oneshot(request).await.expect("response");
 	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+	let request = axum::http::Request::get("/metrics").body(Body::empty()).expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("body");
+	let text = String::from_utf8(body.to_vec()).expect("utf8");
+	assert!(text.contains("moraine_signature_failures_total 1"), "{text}");
 }
 
 #[tokio::test]
