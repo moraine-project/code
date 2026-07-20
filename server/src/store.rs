@@ -691,6 +691,17 @@ impl MetadataStore {
 		})
 	}
 
+	pub async fn referenced_blob_digests(&self) -> Result<Vec<Vec<u8>>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT digest FROM artifact_index
+			 UNION SELECT artifact_digest FROM locations
+			 UNION SELECT artifact_digest FROM mirror_commitments",
+		)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows.into_iter().map(|row| row.get::<Vec<u8>, _>(0)).collect())
+	}
+
 	async fn table_count(&self, table: &str) -> Result<i64, sqlx::Error> {
 		self.scalar_count(&format!("SELECT COUNT(*) FROM {table}")).await
 	}

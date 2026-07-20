@@ -111,6 +111,43 @@ impl BlobStore {
 		}
 	}
 
+	pub async fn list_committed(&self) -> io::Result<Vec<([u8; 32], std::time::SystemTime)>> {
+		let mut entries = tokio::fs::read_dir(&self.blobs).await?;
+		let mut blobs = Vec::new();
+		while let Some(entry) = entries.next_entry().await? {
+			let Ok(name) = entry.file_name().into_string() else {
+				continue;
+			};
+			let Some(digest) = digest_from_hex(&name) else {
+				continue;
+			};
+			blobs.push((digest, entry.metadata().await?.modified()?));
+		}
+		Ok(blobs)
+	}
+
+	pub async fn remove_committed(&self, digest: &[u8; 32]) -> io::Result<()> {
+		match tokio::fs::remove_file(self.blob_path(digest)).await {
+			Ok(()) => Ok(()),
+			Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+			Err(error) => Err(error),
+		}
+	}
+
+	pub async fn sweep_staging(&self, before: std::time::SystemTime) -> io::Result<u64> {
+		let mut entries = tokio::fs::read_dir(&self.staging).await?;
+		let mut removed = 0;
+		while let Some(entry) = entries.next_entry().await? {
+			if entry.file_name().to_string_lossy().ends_with(".part")
+				&& entry.metadata().await?.modified()? < before
+				&& tokio::fs::remove_file(entry.path()).await.is_ok()
+			{
+				removed += 1;
+			}
+		}
+		Ok(removed)
+	}
+
 	pub async fn size(&self, digest: &[u8; 32]) -> io::Result<Option<u64>> {
 		match tokio::fs::metadata(self.blob_path(digest)).await {
 			Ok(metadata) => Ok(Some(metadata.len())),
@@ -118,6 +155,13 @@ impl BlobStore {
 			Err(error) => Err(error),
 		}
 	}
+}
+
+fn digest_from_hex(name: &str) -> Option<[u8; 32]> {
+	if name.len() != 64 {
+		return None;
+	}
+	<[u8; 32]>::try_from(hex::decode(name).ok()?.as_slice()).ok()
 }
 
 fn staging_name() -> String {
@@ -152,6 +196,29 @@ mod tests {
 		let mut contents = Vec::new();
 		file.read_to_end(&mut contents).await.expect("read");
 		assert_eq!(contents, b"hello world");
+	}
+
+	#[tokio::test]
+	async fn sweeps_abandoned_staging_files() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = BlobStore::new(directory.path()).await.expect("store");
+		let abandoned = directory.path().join("staging").join("abandoned.part");
+		std::fs::write(&abandoned, b"partial").expect("write");
+		let aged = std::time::SystemTime::now() - std::time::Duration::from_secs(7200);
+		std::fs::File::open(&abandoned)
+			.expect("open")
+			.set_modified(aged)
+			.expect("mtime");
+		let fresh = directory.path().join("staging").join("fresh.part");
+		std::fs::write(&fresh, b"partial").expect("write");
+
+		let removed = store
+			.sweep_staging(std::time::SystemTime::now() - std::time::Duration::from_secs(3600))
+			.await;
+
+		assert_eq!(removed.expect("sweep"), 1);
+		assert!(!abandoned.exists());
+		assert!(fresh.exists());
 	}
 
 	#[tokio::test]

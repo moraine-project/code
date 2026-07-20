@@ -7,6 +7,7 @@ mod config;
 mod definitions;
 mod egress;
 mod federation;
+mod gc;
 mod metrics;
 mod mirrors;
 mod notifications;
@@ -83,6 +84,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				&& synced > 0
 			{
 				tracing::info!(synced, "resynced definitions");
+			}
+			match gc::collect(&prune_state).await {
+				Ok(collected) if collected.staging > 0 || collected.blobs > 0 => {
+					tracing::info!(staging = collected.staging, blobs = collected.blobs, "collected storage");
+				}
+				Ok(_) => {}
+				Err(error) => tracing::warn!(%error, "storage collection failed"),
 			}
 		}
 	});

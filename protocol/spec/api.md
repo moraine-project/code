@@ -79,6 +79,13 @@ the full stream and happens in the client.
 An unknown or malformed digest returns `404` or `400` and never a substituted
 object.
 
+Staging files left by an aborted upload are removed after an hour. A committed
+blob that no release location, artifact index entry, or mirror commitment
+references is removed after a seven-day window, which leaves a fresh upload
+time to be published. A release whose bytes were collected still resolves; its
+artifact is simply unavailable at this host, and byte serving answers `404`
+rather than a substitute.
+
 ## Projects, objects, and feeds
 
 Signed objects are stored after their signatures are checked. An object is
