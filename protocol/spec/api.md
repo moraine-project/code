@@ -40,6 +40,15 @@ hash-based policy that additionally restricts scripts, styles, images, fonts,
 and connections to the site itself.
 
 
+## First run
+
+`moraine-server bootstrap --email <address>` prepares a fresh data directory:
+it runs the database migrations, creates the operator account with a generated
+password, and writes the server's webhook signing key. The password is printed
+once and never stored in plaintext. Running it again for the same address is an
+error, so it cannot silently reset an operator's credentials. The default
+publishing mode is `review`.
+
 ## Health
 
 `GET /healthz` answers `ok` when the process is up. `GET /readyz` answers `ok`

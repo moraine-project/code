@@ -19,7 +19,23 @@ impl Publishing {
 }
 
 #[derive(Debug, Clone, Parser)]
-#[command(name = "moraine-server", about = "Moraine registry, directory, and worker")]
+pub struct Cli {
+	#[command(flatten)]
+	pub config: Config,
+
+	#[command(subcommand)]
+	pub command: Option<Command>,
+}
+
+#[derive(Debug, Clone, clap::Subcommand)]
+pub enum Command {
+	Bootstrap {
+		#[arg(long, env = "MORAINE_OPERATOR_EMAIL")]
+		email: String,
+	},
+}
+
+#[derive(Debug, Clone, Parser)]
 pub struct Config {
 	#[arg(long, env = "MORAINE_BIND", default_value = "127.0.0.1:8080")]
 	pub bind: SocketAddr,

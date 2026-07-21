@@ -2,6 +2,7 @@ mod accounts;
 mod advisories;
 mod auth;
 mod blob;
+mod bootstrap;
 mod capability;
 mod config;
 mod definitions;
@@ -29,7 +30,7 @@ use std::sync::Arc;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use crate::config::Config;
+use crate::config::{Cli, Command};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,7 +38,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
 		.init();
 
-	let config = Config::parse();
+	let cli = Cli::parse();
+	let config = cli.config;
+	if let Some(Command::Bootstrap { email }) = cli.command {
+		match bootstrap::run(&config, &email).await {
+			Ok(created) => {
+				println!("operator account: {}", email.trim().to_lowercase());
+				println!("operator id:      {}", created.user_id);
+				println!("operator password: {}", created.password);
+				if let Some(key) = created.webhook_public_key {
+					println!("webhook public key: {key}");
+				}
+				println!("store the password now; it is not shown again");
+				return Ok(());
+			}
+			Err(error) => return Err(error.into()),
+		}
+	}
 	let store = Arc::new(blob::BlobStore::new(&config.data_dir).await?);
 	let metadata = Arc::new(store::MetadataStore::open(config.data_dir.join("metadata.sqlite")).await?);
 	let capability = Arc::new(capability::Capability::discover(&config));
