@@ -263,10 +263,15 @@ ingests its feed:
 1. fetch the genesis, verify it against its own roots, and confirm the genesis
    ID matches the requested project;
 2. ensure a local project with the same genesis exists;
-3. fetch feed entries after the stored cursor, resolve each referenced object,
-   verify it against the root and any stored delegations, and store it;
+3. fetch feed entries after the stored cursor in pages, following the home's
+   page size, resolving each referenced object, verifying it against the root
+   and any stored delegations, and storing it;
 4. append each entry with the same continuity checks a direct import uses;
-5. advance the subscription cursor to the home's head.
+5. advance the subscription cursor to the home's head once no page remains.
+
+A home that serves fewer entries per page than the subscriber asked for is
+followed to the end of its feed, so a large backlog is applied in full rather
+than truncated at the first page.
 
 The event kind maps to an object kind (`release-published` to a release,
 `profile-updated` to a profile, `key-changed`/`migration`/`recovery` to a

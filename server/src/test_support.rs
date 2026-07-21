@@ -91,12 +91,21 @@ pub(crate) fn genesis_wire_roots(roots: &[&SigningKey], kinds: &[&str]) -> Vec<u
 }
 
 pub(crate) fn release_wire(signer: &SigningKey, project_id: &str) -> (Vec<u8>, [u8; 32]) {
+	release_wire_variant(signer, project_id, 0x42, "1.0.0")
+}
+
+pub(crate) fn release_wire_variant(
+	signer: &SigningKey,
+	project_id: &str,
+	nonce: u8,
+	human_version: &str,
+) -> (Vec<u8>, [u8; 32]) {
 	let release = ReleasePayload {
 		protocol: 1,
 		project_id: project_id.to_string(),
 		game_id: sample_id("minecraft"),
-		release_nonce: vec![0x42; 16],
-		human_version: "1.0.0".to_string(),
+		release_nonce: vec![nonce; 16],
+		human_version: human_version.to_string(),
 		channel: "release".to_string(),
 		kind: "mod".to_string(),
 		declared_time: 1_760_000_000,
@@ -174,6 +183,14 @@ pub(crate) async fn app_mode(
 	publishing: crate::config::Publishing,
 	allow_insecure_federation_local: bool,
 ) -> (Router, tempfile::TempDir) {
+	app_with_limit(publishing, allow_insecure_federation_local, 100).await
+}
+
+pub(crate) async fn app_with_limit(
+	publishing: crate::config::Publishing,
+	allow_insecure_federation_local: bool,
+	max_feed_page_entries: u32,
+) -> (Router, tempfile::TempDir) {
 	let directory = tempfile::tempdir().expect("tempdir");
 	let store = Arc::new(BlobStore::new(directory.path()).await.expect("blob store"));
 	let metadata = Arc::new(
@@ -185,7 +202,7 @@ pub(crate) async fn app_mode(
 		bind: "127.0.0.1:0".parse().expect("addr"),
 		data_dir: directory.path().to_path_buf(),
 		max_artifact_bytes: 1024,
-		max_feed_page_entries: 100,
+		max_feed_page_entries,
 		max_response_bytes: 16_777_216,
 		staging_retention_seconds: 3_600,
 		blob_retention_seconds: 604_800,
@@ -224,6 +241,11 @@ pub(crate) async fn login(application: &Router, email: &str) -> (String, String)
 	let session = set_cookie(&response, "moraine_session");
 	let csrf = set_cookie(&response, "moraine_csrf");
 	(session, csrf)
+}
+
+pub(crate) fn id_bytes(id: &str) -> [u8; 32] {
+	let hex = id.strip_prefix("gd:sha256:").expect("object id");
+	<[u8; 32]>::try_from(hex::decode(hex).expect("hex").as_slice()).expect("digest")
 }
 
 pub(crate) fn set_cookie(response: &Response, name: &str) -> String {

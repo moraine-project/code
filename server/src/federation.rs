@@ -295,6 +295,7 @@ struct FeedPage {
 
 #[derive(Serialize, Deserialize)]
 struct FeedEntryView {
+	seq: i64,
 	kind: String,
 	object: String,
 	entry: String,
@@ -387,7 +388,7 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 		));
 	}
 
-	let cursor = match state.metadata.subscription(home_url, project_id).await.map_err(storage)? {
+	let mut cursor = match state.metadata.subscription(home_url, project_id).await.map_err(storage)? {
 		Some(subscription) => subscription.cursor_seq,
 		None => 0,
 	};
@@ -416,36 +417,47 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 		}
 	}
 
-	let page = client
-		.get_json::<FeedPage>(&format!("/v1/projects/{project_id}/feed?after={cursor}&limit=100"))
-		.await?;
 	let mut applied = 0;
-	for entry in &page.entries {
-		if let Some(kind) = object_kind_for_event(&entry.kind) {
-			let wire = client.get_bytes(&format!("/v1/objects/{}", hex_of(&entry.object)?)).await?;
-			let delegations = load_delegations(state, project_id, &root)
+	let mut head_seq;
+	loop {
+		let page = client
+			.get_json::<FeedPage>(&format!("/v1/projects/{project_id}/feed?after={cursor}&limit=100"))
+			.await?;
+		head_seq = page.head_seq;
+		let Some(last) = page.entries.last() else {
+			break;
+		};
+		for entry in &page.entries {
+			if let Some(kind) = object_kind_for_event(&entry.kind) {
+				let wire = client.get_bytes(&format!("/v1/objects/{}", hex_of(&entry.object)?)).await?;
+				let delegations = load_delegations(state, project_id, &root)
+					.await
+					.map_err(|error| rejected(*error))?;
+				let object = verify::verify_object_authorized(kind, &wire, &root, &delegations, now())
+					.map_err(|error| FederationError::Verify(error.to_string()))?;
+				registry::store_object_record(state, &object).await.map_err(storage)?;
+			}
+			let entry_wire = client.get_bytes(&format!("/v1/objects/{}", hex_of(&entry.entry)?)).await?;
+			registry::ingest_feed(state, project_id, &entry_wire)
 				.await
 				.map_err(|error| rejected(*error))?;
-			let object = verify::verify_object_authorized(kind, &wire, &root, &delegations, now())
-				.map_err(|error| FederationError::Verify(error.to_string()))?;
-			registry::store_object_record(state, &object).await.map_err(storage)?;
+			applied += 1;
 		}
-		let entry_wire = client.get_bytes(&format!("/v1/objects/{}", hex_of(&entry.entry)?)).await?;
-		registry::ingest_feed(state, project_id, &entry_wire)
-			.await
-			.map_err(|error| rejected(*error))?;
-		applied += 1;
+		if last.seq >= head_seq || last.seq <= cursor {
+			break;
+		}
+		cursor = last.seq;
 	}
 
 	state
 		.metadata
-		.set_subscription_cursor(home_url, project_id, page.head_seq, "active", now())
+		.set_subscription_cursor(home_url, project_id, head_seq, "active", now())
 		.await
 		.map_err(storage)?;
 	Ok(SyncReport {
 		project_id: project_id.to_string(),
 		applied,
-		head_seq: page.head_seq,
+		head_seq,
 	})
 }
 

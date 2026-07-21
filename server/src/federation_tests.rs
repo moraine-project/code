@@ -186,3 +186,59 @@ async fn bounds_the_home_response_body() {
 	assert_eq!(client.get_bytes("small").await.expect("small"), b"ok");
 	assert!(client.get_bytes("huge").await.is_err());
 }
+
+#[tokio::test]
+async fn federation_paginates_through_a_multi_page_feed() {
+	let home_signer = key(7);
+	let (home, _home_directory) = app_with_limit(crate::config::Publishing::Open, false, 1).await;
+	let (project_id, first_release) = publish_project(&home, &home_signer).await;
+
+	let mut previous: Option<[u8; 32]> = None;
+	let mut object_digest = first_release;
+	for index in 0..3u8 {
+		if index > 0 {
+			let (release, digest) = release_wire_variant(&home_signer, &project_id, 0x50 + index, &format!("1.0.{index}"));
+			let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+				.body(Body::from(release))
+				.expect("request");
+			let response = home.clone().oneshot(request).await.expect("response");
+			assert_eq!(response.status(), StatusCode::CREATED);
+			object_digest = digest;
+		}
+		let feed = feed_wire(&home_signer, &project_id, index as u64 + 1, previous, object_digest);
+		let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+			.body(Body::from(feed))
+			.expect("request");
+		let response = home.clone().oneshot(request).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+		let receipt = body_json(response).await;
+		previous = Some(id_bytes(receipt["entry"].as_str().expect("entry id")));
+	}
+
+	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+	let address = listener.local_addr().expect("addr");
+	let serving = home.clone();
+	tokio::spawn(async move {
+		let _ = axum::serve(listener, serving).await;
+	});
+
+	let (directory, _directory_dir) = app_mode(crate::config::Publishing::Review, true).await;
+	let (session, csrf) = login(&directory, "ops@example.org").await;
+	let sync = axum::http::Request::post("/v1/federation/sync")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.header("x-csrf-token", csrf)
+		.body(Body::from(
+			serde_json::json!({
+				"home_url": format!("http://127.0.0.1:{}", address.port()),
+				"project_id": project_id,
+			})
+			.to_string(),
+		))
+		.expect("request");
+	let response = directory.clone().oneshot(sync).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let report = body_json(response).await;
+	assert_eq!(report["applied"], 3);
+	assert_eq!(report["head_seq"], 3);
+}
