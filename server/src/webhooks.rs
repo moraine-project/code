@@ -435,6 +435,8 @@ mod tests {
 			max_artifact_bytes: 1024,
 			max_feed_page_entries: 100,
 			max_response_bytes: 16_777_216,
+			staging_retention_seconds: 3_600,
+			blob_retention_seconds: 604_800,
 			allow_insecure_federation_local: true,
 			publishing: crate::config::Publishing::Open,
 			web_dir: None,

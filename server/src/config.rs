@@ -36,6 +36,12 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_MAX_RESPONSE_BYTES", default_value_t = 16_777_216)]
 	pub max_response_bytes: u64,
 
+	#[arg(long, env = "MORAINE_STAGING_RETENTION_SECONDS", default_value_t = 3_600)]
+	pub staging_retention_seconds: u64,
+
+	#[arg(long, env = "MORAINE_BLOB_RETENTION_SECONDS", default_value_t = 604_800)]
+	pub blob_retention_seconds: u64,
+
 	#[arg(long, env = "MORAINE_PUBLISHING", value_enum, default_value_t = Publishing::Review)]
 	pub publishing: Publishing,
 

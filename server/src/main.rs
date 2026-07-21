@@ -51,6 +51,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	};
 	let worker_state = state.clone();
 	let prune_state = state.clone();
+	let staging_retention = config.staging_retention_seconds;
+	let blob_retention = config.blob_retention_seconds;
 	let app = routes::router(state);
 
 	tokio::spawn(async move {
@@ -85,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			{
 				tracing::info!(synced, "resynced definitions");
 			}
-			match gc::collect(&prune_state).await {
+			match gc::collect(&prune_state, staging_retention, blob_retention).await {
 				Ok(collected) if collected.staging > 0 || collected.blobs > 0 => {
 					tracing::info!(staging = collected.staging, blobs = collected.blobs, "collected storage");
 				}

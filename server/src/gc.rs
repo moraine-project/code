@@ -3,17 +3,18 @@ use std::time::{Duration, SystemTime};
 
 use crate::routes::AppState;
 
-const STAGING_RETENTION_SECONDS: u64 = 3_600;
-const UNREFERENCED_BLOB_RETENTION_SECONDS: u64 = 7 * 86_400;
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Collected {
 	pub staging: u64,
 	pub blobs: u64,
 }
 
-pub async fn collect(state: &AppState) -> Result<Collected, String> {
-	let staging_before = SystemTime::now() - Duration::from_secs(STAGING_RETENTION_SECONDS);
+pub async fn collect(
+	state: &AppState,
+	staging_retention_seconds: u64,
+	blob_retention_seconds: u64,
+) -> Result<Collected, String> {
+	let staging_before = SystemTime::now() - Duration::from_secs(staging_retention_seconds);
 	let staging = state
 		.store
 		.sweep_staging(staging_before)
@@ -26,7 +27,7 @@ pub async fn collect(state: &AppState) -> Result<Collected, String> {
 		.map_err(|error| error.to_string())?
 		.into_iter()
 		.collect();
-	let cutoff = SystemTime::now() - Duration::from_secs(UNREFERENCED_BLOB_RETENTION_SECONDS);
+	let cutoff = SystemTime::now() - Duration::from_secs(blob_retention_seconds);
 	let mut blobs = 0;
 	for (digest, modified) in state.store.list_committed().await.map_err(|error| error.to_string())? {
 		if referenced.contains(digest.as_slice()) || modified >= cutoff {
@@ -63,6 +64,8 @@ mod tests {
 			max_artifact_bytes: 1024,
 			max_feed_page_entries: 100,
 			max_response_bytes: 16_777_216,
+			staging_retention_seconds: 3_600,
+			blob_retention_seconds: 604_800,
 			publishing: crate::config::Publishing::Review,
 			allow_insecure_federation_local: false,
 			web_dir: None,
@@ -91,7 +94,7 @@ mod tests {
 	async fn keeps_referenced_blobs_and_collects_orphans() {
 		let directory = tempfile::tempdir().expect("tempdir");
 		let state = state(directory.path()).await;
-		let aged = SystemTime::now() - Duration::from_secs(UNREFERENCED_BLOB_RETENTION_SECONDS + 60);
+		let aged = SystemTime::now() - Duration::from_secs(86_400 + 60);
 		let orphan = commit_aged(&state, b"orphan", aged).await;
 		let referenced = commit_aged(&state, b"referenced", aged).await;
 		state
@@ -100,7 +103,7 @@ mod tests {
 			.await
 			.expect("index");
 
-		let collected = collect(&state).await.expect("collect");
+		let collected = collect(&state, 3_600, 86_400).await.expect("collect");
 
 		assert_eq!(collected.blobs, 1);
 		assert!(state.store.size(&orphan).await.expect("size").is_none());
@@ -113,7 +116,7 @@ mod tests {
 		let state = state(directory.path()).await;
 		let fresh = commit_aged(&state, b"fresh", SystemTime::now()).await;
 
-		let collected = collect(&state).await.expect("collect");
+		let collected = collect(&state, 3_600, 86_400).await.expect("collect");
 
 		assert_eq!(collected.blobs, 0);
 		assert!(state.store.size(&fresh).await.expect("size").is_some());

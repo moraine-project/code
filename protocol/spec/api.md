@@ -82,9 +82,11 @@ object.
 Staging files left by an aborted upload are removed after an hour. A committed
 blob that no release location, artifact index entry, or mirror commitment
 references is removed after a seven-day window, which leaves a fresh upload
-time to be published. A release whose bytes were collected still resolves; its
-artifact is simply unavailable at this host, and byte serving answers `404`
-rather than a substitute.
+time to be published. Both windows are operator settings
+(`MORAINE_STAGING_RETENTION_SECONDS`, `MORAINE_BLOB_RETENTION_SECONDS`). A
+release whose bytes were collected still resolves; its artifact is simply
+unavailable at this host, and byte serving answers `404` rather than a
+substitute.
 
 ## Projects, objects, and feeds
 
