@@ -455,6 +455,15 @@ loader takes any `loader-def` shape (definition, release, or acceptance
 mapping), and a runtime takes a `runtime-def`. The stored object becomes the
 identity's current definition; earlier revisions remain addressable by digest.
 
+At startup the server reads every regular file in a `definitions` directory
+beside the data directory. A file holding a game, loader, or runtime genesis is
+imported as that identity; a file holding a signed definition object is
+verified against its identity's root and becomes its current definition.
+Genesis files are applied before definition files regardless of filename order,
+so a single directory can seed an identity and its first definition. Files that
+are neither are ignored, and a file that fails to import is reported and does
+not stop the server.
+
 `GET /v1/{games|loaders|runtimes}/{id}` returns the identity, its genesis ID,
 the current definition ID, and `payload`, a JSON rendering of the canonical
 signed payload. The rendering is a convenience for display; the signed bytes

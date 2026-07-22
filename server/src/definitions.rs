@@ -6,7 +6,9 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
+use moraine_model::definition::{GameDef, LoaderDef, RuntimeDef};
 use moraine_model::genesis::{Genesis, GenesisKind};
+use moraine_model::signed::SignedObject;
 use serde::Serialize;
 use sqlx::Row;
 
@@ -131,34 +133,106 @@ async fn import_genesis(state: &AppState, expected: GenesisKind, body: Bytes) ->
 	if genesis.kind != expected {
 		return (StatusCode::BAD_REQUEST, format!("genesis is not a {}", expected.as_str())).into_response();
 	}
+	match import_definition(state, expected, &object).await {
+		Ok(()) => {
+			let id = object.id;
+			(
+				StatusCode::CREATED,
+				Json(ImportReceipt {
+					id,
+					kind: expected.as_str(),
+				}),
+			)
+				.into_response()
+		}
+		Err((status, message)) => (status, message).into_response(),
+	}
+}
+
+async fn import_definition(
+	state: &AppState,
+	expected: GenesisKind,
+	object: &crate::verify::VerifiedObject,
+) -> Result<(), (StatusCode, String)> {
 	match state.metadata.definition(&object.id).await {
 		Ok(Some(existing)) if existing.genesis_digest != object.digest.to_vec() => {
-			return (StatusCode::CONFLICT, "id is already bound to a different genesis").into_response();
+			Err((StatusCode::CONFLICT, "id is already bound to a different genesis".to_string()))
 		}
-		Ok(Some(_)) => {}
+		Ok(Some(_)) => Ok(()),
 		Ok(None) => {
-			if let Err(error) = state.metadata.put_object(&stored(&object)).await {
-				return storage_error(error);
-			}
-			if let Err(error) = state
+			state.metadata.put_object(&stored(object)).await.map_err(store_failure)?;
+			state
 				.metadata
 				.create_definition(&object.id, expected.as_str(), &object.digest, now())
 				.await
-			{
-				return storage_error(error);
-			}
+				.map_err(store_failure)?;
+			Ok(())
 		}
-		Err(error) => return storage_error(error),
+		Err(error) => Err(store_failure(error)),
 	}
-	let id = object.id;
-	(
-		StatusCode::CREATED,
-		Json(ImportReceipt {
-			id,
-			kind: expected.as_str(),
-		}),
-	)
-		.into_response()
+}
+
+fn store_failure(error: sqlx::Error) -> (StatusCode, String) {
+	tracing::error!(%error, "definition store failed");
+	(StatusCode::INTERNAL_SERVER_ERROR, "storage error".to_string())
+}
+
+pub async fn load_directory(state: &AppState, directory: &std::path::Path) -> Result<usize, String> {
+	let mut entries = match tokio::fs::read_dir(directory).await {
+		Ok(entries) => entries,
+		Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+		Err(error) => return Err(error.to_string()),
+	};
+	let mut files = Vec::new();
+	while let Some(entry) = entries.next_entry().await.map_err(|error| error.to_string())? {
+		if entry.file_type().await.map_err(|error| error.to_string())?.is_file() {
+			files.push(entry.path());
+		}
+	}
+	let mut loaded = 0;
+	for path in &files {
+		let bytes = tokio::fs::read(path).await.map_err(|error| error.to_string())?;
+		let Ok((_, object)) = verify::verify_genesis(&bytes) else {
+			continue;
+		};
+		let Ok(genesis) = Genesis::from_canonical_bytes(&object.payload_bytes) else {
+			continue;
+		};
+		if matches!(genesis.kind, GenesisKind::Project) {
+			continue;
+		}
+		match import_definition(state, genesis.kind, &object).await {
+			Ok(()) => loaded += 1,
+			Err((_, message)) => return Err(format!("{}: {message}", object.id)),
+		}
+	}
+	for path in &files {
+		let bytes = tokio::fs::read(path).await.map_err(|error| error.to_string())?;
+		if verify::verify_genesis(&bytes).is_ok() {
+			continue;
+		}
+		let Some((expected, kind, id)) = definition_target(&bytes) else {
+			continue;
+		};
+		match store_definition_version(state, expected, kind, &id, &bytes).await {
+			Ok(_) => loaded += 1,
+			Err((_, message)) => return Err(format!("{id}: {message}")),
+		}
+	}
+	Ok(loaded)
+}
+
+fn definition_target(bytes: &[u8]) -> Option<(GenesisKind, ObjectKind, String)> {
+	if let Ok(signed) = SignedObject::<GameDef>::from_bytes(bytes) {
+		return Some((GenesisKind::Game, ObjectKind::GameDef, signed.payload.game_id));
+	}
+	if let Ok(signed) = SignedObject::<LoaderDef>::from_bytes(bytes) {
+		return Some((GenesisKind::Loader, ObjectKind::LoaderDef, signed.payload.loader_id));
+	}
+	if let Ok(signed) = SignedObject::<RuntimeDef>::from_bytes(bytes) {
+		return Some((GenesisKind::Runtime, ObjectKind::RuntimeDef, signed.payload.runtime_id));
+	}
+	None
 }
 
 #[derive(Serialize)]
@@ -171,30 +245,44 @@ struct DefinitionView {
 }
 
 async fn put_definition(state: &AppState, expected: GenesisKind, kind: ObjectKind, id: &str, body: Bytes) -> Response {
-	let definition = match load_definition(state, expected, id).await {
-		Ok(definition) => definition,
-		Err(response) => return *response,
-	};
-	let genesis = match state.metadata.object(&definition.genesis_digest).await {
-		Ok(Some(genesis)) => genesis,
-		Ok(None) => return (StatusCode::INTERNAL_SERVER_ERROR, "definition genesis is missing").into_response(),
-		Err(error) => return storage_error(error),
-	};
-	let (root, _) = match verify::verify_genesis(&genesis.wire) {
-		Ok(verified) => verified,
-		Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
-	};
-	let object = match verify::verify_object(kind, &body, &root) {
-		Ok(object) => object,
-		Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
-	};
-	if let Err(error) = state.metadata.put_object(&stored(&object)).await {
-		return storage_error(error);
+	match store_definition_version(state, expected, kind, id, &body).await {
+		Ok(object_id) => (StatusCode::CREATED, Json(serde_json::json!({ "definition": object_id }))).into_response(),
+		Err((status, message)) => (status, message).into_response(),
 	}
-	if let Err(error) = state.metadata.set_definition_current(id, &object.digest).await {
-		return storage_error(error);
+}
+
+async fn store_definition_version(
+	state: &AppState,
+	expected: GenesisKind,
+	kind: ObjectKind,
+	id: &str,
+	body: &[u8],
+) -> Result<String, (StatusCode, String)> {
+	let definition = match state.metadata.definition(id).await.map_err(store_failure)? {
+		Some(definition) => definition,
+		None => return Err((StatusCode::NOT_FOUND, format!("no such {} definition", expected.as_str()))),
+	};
+	if definition.kind != expected.as_str() {
+		return Err((StatusCode::BAD_REQUEST, format!("`{id}` is not a {}", expected.as_str())));
 	}
-	(StatusCode::CREATED, Json(serde_json::json!({ "definition": object.id }))).into_response()
+	let Some(genesis) = state
+		.metadata
+		.object(&definition.genesis_digest)
+		.await
+		.map_err(store_failure)?
+	else {
+		return Err((StatusCode::INTERNAL_SERVER_ERROR, "definition genesis is missing".to_string()));
+	};
+	let (root, _) =
+		verify::verify_genesis(&genesis.wire).map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+	let object = verify::verify_object(kind, body, &root).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+	state.metadata.put_object(&stored(&object)).await.map_err(store_failure)?;
+	state
+		.metadata
+		.set_definition_current(id, &object.digest)
+		.await
+		.map_err(store_failure)?;
+	Ok(object.id)
 }
 
 async fn get_definition(state: &AppState, expected: GenesisKind, id: &str) -> Response {
@@ -267,17 +355,16 @@ mod tests {
 	use crate::blob::BlobStore;
 	use crate::capability::Capability;
 
-	async fn app() -> (Router, tempfile::TempDir) {
-		let directory = tempfile::tempdir().expect("tempdir");
-		let store = Arc::new(BlobStore::new(directory.path()).await.expect("blob store"));
+	async fn state(directory: &std::path::Path) -> AppState {
+		let store = Arc::new(BlobStore::new(directory).await.expect("blob store"));
 		let metadata = Arc::new(
-			MetadataStore::open(directory.path().join("metadata.sqlite"))
+			MetadataStore::open(directory.join("metadata.sqlite"))
 				.await
 				.expect("metadata"),
 		);
 		let config = crate::config::Config {
 			bind: "127.0.0.1:0".parse().expect("addr"),
-			data_dir: directory.path().to_path_buf(),
+			data_dir: directory.to_path_buf(),
 			max_artifact_bytes: 1024,
 			max_feed_page_entries: 100,
 			max_response_bytes: 16_777_216,
@@ -288,14 +375,20 @@ mod tests {
 			publishing: crate::config::Publishing::Open,
 			web_dir: None,
 		};
-		let state = AppState {
+
+		AppState {
 			store,
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
 			login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
 			metrics: std::sync::Arc::new(crate::metrics::Metrics::new()),
 			web_dir: None,
-		};
+		}
+	}
+
+	async fn app() -> (Router, tempfile::TempDir) {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let state = state(directory.path()).await;
 		(crate::routes::router(state), directory)
 	}
 
@@ -373,5 +466,33 @@ mod tests {
 			.expect("request");
 		let response = application.oneshot(wrong_kind).await.expect("response");
 		assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+	}
+
+	#[tokio::test]
+	async fn loads_a_definition_file_from_the_data_directory() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let definitions = directory.path().join("definitions");
+		std::fs::create_dir(&definitions).expect("create");
+		let signer = SigningKey::from_seed(&[0x77; 32]);
+		let wire = game_genesis(&signer);
+		let (_, object) = crate::verify::verify_genesis(&wire).expect("verify");
+		let game_id = object.id;
+		std::fs::write(definitions.join("minecraft"), &wire).expect("write");
+		std::fs::write(definitions.join("minecraft.json"), game_definition(&signer, &game_id)).expect("write");
+		std::fs::write(definitions.join("not-an-object"), b"junk").expect("write");
+		let state = state(directory.path()).await;
+
+		let loaded = load_directory(&state, &definitions).await.expect("load");
+
+		assert_eq!(loaded, 2);
+		let request = axum::http::Request::get(format!("/v1/games/{game_id}"))
+			.body(Body::empty())
+			.expect("request");
+		let response = crate::routes::router(state).oneshot(request).await.expect("response");
+		let status = response.status();
+		let body = to_bytes(response.into_body(), 64 * 1024).await.expect("body");
+		assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+		let view: serde_json::Value = serde_json::from_slice(&body).expect("json");
+		assert_eq!(view["payload"]["display_name"], "Minecraft");
 	}
 }

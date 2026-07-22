@@ -66,6 +66,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		metrics: Arc::new(metrics::Metrics::new()),
 		web_dir: config.web_dir.clone().map(Arc::new),
 	};
+	match definitions::load_directory(&state, &config.data_dir.join("definitions")).await {
+		Ok(loaded) if loaded > 0 => tracing::info!(loaded, "loaded definition files"),
+		Ok(_) => {}
+		Err(error) => tracing::warn!(%error, "the definition directory was not loaded"),
+	}
 	let worker_state = state.clone();
 	let prune_state = state.clone();
 	let staging_retention = config.staging_retention_seconds;
