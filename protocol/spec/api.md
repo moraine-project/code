@@ -279,9 +279,13 @@ delegation, `advisory` to an advisory), and an entry whose object kind is
 unknown is skipped rather than guessed.
 
 Sync is idempotent: re-running it re-fetches nothing past the cursor and
-re-verifies everything it does fetch. The cursor only advances after the
-entries are durably stored. `GET /v1/subscriptions` lists the followed homes
-and their cursors. Both routes need the `federation:manage` scope.
+re-verifies everything it does fetch. The cursor advances after each page's
+entries are durably stored, so a sync interrupted between pages resumes rather
+than replaying entries the local feed already holds. A single sync follows at
+most 200 pages and then reports an error, so a home that keeps growing its head
+cannot hold the request open indefinitely; the entries already applied stay
+applied. `GET /v1/subscriptions` lists the followed homes and their cursors.
+Both routes need the `federation:manage` scope.
 
 A game, loader, or runtime identity is pulled the same way with
 `POST /v1/federation/sync-definition`.

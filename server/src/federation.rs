@@ -419,6 +419,7 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 
 	let mut applied = 0;
 	let mut head_seq;
+	let mut pages = 0;
 	loop {
 		let page = client
 			.get_json::<FeedPage>(&format!("/v1/projects/{project_id}/feed?after={cursor}&limit=100"))
@@ -443,17 +444,26 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 				.map_err(|error| rejected(*error))?;
 			applied += 1;
 		}
-		if last.seq >= head_seq || last.seq <= cursor {
+		if last.seq <= cursor {
 			break;
 		}
+		state
+			.metadata
+			.set_subscription_cursor(home_url, project_id, last.seq, "active", now())
+			.await
+			.map_err(storage)?;
 		cursor = last.seq;
+		if last.seq >= head_seq {
+			break;
+		}
+		pages += 1;
+		if pages >= MAX_SYNC_PAGES {
+			return Err(FederationError::Verify(
+				"the home feed is longer than one sync will follow".to_string(),
+			));
+		}
 	}
 
-	state
-		.metadata
-		.set_subscription_cursor(home_url, project_id, head_seq, "active", now())
-		.await
-		.map_err(storage)?;
 	Ok(SyncReport {
 		project_id: project_id.to_string(),
 		applied,
@@ -470,6 +480,8 @@ fn object_kind_for_event(event: &str) -> Option<ObjectKind> {
 		_ => return None,
 	})
 }
+
+const MAX_SYNC_PAGES: usize = 200;
 
 struct HomeClient {
 	client: reqwest::Client,
