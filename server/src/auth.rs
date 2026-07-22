@@ -489,6 +489,7 @@ mod tests {
 			max_response_bytes: 16_777_216,
 			staging_retention_seconds: 3_600,
 			blob_retention_seconds: 604_800,
+			max_sync_pages: 200,
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Review,
 			web_dir: None,

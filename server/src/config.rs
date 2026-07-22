@@ -58,6 +58,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_BLOB_RETENTION_SECONDS", default_value_t = 604_800)]
 	pub blob_retention_seconds: u64,
 
+	#[arg(long, env = "MORAINE_MAX_SYNC_PAGES", default_value_t = 200)]
+	pub max_sync_pages: u32,
+
 	#[arg(long, env = "MORAINE_PUBLISHING", value_enum, default_value_t = Publishing::Review)]
 	pub publishing: Publishing,
 

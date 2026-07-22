@@ -457,7 +457,7 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 			break;
 		}
 		pages += 1;
-		if pages >= MAX_SYNC_PAGES {
+		if pages >= state.capability.max_sync_pages as usize {
 			return Err(FederationError::Verify(
 				"the home feed is longer than one sync will follow".to_string(),
 			));
@@ -480,8 +480,6 @@ fn object_kind_for_event(event: &str) -> Option<ObjectKind> {
 		_ => return None,
 	})
 }
-
-const MAX_SYNC_PAGES: usize = 200;
 
 struct HomeClient {
 	client: reqwest::Client,
