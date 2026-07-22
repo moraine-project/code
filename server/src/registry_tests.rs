@@ -319,9 +319,21 @@ async fn serves_json_views_of_profile_and_release() {
 	let missing = axum::http::Request::get("/v1/search?tag=server")
 		.body(Body::empty())
 		.expect("request");
-	let response = application.oneshot(missing).await.expect("response");
+	let response = application.clone().oneshot(missing).await.expect("response");
 	let page = body_json(response).await;
 	assert!(page["results"].as_array().expect("results").is_empty());
+
+	let by_name = axum::http::Request::get("/v1/search?sort=name")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(by_name).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+
+	let unsupported = axum::http::Request::get("/v1/search?sort=popularity")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(unsupported).await.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

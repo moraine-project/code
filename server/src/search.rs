@@ -36,10 +36,16 @@ struct SearchParams {
 
 async fn search(State(state): State<AppState>, Query(params): Query<SearchParams>, headers: HeaderMap) -> Response {
 	let limit = params.limit.unwrap_or(20).clamp(1, moraine_model::search::MAX_LIMIT) as i64;
-	let sort = if params.sort.as_deref() == Some("name") {
-		SearchSort::Name
-	} else {
-		SearchSort::Updated
+	let sort = match params.sort.as_deref() {
+		None | Some("relevance") | Some("updated") => SearchSort::Updated,
+		Some("name") => SearchSort::Name,
+		Some(other) => {
+			return (
+				StatusCode::BAD_REQUEST,
+				format!("unsupported sort `{other}`: use relevance, updated, or name"),
+			)
+				.into_response();
+		}
 	};
 	let cursor = params.cursor.as_deref().and_then(|value| value.rsplit_once(':'));
 	let filter = SearchFilter {
