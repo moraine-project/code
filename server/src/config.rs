@@ -61,6 +61,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_MAX_SYNC_PAGES", default_value_t = 200)]
 	pub max_sync_pages: u32,
 
+	#[arg(long, env = "MORAINE_REQUESTS_PER_MINUTE", default_value_t = 600)]
+	pub requests_per_minute: u32,
+
 	#[arg(long, env = "MORAINE_PUBLISHING", value_enum, default_value_t = Publishing::Review)]
 	pub publishing: Publishing,
 

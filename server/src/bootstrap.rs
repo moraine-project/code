@@ -74,6 +74,7 @@ mod tests {
 			staging_retention_seconds: 3_600,
 			blob_retention_seconds: 604_800,
 			max_sync_pages: 200,
+			requests_per_minute: 600,
 			publishing: crate::config::Publishing::Review,
 			allow_insecure_federation_local: false,
 			web_dir: None,

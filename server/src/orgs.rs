@@ -516,6 +516,7 @@ mod tests {
 			staging_retention_seconds: 3_600,
 			blob_retention_seconds: 604_800,
 			max_sync_pages: 200,
+			requests_per_minute: 600,
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Open,
 			web_dir: None,
@@ -526,6 +527,7 @@ mod tests {
 			capability: Arc::new(Capability::discover(&config)),
 			login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
 			metrics: std::sync::Arc::new(crate::metrics::Metrics::new()),
+			rate_limiter: std::sync::Arc::new(crate::ratelimit::RateLimiter::new()),
 			web_dir: None,
 		};
 		(crate::routes::router(state), directory)

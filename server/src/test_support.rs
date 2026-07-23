@@ -191,6 +191,19 @@ pub(crate) async fn app_with_limit(
 	allow_insecure_federation_local: bool,
 	max_feed_page_entries: u32,
 ) -> (Router, tempfile::TempDir) {
+	app_with_limits(publishing, allow_insecure_federation_local, max_feed_page_entries, 600).await
+}
+
+pub(crate) async fn app_with_rate_limit(requests_per_minute: u32) -> (Router, tempfile::TempDir) {
+	app_with_limits(crate::config::Publishing::Open, false, 100, requests_per_minute).await
+}
+
+pub(crate) async fn app_with_limits(
+	publishing: crate::config::Publishing,
+	allow_insecure_federation_local: bool,
+	max_feed_page_entries: u32,
+	requests_per_minute: u32,
+) -> (Router, tempfile::TempDir) {
 	let directory = tempfile::tempdir().expect("tempdir");
 	let store = Arc::new(BlobStore::new(directory.path()).await.expect("blob store"));
 	let metadata = Arc::new(
@@ -207,6 +220,7 @@ pub(crate) async fn app_with_limit(
 		staging_retention_seconds: 3_600,
 		blob_retention_seconds: 604_800,
 		max_sync_pages: 200,
+		requests_per_minute,
 		allow_insecure_federation_local,
 		publishing,
 		web_dir: None,
@@ -217,6 +231,7 @@ pub(crate) async fn app_with_limit(
 		capability: Arc::new(Capability::discover(&config)),
 		login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
 		metrics: std::sync::Arc::new(crate::metrics::Metrics::new()),
+		rate_limiter: std::sync::Arc::new(crate::ratelimit::RateLimiter::new()),
 		web_dir: None,
 	};
 	(crate::routes::router(state), directory)

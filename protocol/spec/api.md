@@ -33,6 +33,14 @@ bounce a request to an address that the initial check allowed. A home response
 is additionally capped at the advertised `max_response_bytes` budget; the
 worker refuses a response whose declared or streamed length exceeds it.
 
+Each credential or client address gets a request budget of
+`requests_per_minute` (600 by default, `0` disables it) counted over a sliding
+minute; exceeding it returns `429` with `Retry-After`. `GET /healthz`,
+`/readyz`, and `/metrics` are exempt so monitoring is never throttled. When the
+connection comes from a loopback address, as behind a local reverse proxy, the
+first `X-Forwarded-For` entry is the client address; otherwise the peer address
+is used and the header is ignored.
+
 Every response also carries `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: no-referrer`, and a `Content-Security-Policy` that forbids
 framing, plugin objects, and a non-self base URI. The website build embeds a

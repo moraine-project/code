@@ -14,6 +14,7 @@ mod mirrors;
 mod notifications;
 mod orgs;
 mod password;
+mod ratelimit;
 mod registry;
 mod review;
 mod routes;
@@ -64,6 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		capability,
 		login_limiter: Arc::new(auth::LoginLimiter::new()),
 		metrics: Arc::new(metrics::Metrics::new()),
+		rate_limiter: Arc::new(ratelimit::RateLimiter::new()),
 		web_dir: config.web_dir.clone().map(Arc::new),
 	};
 	match definitions::load_directory(&state, &config.data_dir.join("definitions")).await {
@@ -121,7 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	let listener = tokio::net::TcpListener::bind(config.bind).await?;
 	tracing::info!(address = %config.bind, "moraine-server listening");
-	axum::serve(listener, app).await?;
+	axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await?;
 	Ok(())
 }
 
