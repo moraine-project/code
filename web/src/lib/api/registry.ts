@@ -219,12 +219,21 @@ export async function lookupDigest(base: string, digest: string, fetchFn: Fetche
 
 export async function searchProjects(
 	base: string,
-	query: { q?: string; game?: string; tag?: string; category?: string; sort?: string; limit?: number },
+	query: {
+		q?: string;
+		game?: string;
+		loader?: string;
+		tag?: string;
+		category?: string;
+		sort?: string;
+		limit?: number;
+	},
 	fetchFn: Fetcher = fetch
 ): Promise<SearchResult[]> {
 	const params = new URLSearchParams();
 	if (query.q) params.set('q', query.q);
 	if (query.game) params.set('game', query.game);
+	if (query.loader) params.set('loader', query.loader);
 	if (query.tag) params.set('tag', query.tag);
 	if (query.category) params.set('category', query.category);
 	if (query.sort) params.set('sort', query.sort);

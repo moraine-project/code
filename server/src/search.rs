@@ -27,6 +27,8 @@ struct SearchParams {
 	#[serde(default)]
 	category: Option<String>,
 	#[serde(default)]
+	loader: Option<String>,
+	#[serde(default)]
 	sort: Option<String>,
 	#[serde(default)]
 	cursor: Option<String>,
@@ -53,6 +55,7 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		game_id: params.game.as_deref(),
 		tag: params.tag.as_deref(),
 		category: params.category.as_deref(),
+		loader: params.loader.as_deref(),
 		sort,
 		cursor,
 		limit: limit + 1,
@@ -99,7 +102,7 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 	let query = SearchQuery {
 		text: params.q.clone(),
 		game: params.game.clone(),
-		loader: None,
+		loader: params.loader.clone(),
 		category: params.category.clone().map(|category| vec![category]),
 		tag: params.tag.clone().map(|tag| vec![tag]),
 		game_version: None,
@@ -147,6 +150,7 @@ pub struct SearchFilter<'a> {
 	pub game_id: Option<&'a str>,
 	pub tag: Option<&'a str>,
 	pub category: Option<&'a str>,
+	pub loader: Option<&'a str>,
 	pub sort: SearchSort,
 	pub cursor: Option<(&'a str, &'a str)>,
 	pub limit: i64,
@@ -166,7 +170,7 @@ impl MetadataStore {
 		.bind(document.updated_at)
 		.execute(&mut *transaction)
 		.await?;
-		sqlx::query("DELETE FROM search_labels WHERE project_id = ?1")
+		sqlx::query("DELETE FROM search_labels WHERE project_id = ?1 AND label_kind IN ('category', 'tag')")
 			.bind(document.project_id)
 			.execute(&mut *transaction)
 			.await?;
@@ -181,6 +185,18 @@ impl MetadataStore {
 			}
 		}
 		transaction.commit().await?;
+		Ok(())
+	}
+
+	pub async fn add_search_labels(&self, project_id: &str, label_kind: &str, labels: &[String]) -> Result<(), sqlx::Error> {
+		for label in labels {
+			sqlx::query("INSERT OR IGNORE INTO search_labels (project_id, label_kind, label_id) VALUES (?1, ?2, ?3)")
+				.bind(project_id)
+				.bind(label_kind)
+				.bind(label)
+				.execute(&self.pool)
+				.await?;
+		}
 		Ok(())
 	}
 
@@ -204,6 +220,12 @@ impl MetadataStore {
 			query
 				.push(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'tag' AND l.label_id = ")
 				.push_bind(tag)
+				.push(")");
+		}
+		if let Some(loader) = filter.loader {
+			query
+				.push(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'loader' AND l.label_id = ")
+				.push_bind(loader)
 				.push(")");
 		}
 		if let Some(category) = filter.category {

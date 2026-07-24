@@ -532,6 +532,17 @@ pub(crate) async fn store_object_record(state: &AppState, object: &verify::Verif
 						.index_artifact(&artifact.digest, &release.project_id, &object.digest)
 						.await?;
 				}
+				let loaders: Vec<String> = release
+					.compatibility
+					.iter()
+					.filter_map(|entry| entry.loader_id.clone())
+					.collect();
+				if !loaders.is_empty() {
+					state
+						.metadata
+						.add_search_labels(&release.project_id, "loader", &loaders)
+						.await?;
+				}
 			}
 			moraine_model::release::ReleaseObject::Location(location) => {
 				for entry in &location.locations {

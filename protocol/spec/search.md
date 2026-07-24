@@ -47,6 +47,10 @@ rather than silently treated as a different order, because an echoed sort that
 the server did not honour would contradict the published inputs. Text matching
 covers the display name and summary.
 
+The facets this implementation serves are `game`, `loader`, `category`, and
+`tag`. A project's loader labels come from the loaders its signed releases
+declare, so a loader filter matches a project that has published for it.
+
 Impersonation detection belongs here: a project whose display name or handle
 closely matches a well-known project in the same game while its stable ID
 differs is flagged and shown beside the original, not quietly reordered.

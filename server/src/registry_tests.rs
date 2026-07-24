@@ -323,6 +323,20 @@ async fn serves_json_views_of_profile_and_release() {
 	let page = body_json(response).await;
 	assert!(page["results"].as_array().expect("results").is_empty());
 
+	let by_loader = axum::http::Request::get(format!("/v1/search?loader={}", sample_id("fabric")))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(by_loader).await.expect("response");
+	let page = body_json(response).await;
+	assert_eq!(page["results"].as_array().expect("results").len(), 1);
+
+	let wrong_loader = axum::http::Request::get(format!("/v1/search?loader={}", sample_id("forge")))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(wrong_loader).await.expect("response");
+	let page = body_json(response).await;
+	assert!(page["results"].as_array().expect("results").is_empty());
+
 	let by_name = axum::http::Request::get("/v1/search?sort=name")
 		.body(Body::empty())
 		.expect("request");

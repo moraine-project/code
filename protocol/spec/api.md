@@ -321,7 +321,7 @@ origin; the protocol does not require a particular policy.
 
 ## Search
 
-`GET /v1/search?q=&game=&tag=&category=&sort=&cursor=&limit=` returns the
+`GET /v1/search?q=&game=&loader=&tag=&category=&sort=&cursor=&limit=` returns the
 portable search response as JSON. Search runs over a local index built from
 validated records: a project enters the index when a `profile-updated` entry
 is accepted, so the name and summary come from the publisher's signed profile,

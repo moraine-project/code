@@ -44,9 +44,11 @@
 			{:else}
 				<ul class="flex flex-wrap gap-2">
 					{#each data.loaders as loader (loader.id)}
-						<li class="badge badge-outline badge-lg">
-							{loader.display_name ?? shortDigest(loader.id)}
-							<span class="badge badge-sm">{loader.current ? 'defined' : 'no definition'}</span>
+						<li>
+							<a class="btn btn-outline" href={`/search?loader=${encodeURIComponent(loader.id)}`}>
+								{loader.display_name ?? shortDigest(loader.id)}
+								<span class="badge badge-sm">{loader.current ? 'defined' : 'no definition'}</span>
+							</a>
 						</li>
 					{/each}
 				</ul>

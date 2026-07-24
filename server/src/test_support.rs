@@ -111,7 +111,7 @@ pub(crate) fn release_wire_variant(
 		declared_time: 1_760_000_000,
 		compatibility: vec![Compatibility {
 			game_version_predicate: Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]),
-			loader_id: None,
+			loader_id: Some(sample_id("fabric")),
 			loader_version_predicate: None,
 			side: Side::Both,
 			runtime_predicate: None,
