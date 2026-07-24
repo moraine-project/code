@@ -457,6 +457,12 @@ project. `POST /v1/games`, `POST /v1/loaders`, and `POST /v1/runtimes` each
 import a signed genesis of that kind; the object's digest becomes the ID, and
 importing the same ID with different genesis bytes is a `409`.
 
+`GET /v1/games`, `GET /v1/loaders`, and `GET /v1/runtimes` list the served
+identities of that kind as `{ id, kind, current, display_name }`. `current` is
+the current definition ID or null before one is published, and `display_name`
+comes from that definition's payload so a browser can label an entry without a
+second request.
+
 `POST /v1/{games|loaders|runtimes}/{id}/definitions` stores a signed definition
 object, verified against that identity's root. A game takes a `game-def`, a
 loader takes any `loader-def` shape (definition, release, or acceptance

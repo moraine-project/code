@@ -16,6 +16,7 @@
 			<a class="btn btn-ghost text-xl" href="/">Moraine</a>
 		</div>
 		<div class="navbar-end gap-2">
+			<a class="btn btn-ghost" href="/games">Browse</a>
 			<a class="btn btn-ghost" href="/search">Search</a>
 			<a class="btn btn-ghost" href="/publish">Publish</a>
 			<a class="btn btn-ghost" href="/notifications">Notifications</a>

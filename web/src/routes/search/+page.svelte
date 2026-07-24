@@ -11,12 +11,17 @@
 		event.preventDefault();
 		const params = new URLSearchParams();
 		if (query.trim().length > 0) params.set('q', query.trim());
+		if (data.game) params.set('game', data.game);
 		if (data.home) params.set('home', data.home);
 		goto(`/search?${params.toString()}`);
 	}
 
 	function homeParam(): string {
-		return data.home ? `?home=${encodeURIComponent(data.home)}` : '';
+		const params = new URLSearchParams();
+		if (data.home) params.set('home', data.home);
+		if (data.game) params.set('game', data.game);
+		const encoded = params.toString();
+		return encoded ? `?${encoded}` : '';
 	}
 </script>
 
@@ -45,7 +50,7 @@
 		<div role="alert" class="alert alert-error"><span>{data.error}</span></div>
 	{:else if data.results.length === 0}
 		<p class="text-base-content/60 text-sm">
-			{data.q ? 'No projects match.' : 'Type a query to search.'}
+			{data.q || data.game ? 'No projects match.' : 'Type a query to search.'}
 		</p>
 	{:else}
 		<ul class="flex flex-col gap-3">

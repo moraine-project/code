@@ -56,6 +56,23 @@ impl MetadataStore {
 		}))
 	}
 
+	pub async fn definitions_by_kind(&self, kind: &str) -> Result<Vec<DefinitionRow>, sqlx::Error> {
+		let rows =
+			sqlx::query("SELECT id, kind, genesis_digest, current_digest FROM definitions WHERE kind = ?1 ORDER BY id ASC")
+				.bind(kind)
+				.fetch_all(&self.pool)
+				.await?;
+		Ok(rows
+			.into_iter()
+			.map(|row| DefinitionRow {
+				id: row.get("id"),
+				kind: row.get("kind"),
+				genesis_digest: row.get("genesis_digest"),
+				current_digest: row.get("current_digest"),
+			})
+			.collect())
+	}
+
 	pub async fn set_definition_current(&self, id: &str, current_digest: &[u8]) -> Result<(), sqlx::Error> {
 		sqlx::query("UPDATE definitions SET current_digest = ?1 WHERE id = ?2")
 			.bind(current_digest)
@@ -68,13 +85,13 @@ impl MetadataStore {
 
 pub fn routes() -> Router<AppState> {
 	Router::new()
-		.route("/v1/games", post(import_game))
+		.route("/v1/games", get(list_games).post(import_game))
 		.route("/v1/games/{id}", get(get_game))
 		.route("/v1/games/{id}/definitions", post(put_game_definition))
-		.route("/v1/loaders", post(import_loader))
+		.route("/v1/loaders", get(list_loaders).post(import_loader))
 		.route("/v1/loaders/{id}", get(get_loader))
 		.route("/v1/loaders/{id}/definitions", post(put_loader_definition))
-		.route("/v1/runtimes", post(import_runtime))
+		.route("/v1/runtimes", get(list_runtimes).post(import_runtime))
 		.route("/v1/runtimes/{id}", get(get_runtime))
 		.route("/v1/runtimes/{id}/definitions", post(put_runtime_definition))
 }
@@ -101,6 +118,57 @@ async fn put_loader_definition(State(state): State<AppState>, Path(id): Path<Str
 
 async fn put_runtime_definition(State(state): State<AppState>, Path(id): Path<String>, body: Bytes) -> Response {
 	put_definition(&state, GenesisKind::Runtime, ObjectKind::RuntimeDef, &id, body).await
+}
+
+async fn list_games(State(state): State<AppState>) -> Response {
+	list_definitions(&state, GenesisKind::Game).await
+}
+
+async fn list_loaders(State(state): State<AppState>) -> Response {
+	list_definitions(&state, GenesisKind::Loader).await
+}
+
+async fn list_runtimes(State(state): State<AppState>) -> Response {
+	list_definitions(&state, GenesisKind::Runtime).await
+}
+
+#[derive(Serialize)]
+struct DefinitionSummary {
+	id: String,
+	kind: &'static str,
+	current: Option<String>,
+	display_name: Option<String>,
+}
+
+async fn list_definitions(state: &AppState, expected: GenesisKind) -> Response {
+	let rows = match state.metadata.definitions_by_kind(expected.as_str()).await {
+		Ok(rows) => rows,
+		Err(error) => return storage_error(error),
+	};
+	let mut summaries = Vec::with_capacity(rows.len());
+	for row in rows {
+		let display_name = match row.current_digest.as_deref() {
+			Some(digest) => definition_display_name(state, expected, digest).await,
+			None => None,
+		};
+		summaries.push(DefinitionSummary {
+			id: row.id,
+			kind: expected.as_str(),
+			current: row.current_digest.as_deref().map(id_for),
+			display_name,
+		});
+	}
+	Json(summaries).into_response()
+}
+
+async fn definition_display_name(state: &AppState, expected: GenesisKind, digest: &[u8]) -> Option<String> {
+	let object = state.metadata.object(digest).await.ok().flatten()?;
+	Some(match expected {
+		GenesisKind::Game => GameDef::from_canonical_bytes(&object.payload).ok()?.display_name,
+		GenesisKind::Loader => LoaderDef::from_canonical_bytes(&object.payload).ok()?.display_name,
+		GenesisKind::Runtime => RuntimeDef::from_canonical_bytes(&object.payload).ok()?.display_name,
+		GenesisKind::Project => return None,
+	})
 }
 
 async fn get_game(State(state): State<AppState>, Path(id): Path<String>) -> Response {
@@ -462,6 +530,21 @@ mod tests {
 		assert_eq!(view["kind"], "game");
 		assert_eq!(view["payload"]["display_name"], "Minecraft");
 		assert_eq!(view["payload"]["version_ordering"], "semver");
+
+		let list = axum::http::Request::get("/v1/games").body(Body::empty()).expect("request");
+		let response = application.clone().oneshot(list).await.expect("response");
+		assert_eq!(response.status(), StatusCode::OK);
+		let games = body_json(response).await;
+		assert_eq!(games.as_array().expect("games").len(), 1);
+		assert_eq!(games[0]["id"], game_id);
+		assert_eq!(games[0]["kind"], "game");
+		assert!(games[0]["current"].as_str().is_some());
+		assert_eq!(games[0]["display_name"], "Minecraft");
+
+		let loaders = axum::http::Request::get("/v1/loaders").body(Body::empty()).expect("request");
+		let response = application.clone().oneshot(loaders).await.expect("response");
+		let loaders = body_json(response).await;
+		assert!(loaders.as_array().expect("loaders").is_empty());
 
 		let wrong_kind = axum::http::Request::post("/v1/loaders")
 			.body(Body::from(game_genesis(&key)))

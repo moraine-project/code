@@ -134,7 +134,15 @@ export const searchResponseSchema = z.object({
 	total_estimate: z.number().nullable().optional()
 });
 
+export const definitionSummarySchema = z.object({
+	id: z.string(),
+	kind: z.string(),
+	current: z.string().nullable().optional(),
+	display_name: z.string().nullable().optional()
+});
+
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
+export type DefinitionSummary = z.infer<typeof definitionSummarySchema>;
 export type Profile = z.infer<typeof profileSchema>;
 export type DigestLookup = z.infer<typeof digestLookupSchema>;
 export type SearchResult = z.infer<typeof searchResultSchema>;
@@ -226,6 +234,18 @@ export async function searchProjects(
 		throw new Error(`home returned ${response.status} for the search`);
 	}
 	return searchResponseSchema.parse(await response.json()).results;
+}
+
+export async function listDefinitions(
+	base: string,
+	kind: 'games' | 'loaders' | 'runtimes',
+	fetchFn: Fetcher = fetch
+): Promise<DefinitionSummary[]> {
+	const response = await fetchFn(`${normalizeBase(base)}/v1/${kind}`);
+	if (!response.ok) {
+		throw new Error(`home returned ${response.status} for the ${kind}`);
+	}
+	return z.array(definitionSummarySchema).parse(await response.json());
 }
 
 export async function fetchRelease(
