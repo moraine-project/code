@@ -21,6 +21,8 @@
 			<a class="btn btn-ghost" href="/publish">Publish</a>
 			<a class="btn btn-ghost" href="/notifications">Notifications</a>
 			<a class="btn btn-ghost" href="/account">Account</a>
+			<a class="btn btn-ghost" href="/about">About</a>
+			<a class="btn btn-ghost" href="/security">Security</a>
 			<span class="badge badge-ghost">federated registry</span>
 		</div>
 	</div>
