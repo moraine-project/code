@@ -1,6 +1,7 @@
 mod accounts;
 mod advisories;
 mod auth;
+mod backup;
 mod blob;
 mod bootstrap;
 mod capability;
@@ -41,6 +42,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	let cli = Cli::parse();
 	let config = cli.config;
+	if let Some(Command::Backup { out }) = cli.command {
+		return match backup::run(&config, &out).await {
+			Ok(summary) => {
+				println!("database snapshot: {}", out.join("metadata.sqlite").display());
+				println!("blob inventory:    {}", out.join("blobs.txt").display());
+				println!(
+					"projects: {}  blobs: {}  bytes: {}",
+					summary.projects, summary.blobs, summary.bytes
+				);
+				println!("back up publisher root keys separately; they are not in this backup");
+				Ok(())
+			}
+			Err(error) => Err(error.into()),
+		};
+	}
 	if let Some(Command::Bootstrap { email }) = cli.command {
 		match bootstrap::run(&config, &email).await {
 			Ok(created) => {

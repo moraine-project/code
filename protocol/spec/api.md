@@ -57,6 +57,14 @@ once and never stored in plaintext. Running it again for the same address is an
 error, so it cannot silently reset an operator's credentials. The default
 publishing mode is `review`.
 
+`moraine-server backup --out <directory>` writes a consistent copy of the
+server's state before an upgrade: a `metadata.sqlite` snapshot taken with
+SQLite's own consistent-dump mechanism, a `blobs/` directory holding the
+artifact bytes, and a `blobs.txt` inventory of each digest and its size for
+after-restore checking. A backup does not include a publisher's root keys, so
+those need their own copy, and the server's webhook signing key should be
+backed up alongside the database.
+
 ## Health
 
 `GET /healthz` answers `ok` when the process is up. `GET /readyz` answers `ok`

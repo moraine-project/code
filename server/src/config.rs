@@ -33,6 +33,10 @@ pub enum Command {
 		#[arg(long, env = "MORAINE_OPERATOR_EMAIL")]
 		email: String,
 	},
+	Backup {
+		#[arg(long)]
+		out: PathBuf,
+	},
 }
 
 #[derive(Debug, Clone, Parser)]
