@@ -205,15 +205,33 @@ pub(crate) async fn app_with_limits(
 	requests_per_minute: u32,
 ) -> (Router, tempfile::TempDir) {
 	let directory = tempfile::tempdir().expect("tempdir");
-	let store = Arc::new(BlobStore::new(directory.path()).await.expect("blob store"));
+	let application = app_in(
+		directory.path(),
+		publishing,
+		allow_insecure_federation_local,
+		max_feed_page_entries,
+		requests_per_minute,
+	)
+	.await;
+	(application, directory)
+}
+
+pub(crate) async fn app_in(
+	directory: &std::path::Path,
+	publishing: crate::config::Publishing,
+	allow_insecure_federation_local: bool,
+	max_feed_page_entries: u32,
+	requests_per_minute: u32,
+) -> Router {
+	let store = Arc::new(BlobStore::new(directory).await.expect("blob store"));
 	let metadata = Arc::new(
-		MetadataStore::open(directory.path().join("metadata.sqlite"))
+		MetadataStore::open(directory.join("metadata.sqlite"))
 			.await
 			.expect("metadata"),
 	);
 	let config = crate::config::Config {
 		bind: "127.0.0.1:0".parse().expect("addr"),
-		data_dir: directory.path().to_path_buf(),
+		data_dir: directory.to_path_buf(),
 		max_artifact_bytes: 1024,
 		max_feed_page_entries,
 		max_response_bytes: 16_777_216,
@@ -234,7 +252,7 @@ pub(crate) async fn app_with_limits(
 		rate_limiter: std::sync::Arc::new(crate::ratelimit::RateLimiter::new()),
 		web_dir: None,
 	};
-	(crate::routes::router(state), directory)
+	crate::routes::router(state)
 }
 
 pub(crate) async fn body_json(response: Response) -> serde_json::Value {

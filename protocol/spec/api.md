@@ -71,6 +71,13 @@ present, that its length matches the recorded size, and that its SHA-256 is the
 digest that names it. A file that was truncated or altered after the backup
 fails the check rather than passing silently.
 
+`moraine-server restore --dir <directory>` verifies the backup first, then
+copies the snapshot and blob bytes into the configured data directory. It
+refuses to write over an existing database or blob directory unless `--force`
+is given, so a restore cannot quietly replace a live host's data. A restore
+does not recreate the webhook signing key, which lives outside the backup and
+is regenerated if absent.
+
 ## Health
 
 `GET /healthz` answers `ok` when the process is up. `GET /readyz` answers `ok`

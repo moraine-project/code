@@ -41,6 +41,12 @@ pub enum Command {
 		#[arg(long)]
 		dir: PathBuf,
 	},
+	Restore {
+		#[arg(long)]
+		dir: PathBuf,
+		#[arg(long)]
+		force: bool,
+	},
 }
 
 #[derive(Debug, Clone, Parser)]

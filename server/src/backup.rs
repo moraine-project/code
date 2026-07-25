@@ -51,6 +51,29 @@ pub struct Verified {
 	pub bytes: u64,
 }
 
+pub async fn restore(config: &Config, directory: &Path, force: bool) -> Result<Verified, String> {
+	let verified = verify(directory).await?;
+	let metadata_path = config.data_dir.join("metadata.sqlite");
+	let blobs_path = config.data_dir.join("blobs");
+	if !force && (metadata_path.exists() || blobs_path.exists()) {
+		return Err(format!(
+			"{} already holds data; pass --force to replace it",
+			config.data_dir.display()
+		));
+	}
+	std::fs::create_dir_all(&config.data_dir).map_err(|error| error.to_string())?;
+	std::fs::copy(directory.join("metadata.sqlite"), &metadata_path).map_err(|error| error.to_string())?;
+	if blobs_path.exists() {
+		std::fs::remove_dir_all(&blobs_path).map_err(|error| error.to_string())?;
+	}
+	std::fs::create_dir_all(&blobs_path).map_err(|error| error.to_string())?;
+	for entry in std::fs::read_dir(directory.join("blobs")).map_err(|error| error.to_string())? {
+		let entry = entry.map_err(|error| error.to_string())?;
+		std::fs::copy(entry.path(), blobs_path.join(entry.file_name())).map_err(|error| error.to_string())?;
+	}
+	Ok(verified)
+}
+
 pub async fn verify(directory: &Path) -> Result<Verified, String> {
 	let database = directory.join("metadata.sqlite");
 	if !database.is_file() {
@@ -108,6 +131,30 @@ mod tests {
 			allow_insecure_federation_local: false,
 			web_dir: None,
 		}
+	}
+
+	#[tokio::test]
+	async fn restores_a_published_project_into_a_fresh_directory() {
+		let source = tempfile::tempdir().expect("source");
+		let source_config = config(source.path()).await;
+		let application = crate::test_support::app_in(source.path(), crate::config::Publishing::Open, false, 100, 600).await;
+		let signer = crate::test_support::key(9);
+		let (project_id, _) = crate::test_support::publish_project(&application, &signer).await;
+		let out = tempfile::tempdir().expect("out");
+		run(&source_config, out.path()).await.expect("backup");
+
+		let target = tempfile::tempdir().expect("target");
+		let target_config = config(target.path()).await;
+		restore(&target_config, out.path(), false).await.expect("restore");
+
+		let restored = crate::test_support::app_in(target.path(), crate::config::Publishing::Open, false, 100, 600).await;
+		let request = axum::http::Request::get(format!("/v1/projects/{project_id}"))
+			.body(axum::body::Body::empty())
+			.expect("request");
+		let response = tower::ServiceExt::oneshot(restored, request).await.expect("response");
+		assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+		assert!(restore(&target_config, out.path(), false).await.is_err());
 	}
 
 	#[tokio::test]

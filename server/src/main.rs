@@ -69,6 +69,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			Err(error) => Err(error.into()),
 		};
 	}
+	if let Some(Command::Restore { dir, force }) = cli.command {
+		return match backup::restore(&config, &dir, force).await {
+			Ok(restored) => {
+				println!(
+					"restored into {}: projects: {}  blobs: {}  bytes: {}",
+					config.data_dir.display(),
+					restored.projects,
+					restored.blobs,
+					restored.bytes
+				);
+				println!("the webhook signing key is not in a backup; copy it separately or a new one is generated");
+				Ok(())
+			}
+			Err(error) => Err(error.into()),
+		};
+	}
 	if let Some(Command::Bootstrap { email }) = cli.command {
 		match bootstrap::run(&config, &email).await {
 			Ok(created) => {
