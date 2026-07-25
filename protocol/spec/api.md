@@ -65,6 +65,12 @@ after-restore checking. A backup does not include a publisher's root keys, so
 those need their own copy, and the server's webhook signing key should be
 backed up alongside the database.
 
+`moraine-server verify-backup --dir <directory>` opens the snapshot read-only,
+counts its projects, and checks every inventory entry: that the blob file is
+present, that its length matches the recorded size, and that its SHA-256 is the
+digest that names it. A file that was truncated or altered after the backup
+fails the check rather than passing silently.
+
 ## Health
 
 `GET /healthz` answers `ok` when the process is up. `GET /readyz` answers `ok`

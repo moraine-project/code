@@ -57,6 +57,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			Err(error) => Err(error.into()),
 		};
 	}
+	if let Some(Command::VerifyBackup { dir }) = cli.command {
+		return match backup::verify(&dir).await {
+			Ok(verified) => {
+				println!(
+					"backup ok: projects: {}  blobs: {}  bytes: {}",
+					verified.projects, verified.blobs, verified.bytes
+				);
+				Ok(())
+			}
+			Err(error) => Err(error.into()),
+		};
+	}
 	if let Some(Command::Bootstrap { email }) = cli.command {
 		match bootstrap::run(&config, &email).await {
 			Ok(created) => {

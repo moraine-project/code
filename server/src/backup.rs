@@ -1,5 +1,8 @@
 use std::path::Path;
 
+use sha2::{Digest, Sha256};
+use sqlx::sqlite::SqliteConnectOptions;
+
 use crate::blob::BlobStore;
 use crate::config::Config;
 use crate::store::MetadataStore;
@@ -40,6 +43,50 @@ pub async fn run(config: &Config, out: &Path) -> Result<Summary, String> {
 	std::fs::write(out.join("blobs.txt"), inventory).map_err(|error| error.to_string())?;
 	let projects = metadata.metrics_snapshot().await.map_err(|error| error.to_string())?.projects;
 	Ok(Summary { projects, blobs, bytes })
+}
+
+pub struct Verified {
+	pub projects: i64,
+	pub blobs: u64,
+	pub bytes: u64,
+}
+
+pub async fn verify(directory: &Path) -> Result<Verified, String> {
+	let database = directory.join("metadata.sqlite");
+	if !database.is_file() {
+		return Err(format!("{} is missing", database.display()));
+	}
+	let options = SqliteConnectOptions::new()
+		.filename(&database)
+		.read_only(true)
+		.create_if_missing(false);
+	let pool = sqlx::SqlitePool::connect_with(options)
+		.await
+		.map_err(|error| error.to_string())?;
+	let projects = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM projects")
+		.fetch_one(&pool)
+		.await
+		.map_err(|error| error.to_string())?;
+	let inventory = std::fs::read_to_string(directory.join("blobs.txt")).map_err(|error| error.to_string())?;
+	let mut blobs = 0;
+	let mut bytes = 0;
+	for line in inventory.lines() {
+		let Some((name, size)) = line.split_once(' ') else {
+			return Err(format!("`{line}` is not an inventory entry"));
+		};
+		let expected: u64 = size.parse().map_err(|_| format!("`{size}` is not a size"))?;
+		let path = directory.join("blobs").join(name);
+		let contents = std::fs::read(&path).map_err(|error| format!("{name}: {error}"))?;
+		if contents.len() as u64 != expected {
+			return Err(format!("{name} is {} bytes, the inventory says {expected}", contents.len()));
+		}
+		if hex::encode(Sha256::digest(&contents)) != name {
+			return Err(format!("{name} does not match its contents"));
+		}
+		blobs += 1;
+		bytes += expected;
+	}
+	Ok(Verified { projects, blobs, bytes })
 }
 
 #[cfg(test)]
@@ -83,6 +130,13 @@ mod tests {
 		let inventory = std::fs::read_to_string(out.path().join("blobs.txt")).expect("inventory");
 		assert_eq!(inventory, format!("{} 8\n", hex::encode(digest)));
 		let copied = out.path().join("blobs").join(hex::encode(digest));
-		assert_eq!(std::fs::read(copied).expect("copy"), b"artifact");
+		assert_eq!(std::fs::read(&copied).expect("copy"), b"artifact");
+
+		let verified = verify(out.path()).await.expect("verify");
+		assert_eq!(verified.blobs, 1);
+		assert_eq!(verified.bytes, 8);
+
+		std::fs::write(&copied, b"tampered").expect("tamper");
+		assert!(verify(out.path()).await.is_err());
 	}
 }

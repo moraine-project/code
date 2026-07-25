@@ -37,6 +37,10 @@ pub enum Command {
 		#[arg(long)]
 		out: PathBuf,
 	},
+	VerifyBackup {
+		#[arg(long)]
+		dir: PathBuf,
+	},
 }
 
 #[derive(Debug, Clone, Parser)]
