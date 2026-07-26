@@ -205,9 +205,13 @@ root, and accepts an object signed by a delegated key whose `allowed_kinds`
 contains that object kind and whose `expires_at` has not passed. So a build
 system can hold a release key while the root stays offline.
 
-`channels` and `max_version_scope` are recorded but not enforced yet, and a
-delegation is not revoked by a later one: revocation will need an explicit
-revocation record tied to the feed sequence.
+A delegation is honored only when it is unrestricted. If it carries
+`channels`, `max_version_scope`, or `valid_from_seq`, the verifier refuses it,
+because it does not evaluate those restrictions and honoring the delegation
+would grant more authority than the issuer declared. The same rule applies
+wherever delegation verification runs, including a launcher reading a home's
+feed. A delegation is not revoked by a later one; revocation will need an
+explicit revocation record tied to the feed sequence.
 
 Object import is signature-gated but unauthenticated: anyone can store a
 validly signed object, because the signature is what authorizes it.
