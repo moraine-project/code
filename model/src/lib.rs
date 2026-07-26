@@ -19,6 +19,7 @@ pub mod release;
 pub mod search;
 pub mod signed;
 pub mod trust;
+pub mod verify;
 pub mod version;
 
 pub use canonical::Canonical;

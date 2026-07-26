@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 moraine-codec = { path = "../codec" }
+moraine-crypto = { path = "../crypto" }
 moraine-install = { path = "../install" }
 moraine-model = { path = "../model" }
 moraine-resolver = { path = "../resolver" }

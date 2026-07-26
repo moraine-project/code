@@ -1151,6 +1151,7 @@ dependencies = [
  "clap",
  "hex",
  "moraine-codec",
+ "moraine-crypto",
  "moraine-install",
  "moraine-model",
  "moraine-resolver",

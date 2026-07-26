@@ -1,9 +1,15 @@
 use std::collections::BTreeSet;
 
+use moraine_crypto::ObjectKind;
+use moraine_model::Canonical;
 use moraine_model::compatibility::Side;
+use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::dependency::{DependencyKind, TargetKind};
+use moraine_model::genesis::GenesisKind;
 use moraine_model::release::ReleaseObject;
 use moraine_model::signed::SignedObject;
+use moraine_model::trust::{RootSet, verify_key_delegation};
+use moraine_model::verify::{verify_genesis, verify_object_authorized};
 use moraine_model::version::{OrderingScheme, VersionCatalog};
 use moraine_resolver::{Candidate, Context, Lockfile, Request, resolve};
 use serde_json::Value;
@@ -78,6 +84,9 @@ fn validate_url(value: &str, allow_http_local: bool) -> Result<(), String> {
 	}
 }
 
+const FEED_PAGE_LIMIT: i64 = 100;
+const MAX_FEED_PAGES: usize = 200;
+
 pub fn resolve_from_home(fetcher: &dyn HomeFetcher, request: &Request) -> Result<Lockfile, String> {
 	let mut queue = vec![request.root_project.clone()];
 	let mut visited = BTreeSet::new();
@@ -90,9 +99,10 @@ pub fn resolve_from_home(fetcher: &dyn HomeFetcher, request: &Request) -> Result
 		if visited.len() > MAX_PROJECTS {
 			return Err("dependency graph is too large to resolve".to_string());
 		}
-		let feed = fetcher.get_json(&format!("/v1/projects/{project}/feed?after=0&limit=100"))?;
-		let entries = feed.get("entries").and_then(Value::as_array).cloned().unwrap_or_default();
-		for entry in entries {
+		let trust = project_trust(fetcher, &project)?;
+		let entries = feed_entries(fetcher, &project)?;
+		let delegations = project_delegations(fetcher, &entries, &trust.root)?;
+		for entry in &entries {
 			let kind = entry.get("kind").and_then(Value::as_str).unwrap_or_default();
 			if !kind.starts_with("release") {
 				continue;
@@ -100,14 +110,18 @@ pub fn resolve_from_home(fetcher: &dyn HomeFetcher, request: &Request) -> Result
 			let Some(object_id) = entry.get("object").and_then(Value::as_str) else {
 				continue;
 			};
-			let Some(hex) = object_id.strip_prefix("gd:sha256:") else {
+			let wire = fetch_object(fetcher, object_id)?;
+			let object = verify_object_authorized(ObjectKind::Release, &wire, &trust.root, &delegations, unix_now())
+				.map_err(|error| format!("{object_id} did not verify: {error}"))?;
+			if object.id != object_id {
+				return Err(format!("the home served {object_id} but its bytes are {}", object.id));
+			}
+			let Ok(ReleaseObject::Release(payload)) = ReleaseObject::from_canonical_bytes(&object.payload_bytes) else {
 				continue;
 			};
-			let wire = fetcher.get_bytes(&format!("/v1/objects/{hex}"))?;
-			let signed = SignedObject::<ReleaseObject>::from_bytes(&wire).map_err(|error| error.to_string())?;
-			let ReleaseObject::Release(payload) = signed.payload else {
-				continue;
-			};
+			if payload.project_id != project {
+				return Err(format!("{object_id} belongs to a different project"));
+			}
 			for dependency in &payload.dependencies {
 				if dependency.target_kind == TargetKind::Project
 					&& dependency.kind == DependencyKind::Required
@@ -118,7 +132,7 @@ pub fn resolve_from_home(fetcher: &dyn HomeFetcher, request: &Request) -> Result
 			}
 			candidates.push(Candidate {
 				project_id: payload.project_id.clone(),
-				release_id: object_id.to_string(),
+				release_id: object.id.clone(),
 				human_version: payload.human_version.clone(),
 				payload,
 			});
@@ -131,6 +145,84 @@ pub fn resolve_from_home(fetcher: &dyn HomeFetcher, request: &Request) -> Result
 		runtime: None,
 	};
 	resolve(request, &context, &candidates).map_err(|error| error.to_string())
+}
+
+struct ProjectTrust {
+	root: RootSet,
+}
+
+fn project_trust(fetcher: &dyn HomeFetcher, project: &str) -> Result<ProjectTrust, String> {
+	let summary = fetcher.get_json(&format!("/v1/projects/{project}"))?;
+	let genesis_id = summary
+		.get("genesis")
+		.and_then(Value::as_str)
+		.ok_or_else(|| format!("the home did not describe {project}"))?;
+	let wire = fetch_object(fetcher, genesis_id)?;
+	let (root, object) = verify_genesis(&wire).map_err(|error| format!("{genesis_id} did not verify: {error}"))?;
+	if root.genesis_kind() != GenesisKind::Project {
+		return Err(format!("{genesis_id} is not a project genesis"));
+	}
+	if object.id != genesis_id || object.id != project {
+		return Err(format!("{project} does not match its genesis"));
+	}
+	Ok(ProjectTrust { root })
+}
+
+fn feed_entries(fetcher: &dyn HomeFetcher, project: &str) -> Result<Vec<Value>, String> {
+	let mut entries = Vec::new();
+	let mut after = 0i64;
+	for _ in 0..MAX_FEED_PAGES {
+		let feed = fetcher.get_json(&format!("/v1/projects/{project}/feed?after={after}&limit={FEED_PAGE_LIMIT}"))?;
+		let head = feed.get("head_seq").and_then(Value::as_i64).unwrap_or(after);
+		let page = feed.get("entries").and_then(Value::as_array).cloned().unwrap_or_default();
+		if page.is_empty() {
+			break;
+		}
+		let last = page
+			.iter()
+			.filter_map(|entry| entry.get("seq").and_then(Value::as_i64))
+			.next_back();
+		entries.extend(page);
+		match last {
+			Some(seq) if seq > after && seq < head => after = seq,
+			_ => break,
+		}
+	}
+	Ok(entries)
+}
+
+fn project_delegations(fetcher: &dyn HomeFetcher, entries: &[Value], root: &RootSet) -> Result<Vec<KeyDelegation>, String> {
+	let mut delegations = Vec::new();
+	for entry in entries {
+		let kind = entry.get("kind").and_then(Value::as_str).unwrap_or_default();
+		if !matches!(kind, "key-changed" | "migration" | "recovery") {
+			continue;
+		}
+		let Some(object_id) = entry.get("object").and_then(Value::as_str) else {
+			continue;
+		};
+		let wire = fetch_object(fetcher, object_id)?;
+		let signed = SignedObject::<Delegation>::from_bytes(&wire).map_err(|error| error.to_string())?;
+		if let Delegation::Key(delegation) = &signed.payload {
+			verify_key_delegation(&signed, root).map_err(|error| format!("{object_id} did not verify: {error}"))?;
+			delegations.push(delegation.clone());
+		}
+	}
+	Ok(delegations)
+}
+
+fn fetch_object(fetcher: &dyn HomeFetcher, object_id: &str) -> Result<Vec<u8>, String> {
+	let hex = object_id
+		.strip_prefix("gd:sha256:")
+		.ok_or_else(|| format!("`{object_id}` is not an object id"))?;
+	fetcher.get_bytes(&format!("/v1/objects/{hex}"))
+}
+
+fn unix_now() -> i64 {
+	std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|elapsed| elapsed.as_secs() as i64)
+		.unwrap_or(0)
 }
 
 pub fn request_for(
@@ -158,11 +250,13 @@ pub fn request_for(
 mod tests {
 	use std::collections::BTreeMap;
 
-	use moraine_codec::Value as CborValue;
-	use moraine_model::Canonical;
+	use moraine_crypto::{ObjectKind, SigningKey, object_id};
 	use moraine_model::artifact::Artifact;
-	use moraine_model::compatibility::{Compatibility, Predicate, Scheme};
+	use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
+	use moraine_model::feed::FeedEntry;
+	use moraine_model::genesis::{Genesis, RootKey};
 	use moraine_model::release::ReleasePayload;
+	use moraine_model::signed::sign_payload;
 
 	use super::*;
 
@@ -181,80 +275,122 @@ mod tests {
 		}
 	}
 
-	#[test]
-	fn resolves_a_single_release_from_a_home() {
-		let payload_bytes = {
-			let payload = ReleasePayload {
-				protocol: 1,
-				project_id: "gd:sha256:root".to_string(),
-				game_id: "gd:sha256:game".to_string(),
-				release_nonce: vec![0x11; 16],
-				human_version: "1.0.0".to_string(),
-				channel: "release".to_string(),
-				kind: "mod".to_string(),
-				declared_time: 1_760_000_000,
-				compatibility: vec![Compatibility {
-					game_version_predicate: Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]),
-					loader_id: None,
-					loader_version_predicate: None,
-					side: Side::Both,
-					runtime_predicate: None,
-					os_predicate: None,
-					arch_predicate: None,
-				}],
-				artifacts: vec![Artifact {
-					digest: vec![0xAB; 32],
-					size: 10,
-					media_type: "application/java-archive".to_string(),
-					filename: "example.jar".to_string(),
-					is_primary: true,
-					os_predicate: None,
-					arch_predicate: None,
-				}],
-				dependencies: Vec::new(),
-				source_reference: None,
-				changelog_digest: None,
-				license_expression: None,
-				rights: None,
-				sbom_digest: None,
-				minimum_verifier_version: 1,
-				critical_extensions: Vec::new(),
-			};
-			payload.to_canonical_bytes()
+	fn signed_home(forged: bool) -> (MemoryHome, String) {
+		let signer = SigningKey::from_seed(&[7u8; 32]);
+		let genesis = Genesis {
+			protocol: 1,
+			kind: GenesisKind::Project,
+			nonce: vec![0x33; 16],
+			roots: vec![RootKey::from_public_key(signer.verifying_key().to_bytes().to_vec()).expect("root")],
+			threshold: 1,
+			authorized_kinds: vec![
+				"release".to_string(),
+				"feed-entry".to_string(),
+				"delegation".to_string(),
+				"profile".to_string(),
+				"advisory".to_string(),
+			],
+			home_hint: None,
+			contacts: None,
+			created_at: 1_760_000_000,
 		};
-		let object_id = "gd:sha256:release";
-		let wire = moraine_codec::encode(&CborValue::map([
-			(
-				CborValue::text("envelope"),
-				CborValue::map([
-					(CborValue::text("alg"), CborValue::int(1)),
-					(CborValue::text("signatures"), CborValue::array(Vec::new())),
-					(CborValue::text("key_ids"), CborValue::array(Vec::new())),
-				]),
-			),
-			(CborValue::text("payload"), CborValue::bytes(payload_bytes)),
-		]))
-		.expect("wire");
+		let genesis_signed = sign_payload(ObjectKind::Genesis, &genesis, &[&signer]);
+		let genesis_id = genesis_signed.id(ObjectKind::Genesis);
+
+		let release = ReleasePayload {
+			protocol: 1,
+			project_id: genesis_id.clone(),
+			game_id: "gd:sha256:game".to_string(),
+			release_nonce: vec![0x11; 16],
+			human_version: "1.0.0".to_string(),
+			channel: "release".to_string(),
+			kind: "mod".to_string(),
+			declared_time: 1_760_000_000,
+			compatibility: vec![Compatibility {
+				game_version_predicate: Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]),
+				loader_id: None,
+				loader_version_predicate: None,
+				side: Side::Both,
+				runtime_predicate: None,
+				os_predicate: None,
+				arch_predicate: None,
+			}],
+			artifacts: vec![Artifact {
+				digest: vec![0xAB; 32],
+				size: 10,
+				media_type: "application/java-archive".to_string(),
+				filename: "example.jar".to_string(),
+				is_primary: true,
+				os_predicate: None,
+				arch_predicate: None,
+			}],
+			dependencies: Vec::new(),
+			source_reference: None,
+			changelog_digest: None,
+			license_expression: None,
+			rights: None,
+			sbom_digest: None,
+			minimum_verifier_version: 1,
+			critical_extensions: Vec::new(),
+		};
+		let intruder = SigningKey::from_seed(&[8u8; 32]);
+		let release_signer = if forged { &intruder } else { &signer };
+		let release_signed = sign_payload(ObjectKind::Release, &release, &[release_signer]);
+		let release_id = release_signed.id(ObjectKind::Release);
+
+		let entry = FeedEntry {
+			protocol: 1,
+			project_id: genesis_id.clone(),
+			sequence: 1,
+			previous: None,
+			kind: "release-published".to_string(),
+			object_digest: object_id(ObjectKind::Release, &release_signed.payload_bytes).to_vec(),
+			declared_at: 1_760_000_000,
+		};
+		let entry_signed = sign_payload(ObjectKind::FeedEntry, &entry, &[&signer]);
+		let entry_id = entry_signed.id(ObjectKind::FeedEntry);
 
 		let mut home = MemoryHome {
 			json: BTreeMap::new(),
 			bytes: BTreeMap::new(),
 		};
 		home.json.insert(
-			"/v1/projects/gd:sha256:root/feed?after=0&limit=100".to_string(),
+			format!("/v1/projects/{genesis_id}"),
+			serde_json::json!({ "genesis": genesis_id }),
+		);
+		home.json.insert(
+			format!("/v1/projects/{genesis_id}/feed?after=0&limit=100"),
 			serde_json::json!({
-				"project_id": "gd:sha256:root",
+				"project_id": genesis_id,
 				"head_seq": 1,
-				"entries": [{ "seq": 1, "kind": "release-published", "object": object_id, "entry": "gd:sha256:e", "declared_at": 0 }],
+				"entries": [{ "seq": 1, "kind": "release-published", "object": release_id, "entry": entry_id, "declared_at": 0 }],
 			}),
 		);
-		home.bytes.insert("/v1/objects/release".to_string(), wire);
+		for (id, wire) in [
+			(genesis_id.clone(), genesis_signed.wire_bytes()),
+			(release_id, release_signed.wire_bytes()),
+		] {
+			let hex = id.strip_prefix("gd:sha256:").expect("object id").to_string();
+			home.bytes.insert(format!("/v1/objects/{hex}"), wire);
+		}
+		(home, genesis_id)
+	}
 
-		let request = request_for("gd:sha256:game", "1.20.1", "gd:sha256:root", "client", None, None).expect("request");
+	#[test]
+	fn resolves_a_single_release_from_a_home() {
+		let (home, project_id) = signed_home(false);
+		let request = request_for("gd:sha256:game", "1.20.1", &project_id, "client", None, None).expect("request");
 		let lockfile = resolve_from_home(&home, &request).expect("resolve");
 		assert_eq!(lockfile.releases.len(), 1);
 		assert_eq!(lockfile.releases[0].human_version, "1.0.0");
 		assert_eq!(lockfile.releases[0].artifact.filename, "example.jar");
+	}
+
+	#[test]
+	fn rejects_a_release_the_home_did_not_authorize() {
+		let (home, project_id) = signed_home(true);
+		let request = request_for("gd:sha256:game", "1.20.1", &project_id, "client", None, None).expect("request");
+		assert!(resolve_from_home(&home, &request).is_err());
 	}
 
 	#[test]
