@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { blobUrl, digestHex, fileSha256, shortDigest } from '$lib/api/registry';
+	import { blobUrl, digestHex, fileSha256 } from '$lib/api/registry';
+	import Digest from '$lib/components/Digest.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -106,7 +107,7 @@
 											<span class="badge badge-ghost badge-sm">primary</span>
 										{/if}
 									</td>
-									<td class="font-mono">{shortDigest(artifact.digest, 16)}</td>
+									<td><Digest value={artifact.digest} label={`the ${artifact.filename} digest`} /></td>
 									<td>{formatBytes(artifact.size)}</td>
 									<td>
 										<a class="btn btn-sm" href={blobUrl(data.home, artifact.digest)}>Download</a>
@@ -139,7 +140,8 @@
 						aria-label="File to check against this release"
 					/>
 					{#if checking}
-						<span class="loading loading-spinner loading-sm"></span>
+						<span class="loading loading-spinner loading-sm" aria-hidden="true"></span>
+						<span class="sr-only" role="status">Hashing the file</span>
 					{/if}
 				</div>
 				{#if checkResult}
@@ -169,7 +171,7 @@
 							<li>
 								<span class="text-base-content/60">{entry.side}</span>
 								{#if entry.loader_id}
-									<span class="font-mono">{shortDigest(entry.loader_id)}</span>
+									<Digest value={entry.loader_id} label="the loader id" length={12} />
 								{/if}
 								<span class="font-mono">{entry.scheme}: {entry.values.join(', ')}</span>
 							</li>
@@ -188,7 +190,7 @@
 							<li>
 								<span class="badge badge-outline">{dependency.kind}</span>
 								<span class="text-base-content/60">{dependency.target_kind}</span>
-								<span class="font-mono">{shortDigest(dependency.target_id)}</span>
+								<Digest value={dependency.target_id} label="the dependency id" length={12} />
 							</li>
 						{/each}
 					</ul>
