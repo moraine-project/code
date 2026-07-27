@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { shortDigest } from '$lib/api/registry';
 	import { follows, notifications, readAll, readNotification, type Notification } from '$lib/api/notifications';
+	import Digest from '$lib/components/Digest.svelte';
 
 	let items = $state<Notification[]>([]);
 	let followed = $state<string[]>([]);
@@ -71,7 +72,7 @@
 				<li class="card card-border">
 					<div class="card-body flex-row items-center justify-between gap-2 py-3">
 						<div class="flex flex-col gap-1">
-							<span class="font-mono text-xs text-base-content/50">{shortDigest(item.project_id)}</span>
+							<Digest value={item.project_id} label="the project id" length={12} />
 							<span class="text-sm">
 								<strong>{item.event_kind}</strong>
 								{#if item.feed_seq !== null && item.feed_seq !== undefined}

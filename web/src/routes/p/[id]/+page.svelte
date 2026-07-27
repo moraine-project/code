@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { shortDigest } from '$lib/api/registry';
+	import Digest from '$lib/components/Digest.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -116,7 +117,7 @@
 												{entry.title ?? '—'}
 											{/if}
 										</td>
-										<td class="font-mono">{shortDigest(entry.object)}</td>
+										<td><Digest value={entry.object} label="the object id" length={12} /></td>
 										<td>{formatTime(entry.declared_at)}</td>
 									</tr>
 								{/each}

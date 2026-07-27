@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { shortDigest } from '$lib/api/registry';
+	import Digest from '$lib/components/Digest.svelte';
 	import { decide, reasonCodes, reviewQueue, type Submission } from '$lib/api/review';
 
 	let submissions = $state<Submission[]>([]);
@@ -89,8 +90,8 @@
 				<tbody>
 					{#each submissions as submission (submission.id)}
 						<tr>
-							<td class="font-mono">{shortDigest(submission.object, 16)}</td>
-							<td class="font-mono">{shortDigest(submission.project_id, 16)}</td>
+							<td><Digest value={submission.object} label="the object id" /></td>
+							<td><Digest value={submission.project_id} label="the project id" /></td>
 							<td>{formatTime(submission.created_at)}</td>
 							<td>
 								<select
