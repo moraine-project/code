@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { shortDigest } from '$lib/api/registry';
+
+	import Digest from '$lib/components/Digest.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -66,7 +67,7 @@
 							{result.display_name}
 						</a>
 						<p class="text-base-content/80 text-sm">{result.summary}</p>
-						<span class="font-mono text-xs text-base-content/50">{shortDigest(result.project_id)}</span>
+						<Digest value={result.project_id} label="the project id" length={12} />
 					</div>
 				</li>
 			{/each}

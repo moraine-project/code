@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
 	import { lookupDigest, shortDigest, type DigestLookup } from '$lib/api/registry';
+	import Digest from '$lib/components/Digest.svelte';
 
 	let projectId = $state('');
 	let home = $state(PUBLIC_MORAINE_REGISTRY ?? 'http://127.0.0.1:8080');
@@ -98,6 +99,7 @@
 								>
 									{shortDigest(match.project_id)}
 								</a>
+								<Digest copyOnly value={match.project_id} label="the project id" />
 								{#if match.human_version}
 									<span class="badge badge-outline">{match.human_version}</span>
 								{/if}
