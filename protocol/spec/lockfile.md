@@ -56,7 +56,9 @@ A launcher builds a lockfile from a home by walking the root project's required
 dependency closure through that home's feed. Before a project's entries are
 read, its genesis is fetched and verified against its own roots, and the
 delegated signing keys are collected from delegation entries that verify
-against that genesis. Every release object is then verified against the root or
+against that genesis. A home response is capped at 16 MiB, so a home cannot
+exhaust the launcher by serving an oversized object or feed page. Every release
+object is then verified against the root or
 against a key the project delegated for releases, and its bytes must hash to
 the ID the feed named. A home that serves a release the project did not
 authorize, or object bytes that do not match the advertised ID, is refused

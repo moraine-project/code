@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::io::Read;
 
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
@@ -56,11 +57,25 @@ impl HomeFetcher for HttpHome {
 		if !response.status().is_success() {
 			return Err(format!("home returned {} for {path}", response.status()));
 		}
-		response
-			.bytes()
-			.map(|bytes| bytes.to_vec())
-			.map_err(|error| error.to_string())
+		if let Some(length) = response.content_length()
+			&& length > MAX_HOME_RESPONSE_BYTES
+		{
+			return Err(format!("{path} exceeds the response size limit"));
+		}
+		read_bounded(response, path)
 	}
+}
+
+fn read_bounded<R: std::io::Read>(reader: R, path: &str) -> Result<Vec<u8>, String> {
+	let mut body = Vec::new();
+	reader
+		.take(MAX_HOME_RESPONSE_BYTES + 1)
+		.read_to_end(&mut body)
+		.map_err(|error| error.to_string())?;
+	if body.len() as u64 > MAX_HOME_RESPONSE_BYTES {
+		return Err(format!("{path} exceeds the response size limit"));
+	}
+	Ok(body)
 }
 
 fn validate_url(value: &str, allow_http_local: bool) -> Result<(), String> {
@@ -84,6 +99,7 @@ fn validate_url(value: &str, allow_http_local: bool) -> Result<(), String> {
 	}
 }
 
+const MAX_HOME_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 const FEED_PAGE_LIMIT: i64 = 100;
 const MAX_FEED_PAGES: usize = 200;
 
@@ -391,6 +407,13 @@ mod tests {
 		let (home, project_id) = signed_home(true);
 		let request = request_for("gd:sha256:game", "1.20.1", &project_id, "client", None, None).expect("request");
 		assert!(resolve_from_home(&home, &request).is_err());
+	}
+
+	#[test]
+	fn bounds_what_a_home_can_return() {
+		assert!(read_bounded(std::io::Cursor::new(b"small".to_vec()), "/x").is_ok());
+		let oversized = std::io::Cursor::new(vec![0u8; (MAX_HOME_RESPONSE_BYTES + 1) as usize]);
+		assert!(read_bounded(oversized, "/x").is_err());
 	}
 
 	#[test]
