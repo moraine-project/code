@@ -8,7 +8,8 @@
 		orgMembers,
 		removeOrgMember,
 		type OrgDetail,
-		type OrgMember
+		type OrgMember,
+		type OrgTeam
 	} from '$lib/api/orgs';
 	import type { PageProps } from './$types';
 
@@ -22,9 +23,12 @@
 	let email = $state('');
 	let memberRole = $state('member');
 	let teamName = $state('');
+	let parentTeamId = $state('');
 	let busy = $state(false);
 
 	const canManage = $derived(role === 'owner' || role === 'admin');
+	const rootTeams = $derived(detail?.teams.filter((team) => !team.parent_team_id) ?? []);
+	const childrenOf = (parentId: string) => detail?.teams.filter((team) => team.parent_team_id === parentId) ?? [];
 
 	onMount(load);
 
@@ -73,8 +77,9 @@
 		event.preventDefault();
 		busy = true;
 		try {
-			await createOrgTeam(params.handle, teamName.trim());
+			await createOrgTeam(params.handle, teamName.trim(), parentTeamId || null);
 			teamName = '';
+			parentTeamId = '';
 			await load();
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'could not create the team';
@@ -167,9 +172,21 @@
 				{#if detail.teams.length === 0}
 					<p class="text-base-content/60 text-sm">No teams yet.</p>
 				{:else}
+					{#snippet teamNode(team: OrgTeam, depth: number)}
+						<li style={`margin-inline-start: ${depth}rem`}>
+							<span class="badge badge-outline">{team.display_name}</span>
+							{#if childrenOf(team.id).length > 0}
+								<ul class="mt-2 flex flex-wrap gap-2">
+									{#each childrenOf(team.id) as child (child.id)}
+										{@render teamNode(child, depth + 1)}
+									{/each}
+								</ul>
+							{/if}
+						</li>
+					{/snippet}
 					<ul class="flex flex-wrap gap-2">
-						{#each detail.teams as team (team.id)}
-							<li class="badge badge-outline">{team.display_name}</li>
+						{#each rootTeams as team (team.id)}
+							{@render teamNode(team, 0)}
 						{/each}
 					</ul>
 				{/if}
@@ -178,6 +195,15 @@
 						<label class="form-control">
 							<span class="label-text">Team name</span>
 							<input class="input input-bordered" bind:value={teamName} required aria-label="Team name" />
+						</label>
+						<label class="form-control">
+							<span class="label-text">Parent team</span>
+							<select class="select select-bordered" bind:value={parentTeamId} aria-label="Parent team">
+								<option value="">none</option>
+								{#each detail.teams as team (team.id)}
+									<option value={team.id}>{team.display_name}</option>
+								{/each}
+							</select>
 						</label>
 						<button class="btn" type="submit" disabled={busy}>Create team</button>
 					</form>

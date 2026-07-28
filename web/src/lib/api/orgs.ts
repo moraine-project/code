@@ -99,11 +99,11 @@ export async function removeOrgMember(handle: string, userId: string): Promise<v
 	}
 }
 
-export async function createOrgTeam(handle: string, displayName: string): Promise<OrgTeam> {
+export async function createOrgTeam(handle: string, displayName: string, parentTeamId: string | null = null): Promise<OrgTeam> {
 	const response = await authorizedFetch(`/v1/orgs/${encodeURIComponent(handle)}/teams`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ display_name: displayName })
+		body: JSON.stringify({ display_name: displayName, parent_team_id: parentTeamId })
 	});
 	if (!response.ok) {
 		throw new Error(await failure(response));
