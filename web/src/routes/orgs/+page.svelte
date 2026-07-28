@@ -65,7 +65,9 @@
 				<li class="card card-border">
 					<div class="card-body flex-row items-center justify-between gap-2 py-3">
 						<div>
-							<span class="font-semibold">{org.display_name}</span>
+							<a class="link link-hover font-semibold" href={`/orgs/${encodeURIComponent(org.handle)}`}>
+								{org.display_name}
+							</a>
 							<span class="text-base-content/60 font-mono text-xs">{org.handle}</span>
 						</div>
 						<span class="badge badge-outline">{org.role}</span>
