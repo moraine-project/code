@@ -199,6 +199,15 @@ async fn review_mode_queues_then_accepts() {
 	assert_eq!(list[0]["submission"]["state"], "accepted");
 	assert_eq!(list[0]["decisions"][0]["decision"], "accept");
 
+	let oldest = list[0]["submission"]["created_at"].as_i64().expect("created_at");
+	let older = axum::http::Request::get(format!("/v1/submissions?before={oldest}"))
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(older).await.expect("response");
+	let page = body_json(response).await;
+	assert!(page.as_array().expect("submissions").is_empty());
+
 	let feed_request = axum::http::Request::get(format!("/v1/projects/{project_id}/feed"))
 		.body(Body::empty())
 		.expect("request");

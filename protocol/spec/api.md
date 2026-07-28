@@ -251,7 +251,9 @@ A submission can be decided while `submitted` by any reviewer, or while
 `under_review` by its assignee. `GET /v1/submissions` lists the calling
 account's own submissions with their decisions, so an author can see the state
 of a submission, the reason code behind a rejection, and any appeal route
-without holding a reviewer scope.
+without holding a reviewer scope. Both it and `/v1/review-queue` take `limit`
+(capped at 200) and a `created_at` cursor — `before` for the author list, which
+is newest first, and `after` for the queue, which is oldest first.
 
 A decision applies to one object digest and is an instance-attributed policy
 record; it never alters signed bytes, and the signed entry stays stored for

@@ -531,30 +531,39 @@ impl MetadataStore {
 		.bind(id)
 		.fetch_optional(&self.pool)
 		.await?;
-		Ok(row.map(submission_from_row))
+		Ok(row.map(submission_row))
 	}
 
-	pub async fn open_submissions(&self, limit: i64) -> Result<Vec<SubmissionRow>, sqlx::Error> {
+	pub async fn open_submissions(&self, limit: i64, after: Option<i64>) -> Result<Vec<SubmissionRow>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
-			 FROM submissions WHERE state IN ('submitted', 'under_review') ORDER BY created_at ASC LIMIT ?1",
+			 FROM submissions WHERE state IN ('submitted', 'under_review') AND created_at > ?1
+			 ORDER BY created_at ASC LIMIT ?2",
 		)
+		.bind(after.unwrap_or(i64::MIN))
 		.bind(limit)
 		.fetch_all(&self.pool)
 		.await?;
-		Ok(rows.into_iter().map(submission_from_row).collect())
+		Ok(rows.into_iter().map(submission_row).collect())
 	}
 
-	pub async fn submissions_by_submitter(&self, user_id: &str, limit: i64) -> Result<Vec<SubmissionRow>, sqlx::Error> {
+	pub async fn submissions_by_submitter(
+		&self,
+		user_id: &str,
+		limit: i64,
+		before: Option<i64>,
+	) -> Result<Vec<SubmissionRow>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
-			 FROM submissions WHERE submitted_by = ?1 ORDER BY created_at DESC LIMIT ?2",
+			 FROM submissions WHERE submitted_by = ?1 AND created_at < ?2
+			 ORDER BY created_at DESC LIMIT ?3",
 		)
 		.bind(user_id)
+		.bind(before.unwrap_or(i64::MAX))
 		.bind(limit)
 		.fetch_all(&self.pool)
 		.await?;
-		Ok(rows.into_iter().map(submission_from_row).collect())
+		Ok(rows.into_iter().map(submission_row).collect())
 	}
 
 	pub async fn assign_submission(&self, id: &str, reviewer_id: &str, updated_at: i64) -> Result<bool, sqlx::Error> {
@@ -623,7 +632,7 @@ impl MetadataStore {
 	}
 }
 
-fn submission_from_row(row: sqlx::sqlite::SqliteRow) -> SubmissionRow {
+fn submission_row(row: sqlx::sqlite::SqliteRow) -> SubmissionRow {
 	SubmissionRow {
 		id: row.get("id"),
 		project_id: row.get("project_id"),

@@ -3,21 +3,40 @@
 	import Digest from '$lib/components/Digest.svelte';
 	import { mySubmissions, type SubmissionDetail } from '$lib/api/review';
 
+	const pageSize = 50;
+
 	let items = $state<SubmissionDetail[]>([]);
 	let error = $state<string | null>(null);
 	let loading = $state(true);
+	let more = $state(false);
+	let hasMore = $state(false);
 
 	onMount(load);
 
 	async function load() {
 		loading = true;
 		try {
-			items = await mySubmissions();
+			items = await mySubmissions(pageSize);
+			hasMore = items.length === pageSize;
 			error = null;
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'could not load your submissions';
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function loadMore() {
+		more = true;
+		try {
+			const oldest = items.at(-1)?.submission.created_at;
+			const page = await mySubmissions(pageSize, oldest);
+			items = items.concat(page);
+			hasMore = page.length === pageSize;
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not load more submissions';
+		} finally {
+			more = false;
 		}
 	}
 
@@ -75,5 +94,10 @@
 				</li>
 			{/each}
 		</ul>
+		{#if hasMore}
+			<button class="btn btn-outline w-fit" type="button" onclick={loadMore} disabled={more}>
+				Load older submissions
+			</button>
+		{/if}
 	{/if}
 </div>

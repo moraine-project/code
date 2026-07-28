@@ -1,5 +1,5 @@
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -177,8 +177,25 @@ fn decision_views(decisions: Vec<ReviewDecisionRow>) -> Vec<DecisionView> {
 		.collect()
 }
 
-async fn my_submissions(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
-	let rows = match state.metadata.submissions_by_submitter(&user.user_id, 100).await {
+#[derive(Deserialize)]
+struct SubmissionPage {
+	#[serde(default)]
+	limit: Option<u32>,
+	#[serde(default)]
+	before: Option<i64>,
+}
+
+async fn my_submissions(
+	State(state): State<AppState>,
+	user: AuthenticatedUser,
+	Query(params): Query<SubmissionPage>,
+) -> Response {
+	let limit = params.limit.unwrap_or(50).clamp(1, 200) as i64;
+	let rows = match state
+		.metadata
+		.submissions_by_submitter(&user.user_id, limit, params.before)
+		.await
+	{
 		Ok(rows) => rows,
 		Err(error) => return storage_error(error),
 	};
@@ -210,11 +227,20 @@ fn submission_view(row: SubmissionRow) -> SubmissionView {
 	}
 }
 
-async fn queue(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
+#[derive(Deserialize)]
+struct QueuePage {
+	#[serde(default)]
+	limit: Option<u32>,
+	#[serde(default)]
+	after: Option<i64>,
+}
+
+async fn queue(State(state): State<AppState>, user: AuthenticatedUser, Query(params): Query<QueuePage>) -> Response {
 	if !user.allows("submissions:review") {
 		return forbidden();
 	}
-	match state.metadata.open_submissions(100).await {
+	let limit = params.limit.unwrap_or(100).clamp(1, 200) as i64;
+	match state.metadata.open_submissions(limit, params.after).await {
 		Ok(rows) => Json(rows.into_iter().map(submission_view).collect::<Vec<_>>()).into_response(),
 		Err(error) => storage_error(error),
 	}
