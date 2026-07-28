@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::{Json, Router};
 use moraine_model::moderation::valid_handle;
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,14 @@ pub struct OrgRow {
 	pub handle: String,
 	pub display_name: String,
 	pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OrgMembership {
+	pub id: String,
+	pub handle: String,
+	pub display_name: String,
+	pub role: String,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +91,25 @@ impl MetadataStore {
 			.execute(&self.pool)
 			.await?;
 		Ok(result.rows_affected() == 1)
+	}
+
+	pub async fn orgs_for_user(&self, user_id: &str) -> Result<Vec<OrgMembership>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT o.id, o.handle, o.display_name, m.role FROM org_members m JOIN orgs o ON o.id = m.org_id
+			 WHERE m.user_id = ?1 ORDER BY m.added_at, o.handle",
+		)
+		.bind(user_id)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows
+			.into_iter()
+			.map(|row| OrgMembership {
+				id: row.get("id"),
+				handle: row.get("handle"),
+				display_name: row.get("display_name"),
+				role: row.get("role"),
+			})
+			.collect())
 	}
 
 	pub async fn org_role(&self, org_id: &str, user_id: &str) -> Result<Option<String>, sqlx::Error> {
@@ -174,7 +201,7 @@ impl MetadataStore {
 
 pub fn routes() -> Router<AppState> {
 	Router::new()
-		.route("/v1/orgs", post(create_org))
+		.route("/v1/orgs", get(list_orgs).post(create_org))
 		.route("/v1/orgs/{handle}", get(org_detail))
 		.route("/v1/orgs/{handle}/members", get(list_members).post(add_member))
 		.route("/v1/orgs/{handle}/members/{user_id}", axum::routing::delete(remove_member))
@@ -215,6 +242,13 @@ struct MemberView {
 	email: String,
 	role: String,
 	added_at: i64,
+}
+
+async fn list_orgs(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
+	match state.metadata.orgs_for_user(&user.user_id).await {
+		Ok(orgs) => Json(orgs).into_response(),
+		Err(error) => storage_error(error),
+	}
 }
 
 async fn create_org(State(state): State<AppState>, user: AuthenticatedUser, Json(request): Json<CreateOrg>) -> Response {
@@ -598,6 +632,38 @@ mod tests {
 			.header(header::COOKIE, cookie)
 			.body(Body::empty())
 			.expect("request")
+	}
+
+	#[tokio::test]
+	async fn lists_the_orgs_an_account_belongs_to() {
+		let (application, _directory) = app().await;
+		let (_, owner_cookie) = login(&application, "owner@example.org").await;
+		let (_, outsider_cookie) = login(&application, "outsider@example.org").await;
+		let create = write(
+			"/v1/orgs",
+			&owner_cookie,
+			serde_json::json!({ "handle": "cleanroom", "display_name": "Cleanroom" }),
+		);
+		let response = application.clone().oneshot(create).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+
+		let response = application
+			.clone()
+			.oneshot(read("/v1/orgs", &owner_cookie))
+			.await
+			.expect("response");
+		let orgs = body_json(response).await;
+		assert_eq!(orgs.as_array().expect("orgs").len(), 1);
+		assert_eq!(orgs[0]["handle"], "cleanroom");
+		assert_eq!(orgs[0]["display_name"], "Cleanroom");
+		assert_eq!(orgs[0]["role"], "owner");
+
+		let response = application
+			.oneshot(read("/v1/orgs", &outsider_cookie))
+			.await
+			.expect("response");
+		let orgs = body_json(response).await;
+		assert!(orgs.as_array().expect("orgs").is_empty());
 	}
 
 	#[tokio::test]

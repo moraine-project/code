@@ -20,6 +20,7 @@
 			<a class="btn btn-ghost" href="/search">Search</a>
 			<a class="btn btn-ghost" href="/publish">Publish</a>
 			<a class="btn btn-ghost" href="/notifications">Notifications</a>
+			<a class="btn btn-ghost" href="/orgs">Organizations</a>
 			<a class="btn btn-ghost" href="/account">Account</a>
 			<a class="btn btn-ghost" href="/about">About</a>
 			<a class="btn btn-ghost" href="/security">Security</a>

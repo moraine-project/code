@@ -367,6 +367,10 @@ the underlying records.
 
 ## Organizations
 
+`GET /v1/orgs` lists the organizations the authenticated account belongs to as
+`{ id, handle, display_name, role }`, which is what a management console needs
+to show before it knows any handle.
+
 An organization is a named group that owns projects. It is not a login: it has
 no password and no session, and every action taken for it is performed by an
 authenticated member whose role permits it.
