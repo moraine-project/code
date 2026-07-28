@@ -161,6 +161,23 @@ async fn review_mode_queues_then_accepts() {
 	let queued = body_json(response).await;
 	assert_eq!(queued.as_array().expect("queue").len(), 1);
 
+	let assign = axum::http::Request::post(format!("/v1/submissions/{submission_id}/assign"))
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.header("x-csrf-token", csrf.clone())
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(assign).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+
+	let queue = axum::http::Request::get("/v1/review-queue")
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(queue).await.expect("response");
+	let queued = body_json(response).await;
+	assert_eq!(queued[0]["state"], "under_review");
+	assert!(queued[0]["assigned_to"].as_str().is_some());
+
 	let review = axum::http::Request::post(format!("/v1/submissions/{submission_id}/review"))
 		.header(header::CONTENT_TYPE, "application/json")
 		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))

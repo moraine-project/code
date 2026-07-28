@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { shortDigest } from '$lib/api/registry';
 	import Digest from '$lib/components/Digest.svelte';
-	import { decide, reasonCodes, reviewQueue, type Submission } from '$lib/api/review';
+	import { assign, decide, reasonCodes, reviewQueue, type Submission } from '$lib/api/review';
 
 	let submissions = $state<Submission[]>([]);
 	let reasons = $state<Record<string, string>>({});
@@ -39,6 +39,21 @@
 			await load();
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'the decision failed';
+		} finally {
+			busy = null;
+		}
+	}
+
+	async function take(submission: Submission) {
+		busy = submission.id;
+		notice = null;
+		error = null;
+		try {
+			await assign(submission.id);
+			notice = `assigned ${shortDigest(submission.object)} to you.`;
+			await load();
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'the assignment failed';
 		} finally {
 			busy = null;
 		}
@@ -83,6 +98,7 @@
 						<th scope="col">Object</th>
 						<th scope="col">Project</th>
 						<th scope="col">Submitted</th>
+						<th scope="col">State</th>
 						<th scope="col">Reason</th>
 						<th scope="col"></th>
 					</tr>
@@ -93,6 +109,12 @@
 							<td><Digest value={submission.object} label="the object id" /></td>
 							<td><Digest value={submission.project_id} label="the project id" /></td>
 							<td>{formatTime(submission.created_at)}</td>
+							<td>
+								<span class="badge badge-outline">{submission.state}</span>
+								{#if submission.assigned_to}
+									<span class="text-base-content/60 text-xs">yours</span>
+								{/if}
+							</td>
 							<td>
 								<select
 									class="select select-sm"
@@ -106,6 +128,15 @@
 							</td>
 							<td>
 								<div class="flex flex-wrap gap-1">
+									{#if submission.state === 'submitted'}
+										<button
+											class="btn btn-sm btn-ghost"
+											onclick={() => take(submission)}
+											disabled={busy === submission.id}
+										>
+											Take
+										</button>
+									{/if}
 									<button
 										class="btn btn-sm"
 										onclick={() => act(submission, 'accept')}

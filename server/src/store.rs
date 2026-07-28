@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS submissions (
 	entry_digest BLOB NOT NULL,
 	entry_wire BLOB NOT NULL,
 	state TEXT NOT NULL,
+	assigned_to TEXT,
 	submitted_by TEXT NOT NULL,
 	created_at INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL
@@ -272,6 +273,7 @@ pub struct SubmissionRow {
 	pub entry_digest: Vec<u8>,
 	pub entry_wire: Vec<u8>,
 	pub state: String,
+	pub assigned_to: Option<String>,
 	pub submitted_by: String,
 	pub created_at: i64,
 	pub updated_at: i64,
@@ -315,6 +317,7 @@ impl MetadataStore {
 			.foreign_keys(true);
 		let pool = SqlitePoolOptions::new().max_connections(5).connect_with(options).await?;
 		sqlx::raw_sql(SCHEMA).execute(&pool).await?;
+		ensure_column(&pool, "submissions", "assigned_to", "TEXT").await?;
 		Ok(Self { pool })
 	}
 
@@ -522,7 +525,7 @@ impl MetadataStore {
 
 	pub async fn submission(&self, id: &str) -> Result<Option<SubmissionRow>, sqlx::Error> {
 		let row = sqlx::query(
-			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, submitted_by, created_at, updated_at
+			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
 			 FROM submissions WHERE id = ?1",
 		)
 		.bind(id)
@@ -531,16 +534,27 @@ impl MetadataStore {
 		Ok(row.map(submission_from_row))
 	}
 
-	pub async fn submissions_in_state(&self, state: &str, limit: i64) -> Result<Vec<SubmissionRow>, sqlx::Error> {
+	pub async fn open_submissions(&self, limit: i64) -> Result<Vec<SubmissionRow>, sqlx::Error> {
 		let rows = sqlx::query(
-			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, submitted_by, created_at, updated_at
-			 FROM submissions WHERE state = ?1 ORDER BY created_at ASC LIMIT ?2",
+			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
+			 FROM submissions WHERE state IN ('submitted', 'under_review') ORDER BY created_at ASC LIMIT ?1",
 		)
-		.bind(state)
 		.bind(limit)
 		.fetch_all(&self.pool)
 		.await?;
 		Ok(rows.into_iter().map(submission_from_row).collect())
+	}
+
+	pub async fn assign_submission(&self, id: &str, reviewer_id: &str, updated_at: i64) -> Result<bool, sqlx::Error> {
+		let result = sqlx::query(
+			"UPDATE submissions SET state = 'under_review', assigned_to = ?1, updated_at = ?2 WHERE id = ?3 AND state = 'submitted'",
+		)
+		.bind(reviewer_id)
+		.bind(updated_at)
+		.bind(id)
+		.execute(&self.pool)
+		.await?;
+		Ok(result.rows_affected() == 1)
 	}
 
 	pub async fn set_submission_state(&self, id: &str, state: &str, updated_at: i64) -> Result<(), sqlx::Error> {
@@ -605,6 +619,7 @@ fn submission_from_row(row: sqlx::sqlite::SqliteRow) -> SubmissionRow {
 		entry_digest: row.get("entry_digest"),
 		entry_wire: row.get("entry_wire"),
 		state: row.get("state"),
+		assigned_to: row.get("assigned_to"),
 		submitted_by: row.get("submitted_by"),
 		created_at: row.get("created_at"),
 		updated_at: row.get("updated_at"),
@@ -713,6 +728,17 @@ impl MetadataStore {
 	async fn scalar_opt(&self, query: &str) -> Result<Option<i64>, sqlx::Error> {
 		sqlx::query_scalar::<_, Option<i64>>(query).fetch_one(&self.pool).await
 	}
+}
+
+async fn ensure_column(pool: &SqlitePool, table: &str, column: &str, definition: &str) -> Result<(), sqlx::Error> {
+	let rows = sqlx::query(&format!("PRAGMA table_info({table})")).fetch_all(pool).await?;
+	if rows.iter().any(|row| row.get::<String, _>("name") == column) {
+		return Ok(());
+	}
+	sqlx::query(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+		.execute(pool)
+		.await?;
+	Ok(())
 }
 
 #[cfg(test)]

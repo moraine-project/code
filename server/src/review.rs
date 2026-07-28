@@ -19,6 +19,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/submissions", post(submit))
 		.route("/v1/submissions/{id}", get(submission_detail))
 		.route("/v1/review-queue", get(queue))
+		.route("/v1/submissions/{id}/assign", post(assign))
 		.route("/v1/submissions/{id}/review", post(review))
 }
 
@@ -29,6 +30,7 @@ struct SubmissionView {
 	object: String,
 	entry: String,
 	state: String,
+	assigned_to: Option<String>,
 	submitted_by: String,
 	created_at: i64,
 	updated_at: i64,
@@ -76,6 +78,7 @@ async fn submit(State(state): State<AppState>, user: AuthenticatedUser, body: By
 						entry_digest: prepared.object.digest.to_vec(),
 						entry_wire: body.to_vec(),
 						state: "auto-accepted".to_string(),
+						assigned_to: None,
 						submitted_by: user.user_id.clone(),
 						created_at: current,
 						updated_at: current,
@@ -103,6 +106,7 @@ async fn submit(State(state): State<AppState>, user: AuthenticatedUser, body: By
 		entry_digest: prepared.object.digest.to_vec(),
 		entry_wire: body.to_vec(),
 		state: "submitted".to_string(),
+		assigned_to: None,
 		submitted_by: user.user_id,
 		created_at: current,
 		updated_at: current,
@@ -156,6 +160,7 @@ async fn submission_detail(State(state): State<AppState>, user: AuthenticatedUse
 		object: id_for(&submission.object_digest),
 		entry: id_for(&submission.entry_digest),
 		state: submission.state,
+		assigned_to: submission.assigned_to,
 		submitted_by: submission.submitted_by,
 		created_at: submission.created_at,
 		updated_at: submission.updated_at,
@@ -182,7 +187,7 @@ async fn queue(State(state): State<AppState>, user: AuthenticatedUser) -> Respon
 	if !user.allows("submissions:review") {
 		return forbidden();
 	}
-	match state.metadata.submissions_in_state("submitted", 100).await {
+	match state.metadata.open_submissions(100).await {
 		Ok(rows) => {
 			let view: Vec<SubmissionView> = rows
 				.into_iter()
@@ -192,6 +197,7 @@ async fn queue(State(state): State<AppState>, user: AuthenticatedUser) -> Respon
 					object: id_for(&row.object_digest),
 					entry: id_for(&row.entry_digest),
 					state: row.state,
+					assigned_to: row.assigned_to,
 					submitted_by: row.submitted_by,
 					created_at: row.created_at,
 					updated_at: row.updated_at,
@@ -212,6 +218,23 @@ struct ReviewRequest {
 	appeal_route: Option<String>,
 }
 
+async fn assign(State(state): State<AppState>, user: AuthenticatedUser, Path(id): Path<String>) -> Response {
+	if !user.allows("submissions:review") {
+		return forbidden();
+	}
+	match state.metadata.submission(&id).await {
+		Ok(Some(submission)) if submission.state == "submitted" => {}
+		Ok(Some(_)) => return (StatusCode::CONFLICT, "submission is already assigned or decided").into_response(),
+		Ok(None) => return (StatusCode::NOT_FOUND, "no such submission").into_response(),
+		Err(error) => return storage_error(error),
+	}
+	match state.metadata.assign_submission(&id, &user.user_id, now()).await {
+		Ok(true) => (StatusCode::OK, Json(serde_json::json!({ "state": "under_review" }))).into_response(),
+		Ok(false) => (StatusCode::CONFLICT, "submission is already assigned or decided").into_response(),
+		Err(error) => storage_error(error),
+	}
+}
+
 async fn review(
 	State(state): State<AppState>,
 	user: AuthenticatedUser,
@@ -226,7 +249,8 @@ async fn review(
 		Ok(None) => return (StatusCode::NOT_FOUND, "no such submission").into_response(),
 		Err(error) => return storage_error(error),
 	};
-	if submission.state != "submitted" {
+	let assigned_to_caller = submission.state == "under_review" && submission.assigned_to.as_deref() == Some(&user.user_id);
+	if submission.state != "submitted" && !assigned_to_caller {
 		return (StatusCode::CONFLICT, "submission already decided").into_response();
 	}
 

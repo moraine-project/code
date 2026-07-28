@@ -8,6 +8,7 @@ export const submissionSchema = z.object({
 	object: z.string(),
 	entry: z.string(),
 	state: z.string(),
+	assigned_to: z.string().nullable().optional(),
 	submitted_by: z.string(),
 	created_at: z.number(),
 	updated_at: z.number()
@@ -37,6 +38,13 @@ export async function reviewQueue(): Promise<Submission[]> {
 		throw new Error(await failure(response));
 	}
 	return z.array(submissionSchema).parse(await response.json());
+}
+
+export async function assign(id: string): Promise<void> {
+	const response = await authorizedFetch(`/v1/submissions/${encodeURIComponent(id)}/assign`, { method: 'POST' });
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
 }
 
 export async function decide(

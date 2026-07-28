@@ -235,7 +235,10 @@ and that the referenced object is stored, and then either:
   submission; or
 - under `review`, records a `submitted` submission and returns `202`.
 
-`GET /v1/review-queue` lists submissions awaiting review. `GET
+`GET /v1/review-queue` lists submissions that are `submitted` or
+`under_review`. `POST /v1/submissions/{id}/assign` moves a `submitted`
+submission to `under_review` and records the calling reviewer as its assignee,
+so two reviewers do not work the same submission by accident. `GET
 /v1/submissions/{id}` returns a submission and its decisions to the submitter
 or a reviewer. `POST /v1/submissions/{id}/review` takes one of:
 
@@ -243,6 +246,9 @@ or a reviewer. `POST /v1/submissions/{id}/review` takes one of:
   in one transaction, and records an `accept` decision;
 - `reject` or `quarantine` — records the decision with a required reason code
   from the version-1 taxonomy and never commits the entry.
+
+A submission can be decided while `submitted` by any reviewer, or while
+`under_review` by its assignee.
 
 A decision applies to one object digest and is an instance-attributed policy
 record; it never alters signed bytes, and the signed entry stays stored for
@@ -278,8 +284,9 @@ with a session or an API key.
 key is returned exactly once; only its SHA-256 hash is stored. Keys are
 scoped, expire by default after 90 days, and are revocable independently. The
 known scopes are `account:read`, `keys:manage`, `projects:write`,
-`submissions:write`, `orgs:manage`, and `notifications:read`. There is no
-wildcard, and no scope can sign a release.
+`submissions:write`, `submissions:review`, `federation:manage`, `orgs:manage`,
+and `notifications:read`. There is no wildcard, and no scope can sign a
+release.
 
 A request authenticates either with the session cookie or an
 `Authorization: Bearer` API key. A cookie-authenticated request that changes
