@@ -545,6 +545,18 @@ impl MetadataStore {
 		Ok(rows.into_iter().map(submission_from_row).collect())
 	}
 
+	pub async fn submissions_by_submitter(&self, user_id: &str, limit: i64) -> Result<Vec<SubmissionRow>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
+			 FROM submissions WHERE submitted_by = ?1 ORDER BY created_at DESC LIMIT ?2",
+		)
+		.bind(user_id)
+		.bind(limit)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows.into_iter().map(submission_from_row).collect())
+	}
+
 	pub async fn assign_submission(&self, id: &str, reviewer_id: &str, updated_at: i64) -> Result<bool, sqlx::Error> {
 		let result = sqlx::query(
 			"UPDATE submissions SET state = 'under_review', assigned_to = ?1, updated_at = ?2 WHERE id = ?3 AND state = 'submitted'",

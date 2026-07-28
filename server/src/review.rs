@@ -16,7 +16,7 @@ use crate::store::{ReviewDecisionRow, SubmissionRow};
 
 pub fn routes() -> Router<AppState> {
 	Router::new()
-		.route("/v1/submissions", post(submit))
+		.route("/v1/submissions", get(my_submissions).post(submit))
 		.route("/v1/submissions/{id}", get(submission_detail))
 		.route("/v1/review-queue", get(queue))
 		.route("/v1/submissions/{id}/assign", post(assign))
@@ -154,18 +154,17 @@ async fn submission_detail(State(state): State<AppState>, user: AuthenticatedUse
 		Ok(decisions) => decisions,
 		Err(error) => return storage_error(error),
 	};
-	let view = SubmissionView {
-		id: submission.id,
-		project_id: submission.project_id,
-		object: id_for(&submission.object_digest),
-		entry: id_for(&submission.entry_digest),
-		state: submission.state,
-		assigned_to: submission.assigned_to,
-		submitted_by: submission.submitted_by,
-		created_at: submission.created_at,
-		updated_at: submission.updated_at,
-	};
-	let decisions = decisions
+	let view = submission_view(submission);
+	let decisions = decision_views(decisions);
+	Json(SubmissionDetail {
+		submission: view,
+		decisions,
+	})
+	.into_response()
+}
+
+fn decision_views(decisions: Vec<ReviewDecisionRow>) -> Vec<DecisionView> {
+	decisions
 		.into_iter()
 		.map(|decision| DecisionView {
 			decision: decision.decision,
@@ -175,12 +174,40 @@ async fn submission_detail(State(state): State<AppState>, user: AuthenticatedUse
 			decided_at: decision.decided_at,
 			appeal_route: decision.appeal_route,
 		})
-		.collect();
-	Json(SubmissionDetail {
-		submission: view,
-		decisions,
-	})
-	.into_response()
+		.collect()
+}
+
+async fn my_submissions(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
+	let rows = match state.metadata.submissions_by_submitter(&user.user_id, 100).await {
+		Ok(rows) => rows,
+		Err(error) => return storage_error(error),
+	};
+	let mut details = Vec::with_capacity(rows.len());
+	for row in rows {
+		let decisions = match state.metadata.decisions_for(&row.id).await {
+			Ok(decisions) => decision_views(decisions),
+			Err(error) => return storage_error(error),
+		};
+		details.push(SubmissionDetail {
+			submission: submission_view(row),
+			decisions,
+		});
+	}
+	Json(details).into_response()
+}
+
+fn submission_view(row: SubmissionRow) -> SubmissionView {
+	SubmissionView {
+		id: row.id,
+		project_id: row.project_id,
+		object: id_for(&row.object_digest),
+		entry: id_for(&row.entry_digest),
+		state: row.state,
+		assigned_to: row.assigned_to,
+		submitted_by: row.submitted_by,
+		created_at: row.created_at,
+		updated_at: row.updated_at,
+	}
 }
 
 async fn queue(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
@@ -188,23 +215,7 @@ async fn queue(State(state): State<AppState>, user: AuthenticatedUser) -> Respon
 		return forbidden();
 	}
 	match state.metadata.open_submissions(100).await {
-		Ok(rows) => {
-			let view: Vec<SubmissionView> = rows
-				.into_iter()
-				.map(|row| SubmissionView {
-					id: row.id,
-					project_id: row.project_id,
-					object: id_for(&row.object_digest),
-					entry: id_for(&row.entry_digest),
-					state: row.state,
-					assigned_to: row.assigned_to,
-					submitted_by: row.submitted_by,
-					created_at: row.created_at,
-					updated_at: row.updated_at,
-				})
-				.collect();
-			Json(view).into_response()
-		}
+		Ok(rows) => Json(rows.into_iter().map(submission_view).collect::<Vec<_>>()).into_response(),
 		Err(error) => storage_error(error),
 	}
 }

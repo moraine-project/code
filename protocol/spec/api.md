@@ -248,7 +248,10 @@ or a reviewer. `POST /v1/submissions/{id}/review` takes one of:
   from the version-1 taxonomy and never commits the entry.
 
 A submission can be decided while `submitted` by any reviewer, or while
-`under_review` by its assignee.
+`under_review` by its assignee. `GET /v1/submissions` lists the calling
+account's own submissions with their decisions, so an author can see the state
+of a submission, the reason code behind a rejection, and any appeal route
+without holding a reviewer scope.
 
 A decision applies to one object digest and is an instance-attributed policy
 record; it never alters signed bytes, and the signed entry stays stored for

@@ -189,6 +189,16 @@ async fn review_mode_queues_then_accepts() {
 	let receipt = body_json(response).await;
 	assert_eq!(receipt["state"], "accepted");
 
+	let mine = axum::http::Request::get("/v1/submissions")
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(mine).await.expect("response");
+	let list = body_json(response).await;
+	assert_eq!(list.as_array().expect("submissions").len(), 1);
+	assert_eq!(list[0]["submission"]["state"], "accepted");
+	assert_eq!(list[0]["decisions"][0]["decision"], "accept");
+
 	let feed_request = axum::http::Request::get(format!("/v1/projects/{project_id}/feed"))
 		.body(Body::empty())
 		.expect("request");

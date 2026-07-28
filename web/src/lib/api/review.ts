@@ -61,3 +61,31 @@ export async function decide(
 		throw new Error(await failure(response));
 	}
 }
+
+export const decisionSchema = z.object({
+	decision: z.string(),
+	reason_code: z.string().nullable().optional(),
+	reason_taxonomy_version: z.number(),
+	reviewer_id: z.string(),
+	decided_at: z.number(),
+	appeal_route: z.string().nullable().optional()
+});
+
+export const submissionDetailSchema = z.object({
+	submission: submissionSchema,
+	decisions: z.array(decisionSchema)
+});
+
+export type Decision = z.infer<typeof decisionSchema>;
+export type SubmissionDetail = z.infer<typeof submissionDetailSchema>;
+
+export async function mySubmissions(): Promise<SubmissionDetail[]> {
+	const response = await authorizedFetch('/v1/submissions');
+	if (response.status === 401) {
+		throw new Error('sign in to see your submissions');
+	}
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+	return z.array(submissionDetailSchema).parse(await response.json());
+}

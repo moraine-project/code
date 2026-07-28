@@ -19,6 +19,7 @@
 			<a class="btn btn-ghost" href="/games">Browse</a>
 			<a class="btn btn-ghost" href="/search">Search</a>
 			<a class="btn btn-ghost" href="/publish">Publish</a>
+			<a class="btn btn-ghost" href="/submissions">Submissions</a>
 			<a class="btn btn-ghost" href="/notifications">Notifications</a>
 			<a class="btn btn-ghost" href="/orgs">Organizations</a>
 			<a class="btn btn-ghost" href="/account">Account</a>
