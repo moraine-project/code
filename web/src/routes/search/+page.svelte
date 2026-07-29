@@ -7,13 +7,26 @@
 
 	let { data }: PageProps = $props();
 	let query = $state(untrack(() => data.q));
+	let sort = $state(untrack(() => data.sort || 'relevance'));
 
-	function submit(event: SubmitEvent) {
+	const sorts = [
+		['relevance', 'Relevance'],
+		['updated', 'Recently updated'],
+		['created', 'Recently added'],
+		['name', 'Name']
+	] as const;
+
+	function sortParam(): string {
+		return sort === 'relevance' ? '' : sort;
+	}
+
+	function submit(event: Event) {
 		event.preventDefault();
 		const params = new URLSearchParams();
 		if (query.trim().length > 0) params.set('q', query.trim());
 		if (data.game) params.set('game', data.game);
 		if (data.loader) params.set('loader', data.loader);
+		if (sortParam()) params.set('sort', sortParam());
 		if (data.home) params.set('home', data.home);
 		goto(`/search?${params.toString()}`);
 	}
@@ -23,6 +36,7 @@
 		if (data.home) params.set('home', data.home);
 		if (data.game) params.set('game', data.game);
 		if (data.loader) params.set('loader', data.loader);
+		if (sort) params.set('sort', sort);
 		const encoded = params.toString();
 		return encoded ? `?${encoded}` : '';
 	}
@@ -48,6 +62,15 @@
 		/>
 		<button class="btn join-item" type="submit">Search</button>
 	</form>
+
+	<label class="form-control w-fit">
+		<span class="label-text">Sort</span>
+		<select class="select select-bordered select-sm" bind:value={sort} onchange={submit} aria-label="Sort results">
+			{#each sorts as [value, label] (value)}
+				<option {value}>{label}</option>
+			{/each}
+		</select>
+	</label>
 
 	{#if data.error}
 		<div role="alert" class="alert alert-error"><span>{data.error}</span></div>

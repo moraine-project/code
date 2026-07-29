@@ -380,6 +380,12 @@ async fn serves_json_views_of_profile_and_release() {
 	let response = application.clone().oneshot(by_name).await.expect("response");
 	assert_eq!(response.status(), StatusCode::OK);
 
+	let by_created = axum::http::Request::get("/v1/search?sort=created")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(by_created).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+
 	let unsupported = axum::http::Request::get("/v1/search?sort=popularity")
 		.body(Body::empty())
 		.expect("request");

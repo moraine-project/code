@@ -43,12 +43,14 @@ weights or algorithm. Rank is an opinion, not a fact, and never a safety
 signal. The published input list must not be silently contradicted by the
 implementation.
 
-The sorts this implementation offers are `relevance`, `updated`, and `name`.
-Its relevance input is recency, so `relevance` and `updated` order identically
-today, and `name` is case-insensitive. Any other value is rejected with `400`
-rather than silently treated as a different order, because an echoed sort that
-the server did not honour would contradict the published inputs. Text matching
-covers the display name and summary.
+The sorts this implementation offers are `relevance`, `updated`, `created`,
+and `name`. Its relevance input is recency, so `relevance` and `updated` order
+identically today; `created` is when this instance first indexed the project,
+which is not the same as when the publisher declared it; and `name` is
+case-insensitive. Any other value is rejected with `400` rather than silently
+treated as a different order, because an echoed sort that the server did not
+honour would contradict the published inputs. Text matching covers the display
+name and summary.
 
 The facets this implementation serves are `game`, `loader`, `category`, and
 `tag`. A project's loader labels come from the loaders its signed releases

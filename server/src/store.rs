@@ -99,7 +99,8 @@ CREATE TABLE IF NOT EXISTS search_documents (
 	game_id TEXT NOT NULL,
 	display_name TEXT NOT NULL,
 	summary TEXT NOT NULL,
-	updated_at INTEGER NOT NULL
+	updated_at INTEGER NOT NULL,
+	created_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS search_labels (
 	project_id TEXT NOT NULL,
@@ -325,6 +326,7 @@ impl MetadataStore {
 		let pool = SqlitePoolOptions::new().max_connections(5).connect_with(options).await?;
 		sqlx::raw_sql(SCHEMA).execute(&pool).await?;
 		ensure_column(&pool, "submissions", "assigned_to", "TEXT").await?;
+		ensure_column(&pool, "search_documents", "created_at", "INTEGER NOT NULL DEFAULT 0").await?;
 		Ok(Self { pool })
 	}
 

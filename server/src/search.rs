@@ -41,10 +41,11 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 	let sort = match params.sort.as_deref() {
 		None | Some("relevance") | Some("updated") => SearchSort::Updated,
 		Some("name") => SearchSort::Name,
+		Some("created") => SearchSort::Created,
 		Some(other) => {
 			return (
 				StatusCode::BAD_REQUEST,
-				format!("unsupported sort `{other}`: use relevance, updated, or name"),
+				format!("unsupported sort `{other}`: use relevance, updated, name, or created"),
 			)
 				.into_response();
 		}
@@ -106,6 +107,7 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 	let next_cursor = if has_more {
 		hits.last().map(|hit| match sort {
 			SearchSort::Updated => format!("{}:{}", hit.updated_at, hit.project_id),
+			SearchSort::Created => format!("{}:{}", hit.created_at, hit.project_id),
 			SearchSort::Name => format!("{}:{}", hit.display_name, hit.project_id),
 		})
 	} else {
@@ -139,11 +141,13 @@ pub struct SearchHit {
 	pub display_name: String,
 	pub summary: String,
 	pub updated_at: i64,
+	pub created_at: i64,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum SearchSort {
 	Updated,
+	Created,
 	Name,
 }
 
@@ -172,7 +176,7 @@ impl MetadataStore {
 	pub async fn put_search_document(&self, document: SearchDocument<'_>) -> Result<(), sqlx::Error> {
 		let mut transaction = self.pool.begin().await?;
 		sqlx::query(
-			"INSERT INTO search_documents (project_id, game_id, display_name, summary, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)
+			"INSERT INTO search_documents (project_id, game_id, display_name, summary, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)
 			 ON CONFLICT(project_id) DO UPDATE SET game_id = ?2, display_name = ?3, summary = ?4, updated_at = ?5",
 		)
 		.bind(document.project_id)
@@ -214,7 +218,7 @@ impl MetadataStore {
 
 	pub async fn search_documents(&self, filter: SearchFilter<'_>) -> Result<Vec<SearchHit>, sqlx::Error> {
 		let mut query = QueryBuilder::new(
-			"SELECT project_id, game_id, display_name, summary, updated_at FROM search_documents WHERE 1 = 1",
+			"SELECT project_id, game_id, display_name, summary, updated_at, created_at FROM search_documents WHERE 1 = 1",
 		);
 		if let Some(text) = filter.text {
 			let pattern = format!("%{}%", text.to_lowercase());
@@ -261,6 +265,20 @@ impl MetadataStore {
 				}
 				query.push(" ORDER BY updated_at DESC, project_id DESC");
 			}
+			SearchSort::Created => {
+				if let Some((value, id)) = filter.cursor {
+					let created = value.parse::<i64>().unwrap_or(i64::MAX);
+					query
+						.push(" AND (created_at < ")
+						.push_bind(created)
+						.push(" OR (created_at = ")
+						.push_bind(created)
+						.push(" AND project_id < ")
+						.push_bind(id)
+						.push("))");
+				}
+				query.push(" ORDER BY created_at DESC, project_id DESC");
+			}
 			SearchSort::Name => {
 				if let Some((value, id)) = filter.cursor {
 					query
@@ -285,6 +303,7 @@ impl MetadataStore {
 				display_name: row.get("display_name"),
 				summary: row.get("summary"),
 				updated_at: row.get("updated_at"),
+				created_at: row.get("created_at"),
 			})
 			.collect())
 	}
