@@ -252,8 +252,10 @@ A submission can be decided while `submitted` by any reviewer, or while
 account's own submissions with their decisions, so an author can see the state
 of a submission, the reason code behind a rejection, and any appeal route
 without holding a reviewer scope. Both it and `/v1/review-queue` take `limit`
-(capped at 200) and a `created_at` cursor — `before` for the author list, which
-is newest first, and `after` for the queue, which is oldest first.
+(capped at 200) and an opaque `cursor` of the form `created_at:id`, taken from
+the last submission of the previous page. The ID is the tiebreaker, so two
+submissions created in the same second cannot be skipped or repeated across a
+page boundary.
 
 A decision applies to one object digest and is an instance-attributed policy
 record; it never alters signed bytes, and the signed entry stays stored for

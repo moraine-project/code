@@ -200,7 +200,8 @@ async fn review_mode_queues_then_accepts() {
 	assert_eq!(list[0]["decisions"][0]["decision"], "accept");
 
 	let oldest = list[0]["submission"]["created_at"].as_i64().expect("created_at");
-	let older = axum::http::Request::get(format!("/v1/submissions?before={oldest}"))
+	let oldest_id = list[0]["submission"]["id"].as_str().expect("submission id");
+	let older = axum::http::Request::get(format!("/v1/submissions?cursor={oldest}:{oldest_id}"))
 		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
 		.body(Body::empty())
 		.expect("request");

@@ -182,7 +182,24 @@ struct SubmissionPage {
 	#[serde(default)]
 	limit: Option<u32>,
 	#[serde(default)]
-	before: Option<i64>,
+	cursor: Option<String>,
+}
+
+fn parse_cursor(raw: Option<&str>) -> Result<Option<(i64, String)>, Box<Response>> {
+	let Some(raw) = raw else {
+		return Ok(None);
+	};
+	let Some((created, id)) = raw.split_once(':') else {
+		return Err(Box::new(
+			(StatusCode::BAD_REQUEST, "cursor must be `created_at:id`").into_response(),
+		));
+	};
+	let Ok(created) = created.parse::<i64>() else {
+		return Err(Box::new(
+			(StatusCode::BAD_REQUEST, "cursor must be `created_at:id`").into_response(),
+		));
+	};
+	Ok(Some((created, id.to_string())))
 }
 
 async fn my_submissions(
@@ -191,11 +208,12 @@ async fn my_submissions(
 	Query(params): Query<SubmissionPage>,
 ) -> Response {
 	let limit = params.limit.unwrap_or(50).clamp(1, 200) as i64;
-	let rows = match state
-		.metadata
-		.submissions_by_submitter(&user.user_id, limit, params.before)
-		.await
-	{
+	let cursor = match parse_cursor(params.cursor.as_deref()) {
+		Ok(cursor) => cursor,
+		Err(response) => return *response,
+	};
+	let cursor = cursor.as_ref().map(|(created, id)| (*created, id.as_str()));
+	let rows = match state.metadata.submissions_by_submitter(&user.user_id, limit, cursor).await {
 		Ok(rows) => rows,
 		Err(error) => return storage_error(error),
 	};
@@ -232,7 +250,7 @@ struct QueuePage {
 	#[serde(default)]
 	limit: Option<u32>,
 	#[serde(default)]
-	after: Option<i64>,
+	cursor: Option<String>,
 }
 
 async fn queue(State(state): State<AppState>, user: AuthenticatedUser, Query(params): Query<QueuePage>) -> Response {
@@ -240,7 +258,12 @@ async fn queue(State(state): State<AppState>, user: AuthenticatedUser, Query(par
 		return forbidden();
 	}
 	let limit = params.limit.unwrap_or(100).clamp(1, 200) as i64;
-	match state.metadata.open_submissions(limit, params.after).await {
+	let cursor = match parse_cursor(params.cursor.as_deref()) {
+		Ok(cursor) => cursor,
+		Err(response) => return *response,
+	};
+	let cursor = cursor.as_ref().map(|(created, id)| (*created, id.as_str()));
+	match state.metadata.open_submissions(limit, cursor).await {
 		Ok(rows) => Json(rows.into_iter().map(submission_view).collect::<Vec<_>>()).into_response(),
 		Err(error) => storage_error(error),
 	}

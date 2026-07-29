@@ -79,10 +79,10 @@ export const submissionDetailSchema = z.object({
 export type Decision = z.infer<typeof decisionSchema>;
 export type SubmissionDetail = z.infer<typeof submissionDetailSchema>;
 
-export async function mySubmissions(limit = 50, before?: number): Promise<SubmissionDetail[]> {
+export async function mySubmissions(limit = 50, cursor?: string): Promise<SubmissionDetail[]> {
 	const params = new URLSearchParams({ limit: String(limit) });
-	if (before !== undefined) {
-		params.set('before', String(before));
+	if (cursor) {
+		params.set('cursor', cursor);
 	}
 	const response = await authorizedFetch(`/v1/submissions?${params.toString()}`);
 	if (response.status === 401) {

@@ -29,8 +29,8 @@
 	async function loadMore() {
 		more = true;
 		try {
-			const oldest = items.at(-1)?.submission.created_at;
-			const page = await mySubmissions(pageSize, oldest);
+			const last = items.at(-1)?.submission;
+			const page = await mySubmissions(pageSize, last ? `${last.created_at}:${last.id}` : undefined);
 			items = items.concat(page);
 			hasMore = page.length === pageSize;
 		} catch (cause) {

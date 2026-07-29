@@ -534,13 +534,20 @@ impl MetadataStore {
 		Ok(row.map(submission_row))
 	}
 
-	pub async fn open_submissions(&self, limit: i64, after: Option<i64>) -> Result<Vec<SubmissionRow>, sqlx::Error> {
+	pub async fn open_submissions(
+		&self,
+		limit: i64,
+		cursor: Option<(i64, &str)>,
+	) -> Result<Vec<SubmissionRow>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
-			 FROM submissions WHERE state IN ('submitted', 'under_review') AND created_at > ?1
-			 ORDER BY created_at ASC LIMIT ?2",
+			 FROM submissions WHERE state IN ('submitted', 'under_review')
+			 AND (created_at > ?1 OR (created_at = ?1 AND (?3 = 0 OR id > ?2)))
+			 ORDER BY created_at ASC, id ASC LIMIT ?4",
 		)
-		.bind(after.unwrap_or(i64::MIN))
+		.bind(cursor.map(|(created, _)| created).unwrap_or(i64::MIN))
+		.bind(cursor.map(|(_, id)| id).unwrap_or(""))
+		.bind(i64::from(cursor.is_some()))
 		.bind(limit)
 		.fetch_all(&self.pool)
 		.await?;
@@ -551,15 +558,18 @@ impl MetadataStore {
 		&self,
 		user_id: &str,
 		limit: i64,
-		before: Option<i64>,
+		cursor: Option<(i64, &str)>,
 	) -> Result<Vec<SubmissionRow>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
-			 FROM submissions WHERE submitted_by = ?1 AND created_at < ?2
-			 ORDER BY created_at DESC LIMIT ?3",
+			 FROM submissions WHERE submitted_by = ?1
+			 AND (created_at < ?2 OR (created_at = ?2 AND (?4 = 0 OR id < ?3)))
+			 ORDER BY created_at DESC, id DESC LIMIT ?5",
 		)
 		.bind(user_id)
-		.bind(before.unwrap_or(i64::MAX))
+		.bind(cursor.map(|(created, _)| created).unwrap_or(i64::MAX))
+		.bind(cursor.map(|(_, id)| id).unwrap_or(""))
+		.bind(i64::from(cursor.is_some()))
 		.bind(limit)
 		.fetch_all(&self.pool)
 		.await?;
