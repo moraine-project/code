@@ -27,10 +27,13 @@ and blocked by another at the same time, and both decisions are legitimate.
 ## Instance popularity
 
 Popularity is a count of that instance's own observed downloads and follows,
-windowed (30 days) and labeled. It is never federated, summed, or averaged
-across instances, because no shared user identity exists to deduplicate it.
-When results from several instances are merged, popularity stays attached to
-its source listing.
+windowed (30 days) and labeled. A full byte-serving `GET` of an artifact counts
+as a download for every project whose signed release references that digest,
+and a follow counts from the moment it was made. The window is a rolling 30
+days ending today, recorded per day so a later interval can be computed without
+rewriting history. It is never federated, summed, or averaged across instances,
+because no shared user identity exists to deduplicate it. When results from
+several instances are merged, popularity stays attached to its source listing.
 
 ## Ranking
 

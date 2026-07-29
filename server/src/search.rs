@@ -5,7 +5,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use moraine_model::Canonical;
 use moraine_model::profile::ProfileRevision;
-use moraine_model::search::{ListingState, SearchQuery, SearchResponse, SearchResult};
+use moraine_model::search::{InstancePopularity, ListingState, SearchQuery, SearchResponse, SearchResult};
 use serde::Deserialize;
 use sqlx::{QueryBuilder, Row};
 
@@ -70,6 +70,15 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 	let has_more = hits.len() as i64 > limit;
 	hits.truncate(limit as usize);
 
+	let project_ids: Vec<String> = hits.iter().map(|hit| hit.project_id.clone()).collect();
+	let since_day = now() / 86_400 - 30;
+	let popularities = match state.metadata.popularities(&project_ids, since_day).await {
+		Ok(popularities) => popularities,
+		Err(error) => {
+			tracing::error!(%error, "popularity lookup failed");
+			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
+		}
+	};
 	let source_instance = headers
 		.get(header::HOST)
 		.and_then(|value| value.to_str().ok())
@@ -88,7 +97,10 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 			listing_state: ListingState::Listed,
 			source_instance: source_instance.clone(),
 			annotations: Vec::new(),
-			instance_popularity: None,
+			instance_popularity: popularities.get(&hit.project_id).map(|value| InstancePopularity {
+				window: "instance-30d".to_string(),
+				value: (*value).max(0) as u64,
+			}),
 		})
 		.collect();
 	let next_cursor = if has_more {

@@ -67,7 +67,14 @@
 							{result.display_name}
 						</a>
 						<p class="text-base-content/80 text-sm">{result.summary}</p>
-						<Digest value={result.project_id} label="the project id" length={12} />
+						<div class="flex flex-wrap items-center gap-2">
+							<Digest value={result.project_id} label="the project id" length={12} />
+							{#if result.instance_popularity}
+								<span class="badge badge-ghost badge-sm">
+									{result.instance_popularity.value} downloads and follows, this instance
+								</span>
+							{/if}
+						</div>
 					</div>
 				</li>
 			{/each}

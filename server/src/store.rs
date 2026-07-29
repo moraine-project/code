@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{Row, SqlitePool, Transaction};
+use sqlx::{QueryBuilder, Row, SqlitePool, Transaction};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS objects (
@@ -213,6 +213,13 @@ CREATE TABLE IF NOT EXISTS artifact_index (
 	release_digest BLOB NOT NULL,
 	PRIMARY KEY (digest, release_digest)
 );
+CREATE TABLE IF NOT EXISTS download_counts (
+	project_id TEXT NOT NULL,
+	day INTEGER NOT NULL,
+	count INTEGER NOT NULL,
+	PRIMARY KEY (project_id, day)
+);
+
 CREATE TABLE IF NOT EXISTS subscriptions (
 	home_url TEXT NOT NULL,
 	project_id TEXT NOT NULL,
@@ -489,6 +496,55 @@ impl MetadataStore {
 			.execute(&self.pool)
 			.await?;
 		Ok(())
+	}
+
+	pub async fn record_download(&self, digest: &[u8], day: i64) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"INSERT INTO download_counts (project_id, day, count)
+			 SELECT DISTINCT project_id, ?2, 1 FROM artifact_index WHERE digest = ?1
+			 ON CONFLICT(project_id, day) DO UPDATE SET count = count + 1",
+		)
+		.bind(digest)
+		.bind(day)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
+	pub async fn popularities(
+		&self,
+		project_ids: &[String],
+		since_day: i64,
+	) -> Result<std::collections::HashMap<String, i64>, sqlx::Error> {
+		let mut totals = std::collections::HashMap::new();
+		if project_ids.is_empty() {
+			return Ok(totals);
+		}
+		let mut downloads = QueryBuilder::new("SELECT project_id, SUM(count) AS total FROM download_counts WHERE day >= ");
+		downloads.push_bind(since_day).push(" AND project_id IN (");
+		let mut separated = downloads.separated(", ");
+		for project_id in project_ids {
+			separated.push_bind(project_id);
+		}
+		separated.push_unseparated(") GROUP BY project_id");
+		for row in downloads.build().fetch_all(&self.pool).await? {
+			let project_id: String = row.get("project_id");
+			let total: i64 = row.get("total");
+			*totals.entry(project_id).or_insert(0) += total;
+		}
+		let mut follows = QueryBuilder::new("SELECT project_id, COUNT(*) AS total FROM follows WHERE created_at >= ");
+		follows.push_bind(since_day * 86_400).push(" AND project_id IN (");
+		let mut separated = follows.separated(", ");
+		for project_id in project_ids {
+			separated.push_bind(project_id);
+		}
+		separated.push_unseparated(") GROUP BY project_id");
+		for row in follows.build().fetch_all(&self.pool).await? {
+			let project_id: String = row.get("project_id");
+			let total: i64 = row.get("total");
+			*totals.entry(project_id).or_insert(0) += total;
+		}
+		Ok(totals)
 	}
 
 	pub async fn artifacts_for_digest(&self, digest: &[u8]) -> Result<Vec<ArtifactMatchRow>, sqlx::Error> {
@@ -817,5 +873,27 @@ mod tests {
 		store.index_artifact(&[1u8; 32], "p", &[2u8; 32]).await.expect("index");
 		let matches = store.artifacts_for_digest(&[1u8; 32]).await.expect("lookup");
 		assert_eq!(matches.len(), 1);
+	}
+
+	#[tokio::test]
+	async fn popularity_counts_downloads_and_follows_in_the_window() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = MetadataStore::open(directory.path().join("metadata.sqlite"))
+			.await
+			.expect("store");
+		store.index_artifact(&[1u8; 32], "p", &[2u8; 32]).await.expect("index");
+		store.record_download(&[1u8; 32], 100).await.expect("download");
+		store.record_download(&[1u8; 32], 100).await.expect("download");
+		store.follow("u", "p", 100 * 86_400 + 10).await.expect("follow");
+		store.follow("v", "p", 1).await.expect("old follow");
+		store.index_artifact(&[3u8; 32], "q", &[2u8; 32]).await.expect("index");
+
+		let totals = store
+			.popularities(&["p".to_string(), "q".to_string()], 100)
+			.await
+			.expect("popularity");
+
+		assert_eq!(totals.get("p"), Some(&3));
+		assert_eq!(totals.get("q"), None);
 	}
 }

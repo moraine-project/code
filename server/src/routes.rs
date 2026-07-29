@@ -200,6 +200,13 @@ async fn serve_blob(state: &AppState, digest_hex: &str, headers: &HeaderMap, hea
 		None => (StatusCode::OK, 0, length.saturating_sub(1)),
 	};
 
+	if !head {
+		let metadata = state.metadata.clone();
+		tokio::spawn(async move {
+			let _ = metadata.record_download(&digest, unix_day()).await;
+		});
+	}
+
 	let content_length = if length == 0 { 0 } else { end - start + 1 };
 	let body = if head {
 		Body::empty()
@@ -236,6 +243,13 @@ async fn serve_blob(state: &AppState, digest_hex: &str, headers: &HeaderMap, hea
 		);
 	}
 	response
+}
+
+fn unix_day() -> i64 {
+	std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|elapsed| (elapsed.as_secs() / 86_400) as i64)
+		.unwrap_or(0)
 }
 
 fn parse_digest(value: &str) -> Option<[u8; 32]> {

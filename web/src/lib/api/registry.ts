@@ -124,7 +124,10 @@ export const searchResultSchema = z.object({
 	listing_state: z.string(),
 	source_instance: z.string(),
 	annotations: z.array(z.unknown()).optional(),
-	instance_popularity: z.unknown().nullable().optional()
+	instance_popularity: z
+		.object({ window: z.string(), value: z.number() })
+		.nullable()
+		.optional()
 });
 
 export const searchResponseSchema = z.object({
