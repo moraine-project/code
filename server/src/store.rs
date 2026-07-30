@@ -898,4 +898,41 @@ mod tests {
 		assert_eq!(totals.get("p"), Some(&3));
 		assert_eq!(totals.get("q"), None);
 	}
+	#[tokio::test]
+	async fn popularity_sort_queries() {
+		use crate::search::{SearchDocument, SearchFilter, SearchSort};
+
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = MetadataStore::open(directory.path().join("metadata.sqlite"))
+			.await
+			.expect("store");
+		store
+			.put_search_document(SearchDocument {
+				project_id: "p",
+				game_id: "g",
+				display_name: "P",
+				summary: "s",
+				categories: &[],
+				tags: &[],
+				updated_at: 1,
+			})
+			.await
+			.expect("doc");
+		store.index_artifact(&[1u8; 32], "p", &[2u8; 32]).await.expect("index");
+		store.record_download(&[1u8; 32], 100).await.expect("download");
+		let hits = store
+			.search_documents(SearchFilter {
+				text: None,
+				game_id: None,
+				tag: None,
+				category: None,
+				loader: None,
+				popularity_since: Some((100, 100 * 86_400)),
+				sort: SearchSort::Popularity,
+				cursor: None,
+				limit: 10,
+			})
+			.await;
+		assert!(hits.is_ok(), "{:?}", hits.err());
+	}
 }

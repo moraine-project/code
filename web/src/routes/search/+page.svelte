@@ -13,6 +13,7 @@
 		['relevance', 'Relevance'],
 		['updated', 'Recently updated'],
 		['created', 'Recently added'],
+		['popularity', 'Most downloaded here'],
 		['name', 'Name']
 	] as const;
 

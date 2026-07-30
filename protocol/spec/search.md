@@ -44,10 +44,11 @@ signal. The published input list must not be silently contradicted by the
 implementation.
 
 The sorts this implementation offers are `relevance`, `updated`, `created`,
-and `name`. Its relevance input is recency, so `relevance` and `updated` order
+`name`, and `popularity`. Its relevance input is recency, so `relevance` and `updated` order
 identically today; `created` is when this instance first indexed the project,
 which is not the same as when the publisher declared it; and `name` is
-case-insensitive. Any other value is rejected with `400` rather than silently
+case-insensitive, and `popularity` orders by the instance-local count below,
+highest first. Any other value is rejected with `400` rather than silently
 treated as a different order, because an echoed sort that the server did not
 honour would contradict the published inputs. Text matching covers the display
 name and summary.

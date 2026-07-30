@@ -42,13 +42,19 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		None | Some("relevance") | Some("updated") => SearchSort::Updated,
 		Some("name") => SearchSort::Name,
 		Some("created") => SearchSort::Created,
+		Some("popularity") => SearchSort::Popularity,
 		Some(other) => {
 			return (
 				StatusCode::BAD_REQUEST,
-				format!("unsupported sort `{other}`: use relevance, updated, name, or created"),
+				format!("unsupported sort `{other}`: use relevance, updated, name, created, or popularity"),
 			)
 				.into_response();
 		}
+	};
+	let since_day = now() / 86_400 - 30;
+	let popularity_since = match sort {
+		SearchSort::Popularity => Some((since_day, since_day * 86_400)),
+		_ => None,
 	};
 	let cursor = params.cursor.as_deref().and_then(|value| value.rsplit_once(':'));
 	let filter = SearchFilter {
@@ -57,6 +63,7 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		tag: params.tag.as_deref(),
 		category: params.category.as_deref(),
 		loader: params.loader.as_deref(),
+		popularity_since,
 		sort,
 		cursor,
 		limit: limit + 1,
@@ -72,7 +79,6 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 	hits.truncate(limit as usize);
 
 	let project_ids: Vec<String> = hits.iter().map(|hit| hit.project_id.clone()).collect();
-	let since_day = now() / 86_400 - 30;
 	let popularities = match state.metadata.popularities(&project_ids, since_day).await {
 		Ok(popularities) => popularities,
 		Err(error) => {
@@ -108,6 +114,7 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		hits.last().map(|hit| match sort {
 			SearchSort::Updated => format!("{}:{}", hit.updated_at, hit.project_id),
 			SearchSort::Created => format!("{}:{}", hit.created_at, hit.project_id),
+			SearchSort::Popularity => format!("{}:{}", hit.popularity, hit.project_id),
 			SearchSort::Name => format!("{}:{}", hit.display_name, hit.project_id),
 		})
 	} else {
@@ -142,6 +149,7 @@ pub struct SearchHit {
 	pub summary: String,
 	pub updated_at: i64,
 	pub created_at: i64,
+	pub popularity: i64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -149,6 +157,7 @@ pub enum SearchSort {
 	Updated,
 	Created,
 	Name,
+	Popularity,
 }
 
 pub struct SearchDocument<'a> {
@@ -167,6 +176,7 @@ pub struct SearchFilter<'a> {
 	pub tag: Option<&'a str>,
 	pub category: Option<&'a str>,
 	pub loader: Option<&'a str>,
+	pub popularity_since: Option<(i64, i64)>,
 	pub sort: SearchSort,
 	pub cursor: Option<(&'a str, &'a str)>,
 	pub limit: i64,
@@ -217,9 +227,31 @@ impl MetadataStore {
 	}
 
 	pub async fn search_documents(&self, filter: SearchFilter<'_>) -> Result<Vec<SearchHit>, sqlx::Error> {
-		let mut query = QueryBuilder::new(
-			"SELECT project_id, game_id, display_name, summary, updated_at, created_at FROM search_documents WHERE 1 = 1",
-		);
+		let mut query = match filter.popularity_since {
+			Some((day, seconds)) => {
+				let mut query = QueryBuilder::new(
+					"WITH pop AS (SELECT project_id, SUM(count) AS total FROM download_counts WHERE day >= ",
+				);
+				query
+					.push_bind(day)
+					.push(
+						" GROUP BY project_id), fol AS (SELECT project_id, COUNT(*) AS total FROM follows WHERE created_at >= ",
+					)
+					.push_bind(seconds)
+					.push(
+						" GROUP BY project_id) SELECT search_documents.project_id, search_documents.game_id,
+						 search_documents.display_name, search_documents.summary, search_documents.updated_at,
+						 search_documents.created_at, (COALESCE(pop.total, 0) + COALESCE(fol.total, 0)) AS popularity
+						 FROM search_documents
+						 LEFT JOIN pop ON pop.project_id = search_documents.project_id
+						 LEFT JOIN fol ON fol.project_id = search_documents.project_id WHERE 1 = 1",
+					);
+				query
+			}
+			None => QueryBuilder::new(
+				"SELECT project_id, game_id, display_name, summary, updated_at, created_at, 0 AS popularity FROM search_documents WHERE 1 = 1",
+			),
+		};
 		if let Some(text) = filter.text {
 			let pattern = format!("%{}%", text.to_lowercase());
 			query
@@ -292,6 +324,25 @@ impl MetadataStore {
 				}
 				query.push(" ORDER BY display_name COLLATE NOCASE ASC, project_id ASC");
 			}
+			SearchSort::Popularity => {
+				const POPULARITY: &str = "(COALESCE(pop.total, 0) + COALESCE(fol.total, 0))";
+				if let Some((value, id)) = filter.cursor {
+					let popularity = value.parse::<i64>().unwrap_or(i64::MAX);
+					query
+						.push(" AND (")
+						.push(POPULARITY)
+						.push(" < ")
+						.push_bind(popularity)
+						.push(" OR (")
+						.push(POPULARITY)
+						.push(" = ")
+						.push_bind(popularity)
+						.push(" AND search_documents.project_id > ")
+						.push_bind(id)
+						.push("))");
+				}
+				query.push(" ORDER BY popularity DESC, search_documents.project_id ASC");
+			}
 		}
 		query.push(" LIMIT ").push_bind(filter.limit);
 		let rows = query.build().fetch_all(&self.pool).await?;
@@ -304,6 +355,7 @@ impl MetadataStore {
 				summary: row.get("summary"),
 				updated_at: row.get("updated_at"),
 				created_at: row.get("created_at"),
+				popularity: row.get("popularity"),
 			})
 			.collect())
 	}
