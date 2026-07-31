@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
-	import { subscriptions, type Subscription } from '$lib/api/federation';
+	import { follow, subscriptions, unfollow, type Subscription } from '$lib/api/federation';
 	import Digest from '$lib/components/Digest.svelte';
 
 	let homes = $state<Subscription[]>([]);
 	let error = $state<string | null>(null);
 	let loading = $state(true);
+	let homeUrl = $state('');
+	let projectId = $state('');
+	let busy = $state(false);
 
 	onMount(load);
 
@@ -19,6 +22,33 @@
 			error = cause instanceof Error ? cause.message : 'could not load subscriptions';
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function startFollowing(event: SubmitEvent) {
+		event.preventDefault();
+		busy = true;
+		try {
+			await follow(homeUrl.trim(), projectId.trim());
+			homeUrl = '';
+			projectId = '';
+			await load();
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'the follow failed';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function stopFollowing(home: Subscription) {
+		busy = true;
+		try {
+			await unfollow(home.home_url, home.project_id);
+			await load();
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not unfollow';
+		} finally {
+			busy = false;
 		}
 	}
 
@@ -73,6 +103,7 @@
 								<th scope="col">Cursor</th>
 								<th scope="col">Behind</th>
 								<th scope="col">Last sync</th>
+								<th scope="col"></th>
 							</tr>
 						</thead>
 						<tbody>
@@ -89,12 +120,51 @@
 										{/if}
 									</td>
 									<td>{formatTime(home.updated_at)}</td>
+									<td>
+										<button
+											class="btn btn-ghost btn-xs"
+											type="button"
+											disabled={busy}
+											onclick={() => stopFollowing(home)}
+											aria-label={`Stop pulling ${home.project_id} from ${home.home_url}`}
+										>
+											unfollow
+										</button>
+									</td>
 								</tr>
 							{/each}
 						</tbody>
 					</table>
 				</div>
 			{/if}
+			<form class="flex flex-wrap items-end gap-3" onsubmit={startFollowing}>
+				<label class="form-control">
+					<span class="label-text">Home URL</span>
+					<input
+						class="input input-bordered"
+						type="url"
+						bind:value={homeUrl}
+						required
+						placeholder="https://home.example"
+						aria-label="Home URL"
+					/>
+				</label>
+				<label class="form-control">
+					<span class="label-text">Project ID</span>
+					<input
+						class="input input-bordered font-mono"
+						bind:value={projectId}
+						required
+						placeholder="gd:sha256:…"
+						aria-label="Project ID"
+					/>
+				</label>
+				<button class="btn" type="submit" disabled={busy}>Pull project</button>
+			</form>
+			<p class="text-base-content/60 text-sm">
+				Following fetches and verifies the project's genesis and feed from that home. It does not
+				grant the home any authority over your copy.
+			</p>
 		</div>
 	</section>
 </div>

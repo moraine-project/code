@@ -2,7 +2,7 @@ use std::fmt;
 use std::net::IpAddr;
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -26,7 +26,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/federation/sync-definition", post(sync_definition_handler))
 		.route("/v1/federation/subscribe-definition", post(subscribe_definition_handler))
 		.route("/v1/definition-subscriptions", get(list_definition_subscriptions))
-		.route("/v1/subscriptions", get(list_subscriptions))
+		.route("/v1/subscriptions", get(list_subscriptions).delete(unsubscribe))
 }
 
 #[derive(Debug, Clone)]
@@ -356,6 +356,27 @@ async fn list_subscriptions(State(state): State<AppState>, user: AuthenticatedUs
 	}
 }
 
+#[derive(Deserialize)]
+struct UnsubscribeQuery {
+	home_url: String,
+	project_id: String,
+}
+
+async fn unsubscribe(
+	State(state): State<AppState>,
+	user: AuthenticatedUser,
+	Query(query): Query<UnsubscribeQuery>,
+) -> Response {
+	if !user.allows("federation:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
+	match state.metadata.remove_subscription(&query.home_url, &query.project_id).await {
+		Ok(true) => StatusCode::NO_CONTENT.into_response(),
+		Ok(false) => (StatusCode::NOT_FOUND, "not subscribed to that project").into_response(),
+		Err(error) => storage_error(error),
+	}
+}
+
 #[derive(Serialize)]
 struct SubscriptionView {
 	home_url: String,
@@ -661,6 +682,15 @@ impl MetadataStore {
 		.execute(&self.pool)
 		.await?;
 		Ok(())
+	}
+
+	pub async fn remove_subscription(&self, home_url: &str, project_id: &str) -> Result<bool, sqlx::Error> {
+		let result = sqlx::query("DELETE FROM subscriptions WHERE home_url = ?1 AND project_id = ?2")
+			.bind(home_url)
+			.bind(project_id)
+			.execute(&self.pool)
+			.await?;
+		Ok(result.rows_affected() == 1)
 	}
 
 	pub async fn subscriptions(&self) -> Result<Vec<SubscriptionRow>, sqlx::Error> {

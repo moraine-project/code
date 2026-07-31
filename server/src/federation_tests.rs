@@ -29,7 +29,7 @@ async fn federation_syncs_a_home_feed() {
 	let sync = axum::http::Request::post("/v1/federation/sync")
 		.header(header::CONTENT_TYPE, "application/json")
 		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
-		.header("x-csrf-token", csrf)
+		.header("x-csrf-token", csrf.clone())
 		.body(Body::from(
 			serde_json::json!({
 				"home_url": format!("http://127.0.0.1:{}", address.port()),
@@ -54,10 +54,38 @@ async fn federation_syncs_a_home_feed() {
 		.header(header::COOKIE, format!("moraine_session={session}"))
 		.body(Body::empty())
 		.expect("request");
-	let response = directory.oneshot(subscriptions).await.expect("response");
+	let response = directory.clone().oneshot(subscriptions).await.expect("response");
 	let list = body_json(response).await;
 	assert_eq!(list.as_array().expect("subscriptions").len(), 1);
 	assert_eq!(list[0]["cursor_seq"], 1);
+	assert_eq!(list[0]["lag_entries"], 0);
+
+	let unsubscribe = axum::http::Request::builder()
+		.method("DELETE")
+		.uri(format!(
+			"/v1/subscriptions?home_url={}&project_id={project_id}",
+			urlencoding_home(&address)
+		))
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.header("x-csrf-token", csrf)
+		.body(Body::empty())
+		.expect("request");
+	let response = directory.clone().oneshot(unsubscribe).await.expect("response");
+	assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+	let subscriptions = axum::http::Request::get("/v1/subscriptions")
+		.header(header::COOKIE, format!("moraine_session={session}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = directory.oneshot(subscriptions).await.expect("response");
+	let list = body_json(response).await;
+	assert!(list.as_array().expect("subscriptions").is_empty());
+}
+
+fn urlencoding_home(address: &std::net::SocketAddr) -> String {
+	format!("http://127.0.0.1:{}", address.port())
+		.replace(':', "%3A")
+		.replace('/', "%2F")
 }
 
 #[tokio::test]
