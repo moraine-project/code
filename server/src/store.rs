@@ -225,6 +225,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 	home_url TEXT NOT NULL,
 	project_id TEXT NOT NULL,
 	cursor_seq INTEGER NOT NULL DEFAULT 0,
+	remote_head_seq INTEGER NOT NULL DEFAULT 0,
 	status TEXT NOT NULL,
 	updated_at INTEGER NOT NULL,
 	PRIMARY KEY (home_url, project_id)
@@ -327,6 +328,7 @@ impl MetadataStore {
 		sqlx::raw_sql(SCHEMA).execute(&pool).await?;
 		ensure_column(&pool, "submissions", "assigned_to", "TEXT").await?;
 		ensure_column(&pool, "search_documents", "created_at", "INTEGER NOT NULL DEFAULT 0").await?;
+		ensure_column(&pool, "subscriptions", "remote_head_seq", "INTEGER NOT NULL DEFAULT 0").await?;
 		Ok(Self { pool })
 	}
 
@@ -746,6 +748,7 @@ pub struct MetricsSnapshot {
 	pub advisories: i64,
 	pub mirrors: i64,
 	pub artifacts: i64,
+	pub subscription_lag: i64,
 	pub oldest_pending_submission: Option<i64>,
 	pub oldest_pending_delivery: Option<i64>,
 }
@@ -764,6 +767,7 @@ impl MetricsSnapshot {
 			("moraine_advisories_total", self.advisories),
 			("moraine_mirrors_total", self.mirrors),
 			("moraine_artifacts_total", self.artifacts),
+			("moraine_subscription_lag_entries", self.subscription_lag),
 		]
 	}
 }
@@ -786,6 +790,10 @@ impl MetadataStore {
 			advisories: self.table_count("advisories").await?,
 			mirrors: self.table_count("mirrors").await?,
 			artifacts: self.table_count("artifact_index").await?,
+			subscription_lag: self
+				.scalar_opt("SELECT MAX(remote_head_seq - cursor_seq) FROM subscriptions")
+				.await?
+				.unwrap_or(0),
 			oldest_pending_submission: self
 				.scalar_opt("SELECT MIN(created_at) FROM submissions WHERE state = 'submitted'")
 				.await?,

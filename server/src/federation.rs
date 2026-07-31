@@ -345,6 +345,7 @@ async fn list_subscriptions(State(state): State<AppState>, user: AuthenticatedUs
 					home_url: row.home_url,
 					project_id: row.project_id,
 					cursor_seq: row.cursor_seq,
+					lag_entries: (row.remote_head_seq - row.cursor_seq).max(0),
 					status: row.status,
 					updated_at: row.updated_at,
 				})
@@ -360,6 +361,7 @@ struct SubscriptionView {
 	home_url: String,
 	project_id: String,
 	cursor_seq: i64,
+	lag_entries: i64,
 	status: String,
 	updated_at: i64,
 }
@@ -449,7 +451,7 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 		}
 		state
 			.metadata
-			.set_subscription_cursor(home_url, project_id, last.seq, "active", now())
+			.set_subscription_cursor(home_url, project_id, last.seq, head_seq, "active", now())
 			.await
 			.map_err(storage)?;
 		cursor = last.seq;
@@ -628,7 +630,7 @@ impl MetadataStore {
 
 	pub async fn subscription(&self, home_url: &str, project_id: &str) -> Result<Option<SubscriptionRow>, sqlx::Error> {
 		let row = sqlx::query(
-			"SELECT home_url, project_id, cursor_seq, status, updated_at FROM subscriptions WHERE home_url = ?1 AND project_id = ?2",
+			"SELECT home_url, project_id, cursor_seq, remote_head_seq, status, updated_at FROM subscriptions WHERE home_url = ?1 AND project_id = ?2",
 		)
 		.bind(home_url)
 		.bind(project_id)
@@ -642,13 +644,16 @@ impl MetadataStore {
 		home_url: &str,
 		project_id: &str,
 		cursor_seq: i64,
+		remote_head_seq: i64,
 		status: &str,
 		updated_at: i64,
 	) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"UPDATE subscriptions SET cursor_seq = ?1, status = ?2, updated_at = ?3 WHERE home_url = ?4 AND project_id = ?5",
+			"UPDATE subscriptions SET cursor_seq = ?1, remote_head_seq = ?2, status = ?3, updated_at = ?4
+			 WHERE home_url = ?5 AND project_id = ?6",
 		)
 		.bind(cursor_seq)
+		.bind(remote_head_seq)
 		.bind(status)
 		.bind(updated_at)
 		.bind(home_url)
@@ -660,7 +665,7 @@ impl MetadataStore {
 
 	pub async fn subscriptions(&self) -> Result<Vec<SubscriptionRow>, sqlx::Error> {
 		let rows = sqlx::query(
-			"SELECT home_url, project_id, cursor_seq, status, updated_at FROM subscriptions ORDER BY home_url, project_id",
+			"SELECT home_url, project_id, cursor_seq, remote_head_seq, status, updated_at FROM subscriptions ORDER BY home_url, project_id",
 		)
 		.fetch_all(&self.pool)
 		.await?;
@@ -673,6 +678,7 @@ pub struct SubscriptionRow {
 	pub home_url: String,
 	pub project_id: String,
 	pub cursor_seq: i64,
+	pub remote_head_seq: i64,
 	pub status: String,
 	pub updated_at: i64,
 }
@@ -682,6 +688,7 @@ fn subscription_from_row(row: sqlx::sqlite::SqliteRow) -> SubscriptionRow {
 		home_url: row.get("home_url"),
 		project_id: row.get("project_id"),
 		cursor_seq: row.get("cursor_seq"),
+		remote_head_seq: row.get("remote_head_seq"),
 		status: row.get("status"),
 		updated_at: row.get("updated_at"),
 	}
@@ -690,3 +697,28 @@ fn subscription_from_row(row: sqlx::sqlite::SqliteRow) -> SubscriptionRow {
 #[cfg(test)]
 #[path = "federation_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod subscription_tests {
+	use super::*;
+
+	#[tokio::test]
+	async fn reports_the_furthest_unapplied_entry() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = MetadataStore::open(directory.path().join("metadata.sqlite"))
+			.await
+			.expect("store");
+		store
+			.upsert_subscription("https://home", "p", "active", 1)
+			.await
+			.expect("subscribe");
+		store
+			.set_subscription_cursor("https://home", "p", 3, 5, "active", 2)
+			.await
+			.expect("cursor");
+
+		let snapshot = store.metrics_snapshot().await.expect("snapshot");
+
+		assert_eq!(snapshot.subscription_lag, 2);
+	}
+}

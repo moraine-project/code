@@ -144,6 +144,7 @@ mod tests {
 			"moraine_uptime_seconds",
 			"moraine_admission_oldest_seconds",
 			"moraine_webhook_backlog_oldest_seconds",
+			"moraine_subscription_lag_entries",
 		] {
 			assert!(text.contains(name), "missing {name}");
 		}
