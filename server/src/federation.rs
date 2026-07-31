@@ -23,6 +23,7 @@ use crate::verify;
 pub fn routes() -> Router<AppState> {
 	Router::new()
 		.route("/v1/federation/sync", post(sync_handler))
+		.route("/v1/federation/resync", post(resync_handler))
 		.route("/v1/federation/sync-definition", post(sync_definition_handler))
 		.route("/v1/federation/subscribe-definition", post(subscribe_definition_handler))
 		.route("/v1/definition-subscriptions", get(list_definition_subscriptions))
@@ -144,6 +145,46 @@ pub(crate) async fn resync_definitions(state: &AppState) -> Result<usize, Federa
 		}
 	}
 	Ok(synced)
+}
+
+#[derive(Serialize)]
+pub struct ResyncReport {
+	pub synced: usize,
+	pub failed: usize,
+}
+
+pub async fn resync_subscriptions(state: &AppState) -> Result<ResyncReport, FederationError> {
+	let subscriptions = state.metadata.subscriptions().await.map_err(storage)?;
+	let mut synced = 0;
+	let mut failed = 0;
+	for subscription in subscriptions {
+		match sync(state, &subscription.home_url, &subscription.project_id).await {
+			Ok(_) => synced += 1,
+			Err(error) => {
+				failed += 1;
+				tracing::warn!(
+					%error,
+					home = %subscription.home_url,
+					project = %subscription.project_id,
+					"subscription resync failed"
+				);
+			}
+		}
+	}
+	Ok(ResyncReport { synced, failed })
+}
+
+async fn resync_handler(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
+	if !user.allows("federation:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
+	match resync_subscriptions(&state).await {
+		Ok(report) => Json(report).into_response(),
+		Err(error) => {
+			tracing::error!(%error, "subscription resync failed");
+			(StatusCode::INTERNAL_SERVER_ERROR, "resync failed").into_response()
+		}
+	}
 }
 
 #[derive(Deserialize)]

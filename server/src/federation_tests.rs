@@ -270,3 +270,69 @@ async fn federation_paginates_through_a_multi_page_feed() {
 	assert_eq!(report["applied"], 3);
 	assert_eq!(report["head_seq"], 3);
 }
+
+#[tokio::test]
+async fn resync_pulls_entries_published_after_the_first_sync() {
+	let home_signer = key(8);
+	let (home, _home_directory) = app().await;
+	let (project_id, first_release) = publish_project(&home, &home_signer).await;
+	let first = feed_wire(&home_signer, &project_id, 1, None, first_release);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(first))
+		.expect("request");
+	let response = home.clone().oneshot(request).await.expect("response");
+	let entry_one = id_bytes(body_json(response).await["entry"].as_str().expect("entry id"));
+
+	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+	let address = listener.local_addr().expect("addr");
+	let serving = home.clone();
+	tokio::spawn(async move {
+		let _ = axum::serve(listener, serving).await;
+	});
+
+	let (directory, _directory_dir) = app_mode(crate::config::Publishing::Review, true).await;
+	let (session, csrf) = login(&directory, "ops@example.org").await;
+	let cookie = format!("moraine_session={session}; moraine_csrf={csrf}");
+	let home_url = format!("http://127.0.0.1:{}", address.port());
+	let sync = axum::http::Request::post("/v1/federation/sync")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, cookie.clone())
+		.header("x-csrf-token", csrf.clone())
+		.body(Body::from(
+			serde_json::json!({ "home_url": home_url, "project_id": project_id }).to_string(),
+		))
+		.expect("request");
+	let response = directory.clone().oneshot(sync).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+
+	let (second_release, second_digest) = release_wire_variant(&home_signer, &project_id, 0x61, "2.0.0");
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+		.body(Body::from(second_release))
+		.expect("request");
+	let response = home.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+	let second = feed_wire(&home_signer, &project_id, 2, Some(entry_one), second_digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(second))
+		.expect("request");
+	let response = home.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let resync = axum::http::Request::post("/v1/federation/resync")
+		.header(header::COOKIE, cookie.clone())
+		.header("x-csrf-token", csrf)
+		.body(Body::empty())
+		.expect("request");
+	let response = directory.clone().oneshot(resync).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let report = body_json(response).await;
+	assert_eq!(report["synced"], 1);
+	assert_eq!(report["failed"], 0);
+
+	let feed = axum::http::Request::get(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::empty())
+		.expect("request");
+	let response = directory.oneshot(feed).await.expect("response");
+	let page = body_json(response).await;
+	assert_eq!(page["head_seq"], 2);
+}

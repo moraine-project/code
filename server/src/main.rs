@@ -155,6 +155,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			{
 				tracing::info!(synced, "resynced definitions");
 			}
+			match federation::resync_subscriptions(&prune_state).await {
+				Ok(report) if report.synced > 0 || report.failed > 0 => {
+					tracing::info!(synced = report.synced, failed = report.failed, "resynced subscriptions");
+				}
+				Ok(_) => {}
+				Err(error) => tracing::warn!(%error, "subscription resync failed"),
+			}
 			match gc::collect(&prune_state, staging_retention, blob_retention).await {
 				Ok(collected) if collected.staging > 0 || collected.blobs > 0 => {
 					tracing::info!(staging = collected.staging, blobs = collected.blobs, "collected storage");

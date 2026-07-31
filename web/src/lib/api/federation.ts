@@ -42,3 +42,11 @@ export async function follow(homeUrl: string, projectId: string): Promise<void> 
 		throw new Error(await failure(response));
 	}
 }
+
+export async function resync(): Promise<{ synced: number; failed: number }> {
+	const response = await authorizedFetch('/v1/federation/resync', { method: 'POST' });
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+	return z.object({ synced: z.number(), failed: z.number() }).parse(await response.json());
+}

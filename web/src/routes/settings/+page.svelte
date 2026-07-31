@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
-	import { follow, subscriptions, unfollow, type Subscription } from '$lib/api/federation';
+	import { follow, resync, subscriptions, unfollow, type Subscription } from '$lib/api/federation';
 	import Digest from '$lib/components/Digest.svelte';
 
 	let homes = $state<Subscription[]>([]);
@@ -10,6 +10,7 @@
 	let homeUrl = $state('');
 	let projectId = $state('');
 	let busy = $state(false);
+	let notice = $state<string | null>(null);
 
 	onMount(load);
 
@@ -35,6 +36,20 @@
 			await load();
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'the follow failed';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function resyncNow() {
+		busy = true;
+		notice = null;
+		try {
+			const report = await resync();
+			notice = `pulled ${report.synced} project(s); ${report.failed} failed. See the server log for failures.`;
+			await load();
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'the resync failed';
 		} finally {
 			busy = false;
 		}
@@ -80,13 +95,21 @@
 
 	<section class="card card-border">
 		<div class="card-body">
-			<h2 class="card-title">Direct homes</h2>
+			<div class="flex flex-wrap items-center justify-between gap-2">
+				<h2 class="card-title">Direct homes</h2>
+				<button class="btn btn-sm btn-outline" type="button" disabled={busy} onclick={resyncNow}>
+					Pull all now
+				</button>
+			</div>
 			<p class="text-base-content/80 text-sm">
 				These are the projects this instance pulls from other homes. A home is addressed by its URL
 				and verified against the project's own signed records, not trusted because of where it is.
 			</p>
 			{#if error}
 				<div role="alert" class="alert alert-error"><span>{error}</span></div>
+			{/if}
+			{#if notice}
+				<div role="alert" class="alert alert-success"><span>{notice}</span></div>
 			{/if}
 			{#if loading}
 				<span class="loading loading-spinner loading-sm" aria-hidden="true"></span>
