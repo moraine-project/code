@@ -3,6 +3,19 @@
 	import favicon from '$lib/assets/favicon.svg';
 
 	let { children } = $props();
+
+	const links = [
+		['/games', 'Browse'],
+		['/search', 'Search'],
+		['/publish', 'Publish'],
+		['/submissions', 'Submissions'],
+		['/notifications', 'Notifications'],
+		['/orgs', 'Organizations'],
+		['/account', 'Account'],
+		['/settings', 'Settings'],
+		['/about', 'About'],
+		['/security', 'Security']
+	] as const;
 </script>
 
 <svelte:head>
@@ -11,26 +24,36 @@
 </svelte:head>
 
 <div class="min-h-screen bg-base-100">
+	<a
+		class="btn btn-sm sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50"
+		href="#content"
+	>
+		Skip to content
+	</a>
+
 	<div class="navbar bg-base-200">
 		<div class="navbar-start">
 			<a class="btn btn-ghost text-xl" href="/">Moraine</a>
 		</div>
-		<div class="navbar-end gap-2">
-			<a class="btn btn-ghost" href="/games">Browse</a>
-			<a class="btn btn-ghost" href="/search">Search</a>
-			<a class="btn btn-ghost" href="/publish">Publish</a>
-			<a class="btn btn-ghost" href="/submissions">Submissions</a>
-			<a class="btn btn-ghost" href="/notifications">Notifications</a>
-			<a class="btn btn-ghost" href="/orgs">Organizations</a>
-			<a class="btn btn-ghost" href="/account">Account</a>
-			<a class="btn btn-ghost" href="/settings">Settings</a>
-			<a class="btn btn-ghost" href="/about">About</a>
-			<a class="btn btn-ghost" href="/security">Security</a>
+		<div class="navbar-end hidden gap-2 lg:flex">
+			{#each links as [href, label] (href)}
+				<a class="btn btn-ghost" {href}>{label}</a>
+			{/each}
 			<span class="badge badge-ghost">federated registry</span>
+		</div>
+		<div class="navbar-end lg:hidden">
+			<details class="dropdown dropdown-end">
+				<summary class="btn btn-ghost" aria-label="Open navigation">Menu</summary>
+				<ul class="menu menu-sm dropdown-content bg-base-100 rounded-box z-50 mt-3 w-52 p-2 shadow">
+					{#each links as [href, label] (href)}
+						<li><a {href}>{label}</a></li>
+					{/each}
+				</ul>
+			</details>
 		</div>
 	</div>
 
-	<main class="mx-auto w-full max-w-5xl p-4 sm:p-8">
+	<main id="content" class="mx-auto w-full max-w-5xl p-4 sm:p-8">
 		{@render children()}
 	</main>
 </div>
