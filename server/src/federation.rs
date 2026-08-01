@@ -137,12 +137,27 @@ async fn list_definition_subscriptions(State(state): State<AppState>, user: Auth
 
 pub(crate) async fn resync_definitions(state: &AppState) -> Result<usize, FederationError> {
 	let subscriptions = state.metadata.definition_subscriptions().await.map_err(storage)?;
+	let mut running = tokio::task::JoinSet::new();
 	let mut synced = 0;
+	let mut failed = 0;
 	for subscription in subscriptions {
-		match sync_definition(state, &subscription.home_url, &subscription.id, &subscription.kind).await {
-			Ok(_) => synced += 1,
-			Err(error) => tracing::warn!(%error, id = %subscription.id, "definition resync failed"),
+		if running.len() >= MAX_CONCURRENT_SYNCS {
+			account(&mut running, &mut synced, &mut failed).await;
 		}
+		let state = state.clone();
+		running.spawn(async move {
+			match sync_definition(&state, &subscription.home_url, &subscription.id, &subscription.kind).await {
+				Ok(_) => true,
+				Err(error) => {
+					state.metrics.record_federation_failure(&error);
+					tracing::warn!(%error, id = %subscription.id, "definition resync failed");
+					false
+				}
+			}
+		});
+	}
+	while !running.is_empty() {
+		account(&mut running, &mut synced, &mut failed).await;
 	}
 	Ok(synced)
 }
@@ -169,6 +184,7 @@ pub async fn resync_subscriptions(state: &AppState) -> Result<ResyncReport, Fede
 			match sync(&state, &subscription.home_url, &subscription.project_id).await {
 				Ok(_) => true,
 				Err(error) => {
+					state.metrics.record_federation_failure(&error);
 					tracing::warn!(
 						%error,
 						home = %subscription.home_url,

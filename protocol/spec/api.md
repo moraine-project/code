@@ -86,8 +86,8 @@ deliberately about storage: a server that cannot serve bytes is not ready.
 
 `GET /metrics` renders Prometheus text with the object, submission, review,
 subscription, delivery, definition, advisory, mirror, and artifact counts the
-store holds, plus process uptime, total requests, 5xx responses, and rejected
-signatures. Counters separate signature rejection from transport failure, and
+store holds, plus process uptime, total requests, 5xx responses, rejected
+signatures, and federation failures split into network and protocol counts. Counters separate signature rejection from transport failure, and
 gauges report the age of the oldest queued submission and the oldest pending
 webhook delivery, so an admission backlog is visible before it is asked about.
 It carries no account or topology detail and is meant to be scraped from inside

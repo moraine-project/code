@@ -15,6 +15,8 @@ pub struct Metrics {
 	requests: AtomicU64,
 	server_errors: AtomicU64,
 	signature_failures: AtomicU64,
+	federation_network_failures: AtomicU64,
+	federation_protocol_failures: AtomicU64,
 }
 
 impl Metrics {
@@ -24,11 +26,24 @@ impl Metrics {
 			requests: AtomicU64::new(0),
 			server_errors: AtomicU64::new(0),
 			signature_failures: AtomicU64::new(0),
+			federation_network_failures: AtomicU64::new(0),
+			federation_protocol_failures: AtomicU64::new(0),
 		}
 	}
 
 	pub fn record_signature_failure(&self) {
 		self.signature_failures.fetch_add(1, Ordering::Relaxed);
+	}
+
+	pub fn record_federation_failure(&self, error: &crate::federation::FederationError) {
+		match error {
+			crate::federation::FederationError::Http(_) => {
+				self.federation_network_failures.fetch_add(1, Ordering::Relaxed);
+			}
+			_ => {
+				self.federation_protocol_failures.fetch_add(1, Ordering::Relaxed);
+			}
+		}
 	}
 
 	fn observe(&self, status: u16) {
@@ -83,6 +98,14 @@ async fn render(State(state): State<AppState>) -> Response {
 		(
 			"moraine_signature_failures_total",
 			state.metrics.signature_failures.load(Ordering::Relaxed),
+		),
+		(
+			"moraine_federation_network_failures_total",
+			state.metrics.federation_network_failures.load(Ordering::Relaxed),
+		),
+		(
+			"moraine_federation_protocol_failures_total",
+			state.metrics.federation_protocol_failures.load(Ordering::Relaxed),
 		),
 	] {
 		body.push_str("# TYPE ");
@@ -142,6 +165,7 @@ mod tests {
 			"moraine_projects_total",
 			"moraine_requests_total",
 			"moraine_uptime_seconds",
+			"moraine_federation_protocol_failures_total",
 			"moraine_admission_oldest_seconds",
 			"moraine_webhook_backlog_oldest_seconds",
 			"moraine_subscription_lag_entries",
