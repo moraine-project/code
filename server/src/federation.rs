@@ -153,25 +153,49 @@ pub struct ResyncReport {
 	pub failed: usize,
 }
 
+const MAX_CONCURRENT_SYNCS: usize = 4;
+
 pub async fn resync_subscriptions(state: &AppState) -> Result<ResyncReport, FederationError> {
 	let subscriptions = state.metadata.subscriptions().await.map_err(storage)?;
+	let mut running = tokio::task::JoinSet::new();
 	let mut synced = 0;
 	let mut failed = 0;
 	for subscription in subscriptions {
-		match sync(state, &subscription.home_url, &subscription.project_id).await {
-			Ok(_) => synced += 1,
-			Err(error) => {
-				failed += 1;
-				tracing::warn!(
-					%error,
-					home = %subscription.home_url,
-					project = %subscription.project_id,
-					"subscription resync failed"
-				);
-			}
+		if running.len() >= MAX_CONCURRENT_SYNCS {
+			account(&mut running, &mut synced, &mut failed).await;
 		}
+		let state = state.clone();
+		running.spawn(async move {
+			match sync(&state, &subscription.home_url, &subscription.project_id).await {
+				Ok(_) => true,
+				Err(error) => {
+					tracing::warn!(
+						%error,
+						home = %subscription.home_url,
+						project = %subscription.project_id,
+						"subscription resync failed"
+					);
+					false
+				}
+			}
+		});
+	}
+	while !running.is_empty() {
+		account(&mut running, &mut synced, &mut failed).await;
 	}
 	Ok(ResyncReport { synced, failed })
+}
+
+async fn account(running: &mut tokio::task::JoinSet<bool>, synced: &mut usize, failed: &mut usize) {
+	match running.join_next().await {
+		Some(Ok(true)) => *synced += 1,
+		Some(Ok(false)) => *failed += 1,
+		Some(Err(error)) => {
+			*failed += 1;
+			tracing::warn!(%error, "subscription sync task failed");
+		}
+		None => {}
+	}
 }
 
 async fn resync_handler(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
