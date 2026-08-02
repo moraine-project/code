@@ -88,8 +88,8 @@ deliberately about storage: a server that cannot serve bytes is not ready.
 subscription, delivery, definition, advisory, mirror, and artifact counts the
 store holds, plus process uptime, total requests, 5xx responses, rejected
 signatures, and federation failures split by cause: network transport,
-protocol (URL, decode, or signature), local storage, and local policy
-rejection. Counters separate signature rejection from transport failure, and
+protocol (URL or decode), signature rejection, local storage, and local
+policy rejection. Counters separate signature rejection from transport failure, and
 gauges report the age of the oldest queued submission and the oldest pending
 webhook delivery, so an admission backlog is visible before it is asked about.
 It carries no account or topology detail and is meant to be scraped from inside

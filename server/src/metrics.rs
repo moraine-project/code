@@ -17,6 +17,7 @@ pub struct Metrics {
 	signature_failures: AtomicU64,
 	federation_network_failures: AtomicU64,
 	federation_protocol_failures: AtomicU64,
+	federation_signature_failures: AtomicU64,
 	federation_storage_failures: AtomicU64,
 	federation_rejections: AtomicU64,
 }
@@ -30,6 +31,7 @@ impl Metrics {
 			signature_failures: AtomicU64::new(0),
 			federation_network_failures: AtomicU64::new(0),
 			federation_protocol_failures: AtomicU64::new(0),
+			federation_signature_failures: AtomicU64::new(0),
 			federation_storage_failures: AtomicU64::new(0),
 			federation_rejections: AtomicU64::new(0),
 		}
@@ -43,9 +45,8 @@ impl Metrics {
 		use crate::federation::FederationError;
 		let counter = match error {
 			FederationError::Http(_) => &self.federation_network_failures,
-			FederationError::InvalidUrl(_) | FederationError::Decode(_) | FederationError::Verify(_) => {
-				&self.federation_protocol_failures
-			}
+			FederationError::InvalidUrl(_) | FederationError::Decode(_) => &self.federation_protocol_failures,
+			FederationError::Verify(_) => &self.federation_signature_failures,
 			FederationError::Storage(_) => &self.federation_storage_failures,
 			FederationError::Rejected(_) => &self.federation_rejections,
 		};
@@ -112,6 +113,10 @@ async fn render(State(state): State<AppState>) -> Response {
 		(
 			"moraine_federation_protocol_failures_total",
 			state.metrics.federation_protocol_failures.load(Ordering::Relaxed),
+		),
+		(
+			"moraine_federation_signature_failures_total",
+			state.metrics.federation_signature_failures.load(Ordering::Relaxed),
 		),
 		(
 			"moraine_federation_storage_failures_total",
@@ -184,7 +189,8 @@ mod tests {
 		}
 
 		assert_eq!(metrics.federation_network_failures.load(Ordering::Relaxed), 1);
-		assert_eq!(metrics.federation_protocol_failures.load(Ordering::Relaxed), 2);
+		assert_eq!(metrics.federation_protocol_failures.load(Ordering::Relaxed), 1);
+		assert_eq!(metrics.federation_signature_failures.load(Ordering::Relaxed), 1);
 		assert_eq!(metrics.federation_storage_failures.load(Ordering::Relaxed), 1);
 		assert_eq!(metrics.federation_rejections.load(Ordering::Relaxed), 1);
 	}
