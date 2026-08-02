@@ -108,6 +108,11 @@ of `/v1/blobs/sha256/<hex>`, and a receipt `{ "digest": "sha256:<hex>", "size":
 N }`. Committing the same bytes again is a no-op because the address is the
 digest.
 
+A blob is served only once a signed release location, an artifact index entry,
+or a mirror commitment references it. Bytes sitting in staging or committed by
+an upload whose release was never published are drafts and answer `404`, so an
+unvalidated upload is not public merely because it reached the store.
+
 `GET /v1/blobs/sha256/<hex>` and `HEAD` serve exact bytes. Responses carry
 `Accept-Ranges: bytes`, an exact `Content-Length`, and
 `Cache-Control: public, max-age=31536000, immutable`, because a blob URL is
@@ -119,7 +124,8 @@ the full stream and happens in the client.
 An unknown or malformed digest returns `404` or `400` and never a substituted
 object.
 
-Staging files left by an aborted upload are removed after an hour. A committed
+Staging files left by an aborted upload are removed after an hour, and a
+committed but still unreferenced draft is not served. A committed
 blob that no release location, artifact index entry, or mirror commitment
 references is removed after a seven-day window, which leaves a fresh upload
 time to be published. Both windows are operator settings

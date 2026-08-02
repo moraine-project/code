@@ -502,6 +502,19 @@ impl MetadataStore {
 		Ok(())
 	}
 
+	pub async fn blob_is_referenced(&self, digest: &[u8]) -> Result<bool, sqlx::Error> {
+		let referenced = sqlx::query_scalar::<_, i64>(
+			"SELECT COUNT(*) FROM (
+				SELECT digest FROM artifact_index WHERE digest = ?1
+				UNION SELECT artifact_digest FROM locations WHERE artifact_digest = ?1
+				UNION SELECT artifact_digest FROM mirror_commitments WHERE artifact_digest = ?1)",
+		)
+		.bind(digest)
+		.fetch_one(&self.pool)
+		.await?;
+		Ok(referenced > 0)
+	}
+
 	pub async fn record_download(&self, digest: &[u8], day: i64) -> Result<(), sqlx::Error> {
 		sqlx::query(
 			"INSERT INTO download_counts (project_id, day, count)

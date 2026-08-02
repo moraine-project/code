@@ -169,6 +169,14 @@ async fn serve_blob(state: &AppState, digest_hex: &str, headers: &HeaderMap, hea
 	let Some(digest) = parse_digest(digest_hex) else {
 		return (StatusCode::BAD_REQUEST, "invalid digest").into_response();
 	};
+	match state.metadata.blob_is_referenced(&digest).await {
+		Ok(true) => {}
+		Ok(false) => return (StatusCode::NOT_FOUND, "no such blob").into_response(),
+		Err(error) => {
+			tracing::error!(%error, "blob reference lookup failed");
+			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
+		}
+	}
 	let Some(mut file) = (match state.store.open(&digest).await {
 		Ok(file) => file,
 		Err(error) => {
@@ -357,7 +365,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn uploads_then_serves_round_trip() {
-		let (app, _directory) = test_app().await;
+		let (app, directory) = test_app().await;
 		let upload = axum::http::Request::post("/v1/blobs")
 			.body(Body::from("artifact"))
 			.expect("request");
@@ -368,6 +376,18 @@ mod tests {
 		let digest = receipt["digest"].as_str().expect("digest");
 		let hex_digest = digest.strip_prefix("sha256:").expect("prefix");
 		let path = format!("/v1/blobs/sha256/{hex_digest}");
+
+		let draft = axum::http::Request::get(&path).body(Body::empty()).expect("request");
+		let response = app.clone().oneshot(draft).await.expect("response");
+		assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+		let metadata = crate::store::MetadataStore::open(directory.path().join("metadata.sqlite"))
+			.await
+			.expect("metadata");
+		metadata
+			.index_artifact(hex::decode(hex_digest).expect("hex").as_slice(), "p", &[0u8; 32])
+			.await
+			.expect("index");
 
 		let served = axum::http::Request::get(&path).body(Body::empty()).expect("request");
 		let response = app.oneshot(served).await.expect("response");
@@ -382,6 +402,12 @@ mod tests {
 		let store = BlobStore::new(directory.path()).await.expect("store");
 		let staged = store.put_staged(b"0123456789".as_slice(), 1024).await.expect("stage");
 		let digest = store.commit(staged).await.expect("commit");
+		crate::store::MetadataStore::open(directory.path().join("metadata.sqlite"))
+			.await
+			.expect("metadata")
+			.index_artifact(&digest, "p", &[0u8; 32])
+			.await
+			.expect("index");
 		let path = format!("/v1/blobs/sha256/{}", hex::encode(digest));
 
 		let full = app
