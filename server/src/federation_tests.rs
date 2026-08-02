@@ -336,3 +336,92 @@ async fn resync_pulls_entries_published_after_the_first_sync() {
 	let page = body_json(response).await;
 	assert_eq!(page["head_seq"], 2);
 }
+
+#[tokio::test]
+async fn rejects_a_home_whose_feed_went_backwards() {
+	use std::sync::Arc;
+	use std::sync::atomic::{AtomicI64, Ordering};
+
+	use axum::extract::State;
+
+	let signer = key(12);
+	let wire = genesis_wire(&signer, PROJECT_KINDS);
+	let (_, object) = crate::verify::verify_genesis(&wire).expect("genesis");
+	let project_id = object.id;
+	let genesis_id = project_id.clone();
+	let head = Arc::new(AtomicI64::new(1));
+
+	let mock = axum::Router::new()
+		.route(
+			"/v1/projects/{id}",
+			axum::routing::get(|axum::extract::Path(id): axum::extract::Path<String>| async move {
+				axum::Json(serde_json::json!({ "project_id": id, "genesis": id }))
+			}),
+		)
+		.route(
+			"/v1/objects/{hex}",
+			axum::routing::get({
+				let wire = wire.clone();
+				move || {
+					let wire = wire.clone();
+					async move { wire }
+				}
+			}),
+		)
+		.route(
+			"/v1/projects/{id}/feed",
+			axum::routing::get({
+				let head = head.clone();
+				move |State(_): State<()>| {
+					let head = head.clone();
+					async move {
+						axum::Json(serde_json::json!({
+							"project_id": genesis_id,
+							"head_seq": head.load(Ordering::Relaxed),
+							"entries": [],
+						}))
+					}
+				}
+			}),
+		)
+		.with_state(());
+
+	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+	let address = listener.local_addr().expect("addr");
+	tokio::spawn(async move {
+		let _ = axum::serve(listener, mock).await;
+	});
+
+	let (directory, directory_dir) = app_mode(crate::config::Publishing::Review, true).await;
+	let home_url = format!("http://127.0.0.1:{}", address.port());
+	let metadata = crate::store::MetadataStore::open(directory_dir.path().join("metadata.sqlite"))
+		.await
+		.expect("metadata");
+	metadata
+		.upsert_subscription(&home_url, &project_id, "active", 1)
+		.await
+		.expect("subscribe");
+	metadata
+		.set_subscription_cursor(&home_url, &project_id, 5, 5, "active", 2)
+		.await
+		.expect("cursor");
+
+	let (session, csrf) = login(&directory, "ops@example.org").await;
+	let sync = axum::http::Request::post("/v1/federation/sync")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.header("x-csrf-token", csrf)
+		.body(Body::from(
+			serde_json::json!({ "home_url": home_url, "project_id": project_id }).to_string(),
+		))
+		.expect("request");
+	let response = directory.oneshot(sync).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CONFLICT);
+
+	let subscription = metadata
+		.subscription(&home_url, &project_id)
+		.await
+		.expect("subscription")
+		.expect("present");
+	assert_eq!(subscription.cursor_seq, 5);
+}

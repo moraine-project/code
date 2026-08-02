@@ -328,6 +328,11 @@ A home that serves fewer entries per page than the subscriber asked for is
 followed to the end of its feed, so a large backlog is applied in full rather
 than truncated at the first page.
 
+A page whose head is lower than the stored cursor is refused with `409` and the
+cursor is left untouched. A feed sequence that goes backwards is either an
+operator pruning history or a home trying to walk a subscriber back to an
+earlier view, and neither is applied silently; there is no override yet.
+
 The event kind maps to an object kind (`release-published` to a release,
 `profile-updated` to a profile, `key-changed`/`migration`/`recovery` to a
 delegation, `advisory` to an advisory), and an entry whose object kind is

@@ -409,6 +409,7 @@ async fn sync_handler(State(state): State<AppState>, user: AuthenticatedUser, Js
 				FederationError::Verify(_) | FederationError::Decode(_) => StatusCode::BAD_GATEWAY,
 				_ => StatusCode::BAD_GATEWAY,
 			};
+			state.metrics.record_federation_failure(&error);
 			(status, error.to_string()).into_response()
 		}
 	}
@@ -529,6 +530,11 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 			.get_json::<FeedPage>(&format!("/v1/projects/{project_id}/feed?after={cursor}&limit=100"))
 			.await?;
 		head_seq = page.head_seq;
+		if head_seq < cursor {
+			return Err(FederationError::Rejected(format!(
+				"the home's feed went backwards from {cursor} to {head_seq}"
+			)));
+		}
 		let Some(last) = page.entries.last() else {
 			break;
 		};
