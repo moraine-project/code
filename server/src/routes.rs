@@ -323,6 +323,7 @@ mod tests {
 			blob_retention_seconds: 604_800,
 			max_sync_pages: 200,
 			requests_per_minute: 600,
+			max_concurrent_syncs: 4,
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Review,
 			web_dir: web_dir.clone(),

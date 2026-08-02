@@ -136,12 +136,13 @@ async fn list_definition_subscriptions(State(state): State<AppState>, user: Auth
 }
 
 pub(crate) async fn resync_definitions(state: &AppState) -> Result<usize, FederationError> {
+	let limit = state.capability.max_concurrent_syncs.max(1) as usize;
 	let subscriptions = state.metadata.definition_subscriptions().await.map_err(storage)?;
 	let mut running = tokio::task::JoinSet::new();
 	let mut synced = 0;
 	let mut failed = 0;
 	for subscription in subscriptions {
-		if running.len() >= MAX_CONCURRENT_SYNCS {
+		if running.len() >= limit {
 			account(&mut running, &mut synced, &mut failed).await;
 		}
 		let state = state.clone();
@@ -168,15 +169,14 @@ pub struct ResyncReport {
 	pub failed: usize,
 }
 
-const MAX_CONCURRENT_SYNCS: usize = 4;
-
 pub async fn resync_subscriptions(state: &AppState) -> Result<ResyncReport, FederationError> {
+	let limit = state.capability.max_concurrent_syncs.max(1) as usize;
 	let subscriptions = state.metadata.subscriptions().await.map_err(storage)?;
 	let mut running = tokio::task::JoinSet::new();
 	let mut synced = 0;
 	let mut failed = 0;
 	for subscription in subscriptions {
-		if running.len() >= MAX_CONCURRENT_SYNCS {
+		if running.len() >= limit {
 			account(&mut running, &mut synced, &mut failed).await;
 		}
 		let state = state.clone();

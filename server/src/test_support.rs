@@ -239,6 +239,7 @@ pub(crate) async fn app_in(
 		blob_retention_seconds: 604_800,
 		max_sync_pages: 200,
 		requests_per_minute,
+		max_concurrent_syncs: 4,
 		allow_insecure_federation_local,
 		publishing,
 		web_dir: None,
