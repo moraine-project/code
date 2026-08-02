@@ -17,6 +17,8 @@ pub struct Metrics {
 	signature_failures: AtomicU64,
 	federation_network_failures: AtomicU64,
 	federation_protocol_failures: AtomicU64,
+	federation_storage_failures: AtomicU64,
+	federation_rejections: AtomicU64,
 }
 
 impl Metrics {
@@ -28,6 +30,8 @@ impl Metrics {
 			signature_failures: AtomicU64::new(0),
 			federation_network_failures: AtomicU64::new(0),
 			federation_protocol_failures: AtomicU64::new(0),
+			federation_storage_failures: AtomicU64::new(0),
+			federation_rejections: AtomicU64::new(0),
 		}
 	}
 
@@ -36,14 +40,16 @@ impl Metrics {
 	}
 
 	pub fn record_federation_failure(&self, error: &crate::federation::FederationError) {
-		match error {
-			crate::federation::FederationError::Http(_) => {
-				self.federation_network_failures.fetch_add(1, Ordering::Relaxed);
+		use crate::federation::FederationError;
+		let counter = match error {
+			FederationError::Http(_) => &self.federation_network_failures,
+			FederationError::InvalidUrl(_) | FederationError::Decode(_) | FederationError::Verify(_) => {
+				&self.federation_protocol_failures
 			}
-			_ => {
-				self.federation_protocol_failures.fetch_add(1, Ordering::Relaxed);
-			}
-		}
+			FederationError::Storage(_) => &self.federation_storage_failures,
+			FederationError::Rejected(_) => &self.federation_rejections,
+		};
+		counter.fetch_add(1, Ordering::Relaxed);
 	}
 
 	fn observe(&self, status: u16) {
@@ -107,6 +113,14 @@ async fn render(State(state): State<AppState>) -> Response {
 			"moraine_federation_protocol_failures_total",
 			state.metrics.federation_protocol_failures.load(Ordering::Relaxed),
 		),
+		(
+			"moraine_federation_storage_failures_total",
+			state.metrics.federation_storage_failures.load(Ordering::Relaxed),
+		),
+		(
+			"moraine_federation_rejections_total",
+			state.metrics.federation_rejections.load(Ordering::Relaxed),
+		),
 	] {
 		body.push_str("# TYPE ");
 		body.push_str(name);
@@ -147,9 +161,33 @@ fn unix_now() -> i64 {
 
 #[cfg(test)]
 mod tests {
+	use std::sync::atomic::Ordering;
+
 	use tower::ServiceExt;
 
+	use super::*;
 	use crate::test_support::app;
+
+	#[test]
+	fn classifies_federation_failures_by_cause() {
+		use crate::federation::FederationError;
+
+		let metrics = Metrics::new();
+		for error in [
+			FederationError::Http("x".to_string()),
+			FederationError::Verify("x".to_string()),
+			FederationError::InvalidUrl("x".to_string()),
+			FederationError::Storage("x".to_string()),
+			FederationError::Rejected("x".to_string()),
+		] {
+			metrics.record_federation_failure(&error);
+		}
+
+		assert_eq!(metrics.federation_network_failures.load(Ordering::Relaxed), 1);
+		assert_eq!(metrics.federation_protocol_failures.load(Ordering::Relaxed), 2);
+		assert_eq!(metrics.federation_storage_failures.load(Ordering::Relaxed), 1);
+		assert_eq!(metrics.federation_rejections.load(Ordering::Relaxed), 1);
+	}
 
 	#[tokio::test]
 	async fn reports_counts_and_process_totals() {
@@ -166,6 +204,8 @@ mod tests {
 			"moraine_requests_total",
 			"moraine_uptime_seconds",
 			"moraine_federation_protocol_failures_total",
+			"moraine_federation_storage_failures_total",
+			"moraine_federation_rejections_total",
 			"moraine_admission_oldest_seconds",
 			"moraine_webhook_backlog_oldest_seconds",
 			"moraine_subscription_lag_entries",
