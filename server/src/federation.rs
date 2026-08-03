@@ -429,6 +429,7 @@ async fn list_subscriptions(State(state): State<AppState>, user: AuthenticatedUs
 					project_id: row.project_id,
 					cursor_seq: row.cursor_seq,
 					lag_entries: (row.remote_head_seq - row.cursor_seq).max(0),
+					resets: row.reset_count,
 					status: row.status,
 					updated_at: row.updated_at,
 				})
@@ -455,18 +456,14 @@ async fn reset_subscription(
 	if !user.allows("federation:manage") {
 		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
 	}
-	match state.metadata.subscription(&query.home_url, &query.project_id).await {
-		Ok(Some(_)) => {}
-		Ok(None) => return (StatusCode::NOT_FOUND, "not subscribed to that project").into_response(),
-		Err(error) => return storage_error(error),
-	}
 	let cursor = query.cursor.unwrap_or(0).max(0);
 	match state
 		.metadata
-		.set_subscription_cursor(&query.home_url, &query.project_id, cursor, cursor, "active", now())
+		.reset_subscription(&query.home_url, &query.project_id, cursor, now())
 		.await
 	{
-		Ok(()) => Json(serde_json::json!({ "cursor_seq": cursor })).into_response(),
+		Ok(true) => Json(serde_json::json!({ "cursor_seq": cursor })).into_response(),
+		Ok(false) => (StatusCode::NOT_FOUND, "not subscribed to that project").into_response(),
 		Err(error) => storage_error(error),
 	}
 }
@@ -498,6 +495,7 @@ struct SubscriptionView {
 	project_id: String,
 	cursor_seq: i64,
 	lag_entries: i64,
+	resets: i64,
 	status: String,
 	updated_at: i64,
 }
@@ -771,13 +769,33 @@ impl MetadataStore {
 
 	pub async fn subscription(&self, home_url: &str, project_id: &str) -> Result<Option<SubscriptionRow>, sqlx::Error> {
 		let row = sqlx::query(
-			"SELECT home_url, project_id, cursor_seq, remote_head_seq, status, updated_at FROM subscriptions WHERE home_url = ?1 AND project_id = ?2",
+			"SELECT home_url, project_id, cursor_seq, remote_head_seq, reset_count, status, updated_at FROM subscriptions WHERE home_url = ?1 AND project_id = ?2",
 		)
 		.bind(home_url)
 		.bind(project_id)
 		.fetch_optional(&self.pool)
 		.await?;
 		Ok(row.map(subscription_from_row))
+	}
+
+	pub async fn reset_subscription(
+		&self,
+		home_url: &str,
+		project_id: &str,
+		cursor_seq: i64,
+		updated_at: i64,
+	) -> Result<bool, sqlx::Error> {
+		let result = sqlx::query(
+			"UPDATE subscriptions SET cursor_seq = ?1, remote_head_seq = ?1, reset_count = reset_count + 1, updated_at = ?2
+			 WHERE home_url = ?3 AND project_id = ?4",
+		)
+		.bind(cursor_seq)
+		.bind(updated_at)
+		.bind(home_url)
+		.bind(project_id)
+		.execute(&self.pool)
+		.await?;
+		Ok(result.rows_affected() == 1)
 	}
 
 	pub async fn set_subscription_cursor(
@@ -815,7 +833,7 @@ impl MetadataStore {
 
 	pub async fn subscriptions(&self) -> Result<Vec<SubscriptionRow>, sqlx::Error> {
 		let rows = sqlx::query(
-			"SELECT home_url, project_id, cursor_seq, remote_head_seq, status, updated_at FROM subscriptions ORDER BY home_url, project_id",
+			"SELECT home_url, project_id, cursor_seq, remote_head_seq, reset_count, status, updated_at FROM subscriptions ORDER BY home_url, project_id",
 		)
 		.fetch_all(&self.pool)
 		.await?;
@@ -829,6 +847,7 @@ pub struct SubscriptionRow {
 	pub project_id: String,
 	pub cursor_seq: i64,
 	pub remote_head_seq: i64,
+	pub reset_count: i64,
 	pub status: String,
 	pub updated_at: i64,
 }
@@ -839,6 +858,7 @@ fn subscription_from_row(row: sqlx::sqlite::SqliteRow) -> SubscriptionRow {
 		project_id: row.get("project_id"),
 		cursor_seq: row.get("cursor_seq"),
 		remote_head_seq: row.get("remote_head_seq"),
+		reset_count: row.get("reset_count"),
 		status: row.get("status"),
 		updated_at: row.get("updated_at"),
 	}

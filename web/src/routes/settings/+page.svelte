@@ -139,6 +139,7 @@
 								<th scope="col">Project</th>
 								<th scope="col">Cursor</th>
 								<th scope="col">Behind</th>
+								<th scope="col">Resets</th>
 								<th scope="col">Last sync</th>
 								<th scope="col"></th>
 							</tr>
@@ -152,6 +153,13 @@
 									<td>
 										{#if home.lag_entries > 0}
 											<span class="badge badge-warning badge-sm">{home.lag_entries}</span>
+										{:else}
+											<span class="text-base-content/60">0</span>
+										{/if}
+									</td>
+									<td>
+										{#if home.resets > 0}
+											<span class="badge badge-ghost badge-sm">{home.resets}</span>
 										{:else}
 											<span class="text-base-content/60">0</span>
 										{/if}

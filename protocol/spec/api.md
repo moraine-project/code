@@ -334,7 +334,10 @@ operator pruning history or a home trying to walk a subscriber back to an
 earlier view, and neither is applied silently. When the operator knows the feed
 legitimately shrank, `POST /v1/subscriptions/reset?home_url=&project_id=&cursor=`
 sets both the cursor and the recorded head, which is the documented recovery;
-the next sync then re-reads from that point.
+the next sync then re-reads from that point. A reset increments a per-project
+`resets` count, visible in the subscription list and summed by
+`moraine_subscription_resets`, so a deliberate recovery stays distinguishable
+from a home that quietly rewound.
 
 The event kind maps to an object kind (`release-published` to a release,
 `profile-updated` to a profile, `key-changed`/`migration`/`recovery` to a

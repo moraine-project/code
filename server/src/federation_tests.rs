@@ -438,6 +438,12 @@ async fn rejects_a_home_whose_feed_went_backwards() {
 		.expect("request");
 	let response = directory.clone().oneshot(reset).await.expect("response");
 	assert_eq!(response.status(), StatusCode::OK);
+	let reset_row = metadata
+		.subscription(&home_url, &project_id)
+		.await
+		.expect("subscription")
+		.expect("present");
+	assert_eq!(reset_row.reset_count, 1);
 
 	let sync = axum::http::Request::post("/v1/federation/sync")
 		.header(header::CONTENT_TYPE, "application/json")

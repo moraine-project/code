@@ -7,6 +7,7 @@ export const subscriptionSchema = z.object({
 	project_id: z.string(),
 	cursor_seq: z.number(),
 	lag_entries: z.number(),
+	resets: z.number(),
 	status: z.string(),
 	updated_at: z.number()
 });

@@ -215,6 +215,7 @@ mod tests {
 			"moraine_admission_oldest_seconds",
 			"moraine_webhook_backlog_oldest_seconds",
 			"moraine_subscription_lag_entries",
+			"moraine_subscription_resets",
 		] {
 			assert!(text.contains(name), "missing {name}");
 		}
