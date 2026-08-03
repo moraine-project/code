@@ -50,3 +50,15 @@ export async function resync(): Promise<{ synced: number; failed: number }> {
 	}
 	return z.object({ synced: z.number(), failed: z.number() }).parse(await response.json());
 }
+
+export async function resetCursor(homeUrl: string, projectId: string, cursor = 0): Promise<void> {
+	const params = new URLSearchParams({
+		home_url: homeUrl,
+		project_id: projectId,
+		cursor: String(cursor)
+	});
+	const response = await authorizedFetch(`/v1/subscriptions/reset?${params.toString()}`, { method: 'POST' });
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+}

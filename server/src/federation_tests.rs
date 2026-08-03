@@ -415,7 +415,7 @@ async fn rejects_a_home_whose_feed_went_backwards() {
 			serde_json::json!({ "home_url": home_url, "project_id": project_id }).to_string(),
 		))
 		.expect("request");
-	let response = directory.oneshot(sync).await.expect("response");
+	let response = directory.clone().oneshot(sync).await.expect("response");
 	assert_eq!(response.status(), StatusCode::CONFLICT);
 
 	let subscription = metadata
@@ -424,4 +424,29 @@ async fn rejects_a_home_whose_feed_went_backwards() {
 		.expect("subscription")
 		.expect("present");
 	assert_eq!(subscription.cursor_seq, 5);
+
+	let (session, csrf) = login(&directory, "ops@example.org").await;
+	let reset = axum::http::Request::builder()
+		.method("POST")
+		.uri(format!(
+			"/v1/subscriptions/reset?home_url={}&project_id={project_id}&cursor=1",
+			urlencoding_home(&address)
+		))
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.header("x-csrf-token", csrf.clone())
+		.body(Body::empty())
+		.expect("request");
+	let response = directory.clone().oneshot(reset).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+
+	let sync = axum::http::Request::post("/v1/federation/sync")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.header("x-csrf-token", csrf)
+		.body(Body::from(
+			serde_json::json!({ "home_url": home_url, "project_id": project_id }).to_string(),
+		))
+		.expect("request");
+	let response = directory.oneshot(sync).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
 }

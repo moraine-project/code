@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
-	import { follow, resync, subscriptions, unfollow, type Subscription } from '$lib/api/federation';
+	import { follow, resync, resetCursor, subscriptions, unfollow, type Subscription } from '$lib/api/federation';
 	import Digest from '$lib/components/Digest.svelte';
 
 	let homes = $state<Subscription[]>([]);
@@ -50,6 +50,20 @@
 			await load();
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'the resync failed';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function reset(home: Subscription) {
+		busy = true;
+		notice = null;
+		try {
+			await resetCursor(home.home_url, home.project_id);
+			notice = 'cursor reset; the next sync re-reads the feed from the start.';
+			await load();
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not reset the cursor';
 		} finally {
 			busy = false;
 		}
@@ -144,15 +158,26 @@
 									</td>
 									<td>{formatTime(home.updated_at)}</td>
 									<td>
-										<button
-											class="btn btn-ghost btn-xs"
-											type="button"
-											disabled={busy}
-											onclick={() => stopFollowing(home)}
-											aria-label={`Stop pulling ${home.project_id} from ${home.home_url}`}
-										>
-											unfollow
-										</button>
+										<div class="flex gap-1">
+											<button
+												class="btn btn-ghost btn-xs"
+												type="button"
+												disabled={busy}
+												onclick={() => reset(home)}
+												aria-label={`Reset the cursor for ${home.project_id} from ${home.home_url}`}
+											>
+												reset
+											</button>
+											<button
+												class="btn btn-ghost btn-xs"
+												type="button"
+												disabled={busy}
+												onclick={() => stopFollowing(home)}
+												aria-label={`Stop pulling ${home.project_id} from ${home.home_url}`}
+											>
+												unfollow
+											</button>
+										</div>
 									</td>
 								</tr>
 							{/each}

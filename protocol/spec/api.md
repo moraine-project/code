@@ -331,7 +331,10 @@ than truncated at the first page.
 A page whose head is lower than the stored cursor is refused with `409` and the
 cursor is left untouched. A feed sequence that goes backwards is either an
 operator pruning history or a home trying to walk a subscriber back to an
-earlier view, and neither is applied silently; there is no override yet.
+earlier view, and neither is applied silently. When the operator knows the feed
+legitimately shrank, `POST /v1/subscriptions/reset?home_url=&project_id=&cursor=`
+sets both the cursor and the recorded head, which is the documented recovery;
+the next sync then re-reads from that point.
 
 The event kind maps to an object kind (`release-published` to a release,
 `profile-updated` to a profile, `key-changed`/`migration`/`recovery` to a

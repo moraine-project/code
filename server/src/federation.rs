@@ -28,6 +28,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/federation/subscribe-definition", post(subscribe_definition_handler))
 		.route("/v1/definition-subscriptions", get(list_definition_subscriptions))
 		.route("/v1/subscriptions", get(list_subscriptions).delete(unsubscribe))
+		.route("/v1/subscriptions/reset", post(reset_subscription))
 }
 
 #[derive(Debug, Clone)]
@@ -434,6 +435,38 @@ async fn list_subscriptions(State(state): State<AppState>, user: AuthenticatedUs
 				.collect();
 			Json(view).into_response()
 		}
+		Err(error) => storage_error(error),
+	}
+}
+
+#[derive(Deserialize)]
+struct ResetQuery {
+	home_url: String,
+	project_id: String,
+	#[serde(default)]
+	cursor: Option<i64>,
+}
+
+async fn reset_subscription(
+	State(state): State<AppState>,
+	user: AuthenticatedUser,
+	Query(query): Query<ResetQuery>,
+) -> Response {
+	if !user.allows("federation:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
+	match state.metadata.subscription(&query.home_url, &query.project_id).await {
+		Ok(Some(_)) => {}
+		Ok(None) => return (StatusCode::NOT_FOUND, "not subscribed to that project").into_response(),
+		Err(error) => return storage_error(error),
+	}
+	let cursor = query.cursor.unwrap_or(0).max(0);
+	match state
+		.metadata
+		.set_subscription_cursor(&query.home_url, &query.project_id, cursor, cursor, "active", now())
+		.await
+	{
+		Ok(()) => Json(serde_json::json!({ "cursor_seq": cursor })).into_response(),
 		Err(error) => storage_error(error),
 	}
 }
