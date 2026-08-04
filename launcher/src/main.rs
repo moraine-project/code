@@ -58,6 +58,8 @@ enum Command {
 		#[arg(long, default_value_t = false)]
 		allow_http_local: bool,
 		#[arg(long)]
+		previous: Option<PathBuf>,
+		#[arg(long)]
 		output: Option<PathBuf>,
 	},
 }
@@ -102,6 +104,7 @@ fn run(cli: Cli) -> Result<(), String> {
 			runtime_version,
 			side,
 			allow_http_local,
+			previous,
 			output,
 		} => resolve(
 			&home,
@@ -112,6 +115,7 @@ fn run(cli: Cli) -> Result<(), String> {
 			runtime.map(|id| (id, runtime_version)),
 			&side,
 			allow_http_local,
+			previous.as_deref(),
 			output.as_deref(),
 		),
 	}
@@ -127,11 +131,16 @@ fn resolve(
 	runtime: Option<(String, Option<String>)>,
 	side: &str,
 	allow_http_local: bool,
+	previous: Option<&Path>,
 	output: Option<&Path>,
 ) -> Result<(), String> {
 	let source = moraine_launcher::catalog::HttpHome::new(home, allow_http_local)?;
 	let request = moraine_launcher::catalog::request_for(game, game_version, project, side, loader, runtime)?;
-	let lockfile = moraine_launcher::catalog::resolve_from_home(&source, &request)?;
+	let previous = match previous {
+		Some(path) => Some(read_lockfile(path)?),
+		None => None,
+	};
+	let lockfile = moraine_launcher::catalog::resolve_from_home(&source, &request, previous.as_ref())?;
 	let json = serde_json::to_string_pretty(&lockfile).map_err(|error| error.to_string())?;
 	match output {
 		Some(path) => std::fs::write(path, format!("{json}\n")).map_err(|error| format!("{}: {error}", path.display())),
@@ -140,6 +149,11 @@ fn resolve(
 			Ok(())
 		}
 	}
+}
+
+fn read_lockfile(lockfile_path: &Path) -> Result<moraine_resolver::Lockfile, String> {
+	let text = std::fs::read_to_string(lockfile_path).map_err(|error| format!("{}: {error}", lockfile_path.display()))?;
+	serde_json::from_str(&text).map_err(|error| error.to_string())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -152,8 +166,7 @@ fn install(
 	adapter: &str,
 	dry_run: bool,
 ) -> Result<(), String> {
-	let text = std::fs::read_to_string(lockfile_path).map_err(|error| format!("{}: {error}", lockfile_path.display()))?;
-	let lockfile: moraine_resolver::Lockfile = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+	let lockfile = read_lockfile(lockfile_path)?;
 	let source: Box<dyn moraine_launcher::BlobSource> = match (blobs, home) {
 		(Some(directory), _) => Box::new(FilesystemBlobs::new(directory)),
 		(None, Some(url)) => Box::new(moraine_launcher::HttpBlobs::new(url, allow_http_local)?),

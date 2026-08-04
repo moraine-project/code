@@ -64,3 +64,9 @@ the ID the feed named. A home that serves a release the project did not
 authorize, or object bytes that do not match the advertised ID, is refused
 rather than resolved. The lockfile records the verified IDs, and the installer
 re-checks artifact bytes against their digests when it installs.
+
+A lockfile also records the feed head it saw per project. Passing a previous
+lockfile when resolving again makes a home whose head is lower than the
+recorded one a hard error, so a home cannot walk a launcher back to an earlier
+view by serving an old feed. Without a previous lockfile there is nothing to
+compare against.

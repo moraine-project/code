@@ -69,6 +69,14 @@ pub struct Lockfile {
 	pub runtime_version: Option<String>,
 	pub side: String,
 	pub releases: Vec<LockedRelease>,
+	#[serde(default)]
+	pub feeds: Vec<LockedFeed>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LockedFeed {
+	pub project_id: String,
+	pub head_seq: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,6 +180,7 @@ pub fn resolve<'a>(request: &Request, context: &Context, candidates: &'a [Candid
 		runtime_version: request.runtime_version.clone(),
 		side: request.side.as_str().to_string(),
 		releases,
+		feeds: Vec::new(),
 	})
 }
 

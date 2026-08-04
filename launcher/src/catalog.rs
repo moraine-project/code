@@ -12,7 +12,7 @@ use moraine_model::signed::SignedObject;
 use moraine_model::trust::{RootSet, verify_key_delegation};
 use moraine_model::verify::{verify_genesis, verify_object_authorized};
 use moraine_model::version::{OrderingScheme, VersionCatalog};
-use moraine_resolver::{Candidate, Context, Lockfile, Request, resolve};
+use moraine_resolver::{Candidate, Context, LockedFeed, Lockfile, Request, resolve};
 use serde_json::Value;
 
 const MAX_PROJECTS: usize = 256;
@@ -103,10 +103,15 @@ const MAX_HOME_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 const FEED_PAGE_LIMIT: i64 = 100;
 const MAX_FEED_PAGES: usize = 200;
 
-pub fn resolve_from_home(fetcher: &dyn HomeFetcher, request: &Request) -> Result<Lockfile, String> {
+pub fn resolve_from_home(
+	fetcher: &dyn HomeFetcher,
+	request: &Request,
+	previous: Option<&Lockfile>,
+) -> Result<Lockfile, String> {
 	let mut queue = vec![request.root_project.clone()];
 	let mut visited = BTreeSet::new();
 	let mut candidates = Vec::new();
+	let mut feeds: Vec<LockedFeed> = Vec::new();
 
 	while let Some(project) = queue.pop() {
 		if !visited.insert(project.clone()) {
@@ -116,7 +121,20 @@ pub fn resolve_from_home(fetcher: &dyn HomeFetcher, request: &Request) -> Result
 			return Err("dependency graph is too large to resolve".to_string());
 		}
 		let trust = project_trust(fetcher, &project)?;
-		let entries = feed_entries(fetcher, &project)?;
+		let (entries, head_seq) = feed_entries(fetcher, &project)?;
+		if let Some(previous) = previous
+			&& let Some(seen) = previous.feeds.iter().find(|feed| feed.project_id == project)
+			&& head_seq < seen.head_seq
+		{
+			return Err(format!(
+				"{project} went backwards from sequence {} to {head_seq}",
+				seen.head_seq
+			));
+		}
+		feeds.push(LockedFeed {
+			project_id: project.clone(),
+			head_seq,
+		});
 		let delegations = project_delegations(fetcher, &entries, &trust.root)?;
 		for entry in &entries {
 			let kind = entry.get("kind").and_then(Value::as_str).unwrap_or_default();
@@ -160,7 +178,9 @@ pub fn resolve_from_home(fetcher: &dyn HomeFetcher, request: &Request) -> Result
 		loader: None,
 		runtime: None,
 	};
-	resolve(request, &context, &candidates).map_err(|error| error.to_string())
+	let mut lockfile = resolve(request, &context, &candidates).map_err(|error| error.to_string())?;
+	lockfile.feeds = feeds;
+	Ok(lockfile)
 }
 
 struct ProjectTrust {
@@ -184,12 +204,13 @@ fn project_trust(fetcher: &dyn HomeFetcher, project: &str) -> Result<ProjectTrus
 	Ok(ProjectTrust { root })
 }
 
-fn feed_entries(fetcher: &dyn HomeFetcher, project: &str) -> Result<Vec<Value>, String> {
+fn feed_entries(fetcher: &dyn HomeFetcher, project: &str) -> Result<(Vec<Value>, i64), String> {
 	let mut entries = Vec::new();
 	let mut after = 0i64;
+	let mut head = 0i64;
 	for _ in 0..MAX_FEED_PAGES {
 		let feed = fetcher.get_json(&format!("/v1/projects/{project}/feed?after={after}&limit={FEED_PAGE_LIMIT}"))?;
-		let head = feed.get("head_seq").and_then(Value::as_i64).unwrap_or(after);
+		head = feed.get("head_seq").and_then(Value::as_i64).unwrap_or(after);
 		let page = feed.get("entries").and_then(Value::as_array).cloned().unwrap_or_default();
 		if page.is_empty() {
 			break;
@@ -204,7 +225,7 @@ fn feed_entries(fetcher: &dyn HomeFetcher, project: &str) -> Result<Vec<Value>, 
 			_ => break,
 		}
 	}
-	Ok(entries)
+	Ok((entries, head))
 }
 
 fn project_delegations(fetcher: &dyn HomeFetcher, entries: &[Value], root: &RootSet) -> Result<Vec<KeyDelegation>, String> {
@@ -396,17 +417,31 @@ mod tests {
 	fn resolves_a_single_release_from_a_home() {
 		let (home, project_id) = signed_home(false);
 		let request = request_for("gd:sha256:game", "1.20.1", &project_id, "client", None, None).expect("request");
-		let lockfile = resolve_from_home(&home, &request).expect("resolve");
+		let lockfile = resolve_from_home(&home, &request, None).expect("resolve");
 		assert_eq!(lockfile.releases.len(), 1);
 		assert_eq!(lockfile.releases[0].human_version, "1.0.0");
 		assert_eq!(lockfile.releases[0].artifact.filename, "example.jar");
+		assert_eq!(lockfile.feeds.len(), 1);
+		assert_eq!(lockfile.feeds[0].head_seq, 1);
 	}
 
 	#[test]
 	fn rejects_a_release_the_home_did_not_authorize() {
 		let (home, project_id) = signed_home(true);
 		let request = request_for("gd:sha256:game", "1.20.1", &project_id, "client", None, None).expect("request");
-		assert!(resolve_from_home(&home, &request).is_err());
+		assert!(resolve_from_home(&home, &request, None).is_err());
+	}
+
+	#[test]
+	fn rejects_a_feed_that_went_backwards() {
+		let (home, project_id) = signed_home(false);
+		let request = request_for("gd:sha256:game", "1.20.1", &project_id, "client", None, None).expect("request");
+		let mut previous = resolve_from_home(&home, &request, None).expect("resolve");
+		previous.feeds[0].head_seq = 5;
+
+		let error = resolve_from_home(&home, &request, Some(&previous)).expect_err("rollback");
+
+		assert!(error.contains("went backwards"), "{error}");
 	}
 
 	#[test]

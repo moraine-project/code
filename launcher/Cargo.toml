@@ -18,7 +18,7 @@ moraine-model = { path = "../model" }
 moraine-resolver = { path = "../resolver" }
 clap.workspace = true
 hex.workspace = true
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "rustls-native-certs", "blocking"] }
 serde_json.workspace = true
 sha2.workspace = true
 

@@ -288,6 +288,7 @@ mod tests {
 			runtime_id: None,
 			runtime_version: None,
 			side: "client".to_string(),
+			feeds: Vec::new(),
 			releases: vec![LockedRelease {
 				project_id: "gd:sha256:project".to_string(),
 				release_id: "gd:sha256:release".to_string(),
