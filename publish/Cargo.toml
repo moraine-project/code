@@ -18,7 +18,7 @@ moraine-crypto = { path = "../crypto" }
 moraine-install = { path = "../install" }
 moraine-metadata = { path = "../metadata" }
 moraine-model = { path = "../model" }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "webpki-roots", "stream"] }
 serde_json.workspace = true
 sha2.workspace = true
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs"] }
