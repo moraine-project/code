@@ -128,6 +128,7 @@ mod tests {
 			max_sync_pages: 200,
 			requests_per_minute: 600,
 			max_concurrent_syncs: 4,
+			tls_extra_roots: None,
 			publishing: crate::config::Publishing::Review,
 			allow_insecure_federation_local: false,
 			web_dir: None,

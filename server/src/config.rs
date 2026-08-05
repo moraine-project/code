@@ -81,6 +81,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_MAX_CONCURRENT_SYNCS", default_value_t = 4)]
 	pub max_concurrent_syncs: u32,
 
+	#[arg(long, env = "MORAINE_TLS_EXTRA_ROOTS")]
+	pub tls_extra_roots: Option<PathBuf>,
+
 	#[arg(long, env = "MORAINE_PUBLISHING", value_enum, default_value_t = Publishing::Review)]
 	pub publishing: Publishing,
 

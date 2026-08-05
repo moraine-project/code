@@ -20,6 +20,8 @@ pub struct Capability {
 	#[serde(skip)]
 	pub allow_insecure_federation_local: bool,
 	#[serde(skip)]
+	pub tls_extra_roots: Vec<reqwest::Certificate>,
+	#[serde(skip)]
 	pub webhook_signer: Option<SigningKey>,
 }
 
@@ -45,6 +47,11 @@ impl Capability {
 			publishing: config.publishing.as_str().to_string(),
 			webhook_public_key,
 			allow_insecure_federation_local: config.allow_insecure_federation_local,
+			tls_extra_roots: config
+				.tls_extra_roots
+				.as_deref()
+				.map(crate::egress::load_extra_roots)
+				.unwrap_or_default(),
 			webhook_signer,
 		}
 	}

@@ -2,6 +2,46 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use reqwest::Url;
 
+pub fn client_builder(extra_roots: &[reqwest::Certificate]) -> reqwest::ClientBuilder {
+	let mut builder = reqwest::Client::builder();
+	for root in extra_roots {
+		builder = builder.add_root_certificate(root.clone());
+	}
+	builder
+}
+
+pub fn load_extra_roots(path: &std::path::Path) -> Vec<reqwest::Certificate> {
+	let Ok(text) = std::fs::read_to_string(path) else {
+		return Vec::new();
+	};
+	pem_blocks(&text)
+		.iter()
+		.filter_map(|block| reqwest::Certificate::from_pem(block.as_bytes()).ok())
+		.collect()
+}
+
+fn pem_blocks(text: &str) -> Vec<String> {
+	const END: &str = "-----END CERTIFICATE-----";
+	let mut blocks = Vec::new();
+	let mut current = String::new();
+	let mut inside = false;
+	for line in text.lines() {
+		if line.contains("-----BEGIN CERTIFICATE-----") {
+			inside = true;
+			current.clear();
+		}
+		if inside {
+			current.push_str(line);
+			current.push('\n');
+		}
+		if inside && line.contains(END) {
+			blocks.push(current.clone());
+			inside = false;
+		}
+	}
+	blocks
+}
+
 pub fn is_public_address(address: IpAddr) -> bool {
 	match address {
 		IpAddr::V4(address) => is_public_v4(address),
@@ -93,6 +133,15 @@ mod tests {
 				"{address} should be accepted"
 			);
 		}
+	}
+
+	#[test]
+	fn splits_pem_bundles() {
+		let text = "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----\nnoise\n-----BEGIN CERTIFICATE-----\nBBB\n-----END CERTIFICATE-----\n";
+		let blocks = pem_blocks(text);
+		assert_eq!(blocks.len(), 2);
+		assert!(blocks[0].contains("AAA"));
+		assert!(blocks[1].contains("BBB"));
 	}
 
 	#[tokio::test]

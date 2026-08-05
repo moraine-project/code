@@ -287,6 +287,7 @@ pub(crate) async fn sync_definition(
 		home_url,
 		state.capability.allow_insecure_federation_local,
 		state.capability.max_response_bytes,
+		&state.capability.tls_extra_roots,
 	)?;
 	let summary = client.get_json::<DefinitionSummary>(&format!("/v1/{kind}s/{id}")).await?;
 	if summary.id != id {
@@ -505,6 +506,7 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 		home_url,
 		state.capability.allow_insecure_federation_local,
 		state.capability.max_response_bytes,
+		&state.capability.tls_extra_roots,
 	)?;
 	let summary = client
 		.get_json::<ProjectSummary>(&format!("/v1/projects/{project_id}"))
@@ -630,9 +632,14 @@ struct HomeClient {
 }
 
 impl HomeClient {
-	fn new(base: &str, allow_http_local: bool, max_response_bytes: u64) -> Result<Self, FederationError> {
+	fn new(
+		base: &str,
+		allow_http_local: bool,
+		max_response_bytes: u64,
+		extra_roots: &[reqwest::Certificate],
+	) -> Result<Self, FederationError> {
 		let url = validate_home(base, allow_http_local)?;
-		let client = reqwest::Client::builder()
+		let client = crate::egress::client_builder(extra_roots)
 			.timeout(Duration::from_secs(10))
 			.redirect(reqwest::redirect::Policy::none())
 			.build()

@@ -240,6 +240,7 @@ pub(crate) async fn app_in(
 		max_sync_pages: 200,
 		requests_per_minute,
 		max_concurrent_syncs: 4,
+		tls_extra_roots: None,
 		allow_insecure_federation_local,
 		publishing,
 		web_dir: None,

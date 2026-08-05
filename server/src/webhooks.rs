@@ -224,7 +224,7 @@ pub async fn deliver_pending(state: &AppState, limit: i64) -> Result<usize, Stri
 		.due_deliveries(now(), limit)
 		.await
 		.map_err(|error| error.to_string())?;
-	let client = reqwest::Client::builder()
+	let client = crate::egress::client_builder(&state.capability.tls_extra_roots)
 		.timeout(Duration::from_secs(15))
 		.redirect(reqwest::redirect::Policy::none())
 		.build()
@@ -440,6 +440,7 @@ mod tests {
 			max_sync_pages: 200,
 			requests_per_minute: 600,
 			max_concurrent_syncs: 4,
+			tls_extra_roots: None,
 			allow_insecure_federation_local: true,
 			publishing: crate::config::Publishing::Open,
 			web_dir: None,

@@ -29,7 +29,10 @@ link-local, shared (carrier-grade NAT), unspecified, or multicast. This keeps a
 publisher-supplied URL from reaching internal services or cloud instance
 metadata. Loopback is permitted only when the operator explicitly enables
 insecure local federation. Redirects are never followed, so a target cannot
-bounce a request to an address that the initial check allowed. A home response
+bounce a request to an address that the initial check allowed. Outbound TLS
+anchors are the bundled public roots; `MORAINE_TLS_EXTRA_ROOTS` names a PEM
+bundle whose certificates are added as additional roots, which is how a
+deployment reaches a home behind a private certificate authority. A home response
 is additionally capped at the advertised `max_response_bytes` budget; the
 worker refuses a response whose declared or streamed length exceeds it.
 
