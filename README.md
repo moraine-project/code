@@ -69,7 +69,7 @@ it. That is what browser authentication needs, because sessions are cookies and
 login is a `POST` the server does not offer to other origins:
 
 ```sh
-cd web && npm run build:static && cd ..
+cd web && pnpm build:static && cd ..
 cargo run -p moraine-server -- --data-dir ./data --web-dir web/build
 ```
 
@@ -199,11 +199,11 @@ Run the website against it:
 
 ```sh
 cd web
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
-`npm run build:static` produces a static site. `npm run build:cloudflare`
+`pnpm build:static` produces a static site. `pnpm build:cloudflare`
 produces a Worker build from the same source. The site reads
 `PUBLIC_MORAINE_REGISTRY` for its default home. The server answers read
 requests with permissive CORS and no credentials, so a static site on another
