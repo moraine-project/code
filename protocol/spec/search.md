@@ -57,9 +57,12 @@ The facets this implementation serves are `game`, `loader`, `category`, and
 `tag`. A project's loader labels come from the loaders its signed releases
 declare, so a loader filter matches a project that has published for it.
 
-Impersonation detection belongs here: a project whose display name or handle
-closely matches a well-known project in the same game while its stable ID
-differs is flagged and shown beside the original, not quietly reordered.
+Impersonation detection begins here: when two results in one game share a
+normalized display name (case and punctuation removed) under different stable
+IDs, both carry a `name-collision` annotation telling the reader to compare
+IDs rather than names. This is a page-local signal, not a check against a
+registry of well-known projects, and results kept apart by pagination are not
+compared.
 
 ## Merging
 

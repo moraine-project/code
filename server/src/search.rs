@@ -5,7 +5,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use moraine_model::Canonical;
 use moraine_model::profile::ProfileRevision;
-use moraine_model::search::{InstancePopularity, ListingState, SearchQuery, SearchResponse, SearchResult};
+use moraine_model::search::{Annotation, InstancePopularity, ListingState, SearchQuery, SearchResponse, SearchResult};
 use serde::Deserialize;
 use sqlx::{QueryBuilder, Row};
 
@@ -91,6 +91,7 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		.and_then(|value| value.to_str().ok())
 		.unwrap_or_default()
 		.to_string();
+	let collisions = name_collisions(&hits);
 	let results: Vec<SearchResult> = hits
 		.iter()
 		.map(|hit| SearchResult {
@@ -103,7 +104,19 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 			matched_release_id: None,
 			listing_state: ListingState::Listed,
 			source_instance: source_instance.clone(),
-			annotations: Vec::new(),
+			annotations: collisions
+				.get(&(hit.game_id.clone(), normalize_name(&hit.display_name)))
+				.map(|others| {
+					vec![Annotation {
+						kind: "name-collision".to_string(),
+						ref_digest: None,
+						label: format!(
+							"{} other project(s) in this game use the same name; compare the IDs, not the names",
+							others
+						),
+					}]
+				})
+				.unwrap_or_default(),
 			instance_popularity: popularities.get(&hit.project_id).map(|value| InstancePopularity {
 				window: "instance-30d".to_string(),
 				value: (*value).max(0) as u64,
@@ -139,6 +152,24 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		total_estimate: None,
 	})
 	.into_response()
+}
+
+fn normalize_name(name: &str) -> String {
+	name.chars()
+		.filter(|character| character.is_alphanumeric())
+		.flat_map(|character| character.to_lowercase())
+		.collect()
+}
+
+fn name_collisions(hits: &[SearchHit]) -> std::collections::HashMap<(String, String), usize> {
+	let mut counts: std::collections::HashMap<(String, String), usize> = std::collections::HashMap::new();
+	for hit in hits {
+		*counts
+			.entry((hit.game_id.clone(), normalize_name(&hit.display_name)))
+			.or_insert(0) += 1;
+	}
+	counts.retain(|_, count| *count > 1);
+	counts.into_iter().map(|(key, count)| (key, count - 1)).collect()
 }
 
 #[derive(Debug, Clone)]
@@ -387,4 +418,42 @@ fn now() -> i64 {
 		.duration_since(std::time::UNIX_EPOCH)
 		.map(|duration| duration.as_secs() as i64)
 		.unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn hit(game: &str, name: &str, id: &str) -> SearchHit {
+		SearchHit {
+			project_id: id.to_string(),
+			game_id: game.to_string(),
+			display_name: name.to_string(),
+			summary: String::new(),
+			updated_at: 0,
+			created_at: 0,
+			popularity: 0,
+		}
+	}
+
+	#[test]
+	fn flags_the_same_name_within_one_game() {
+		let hits = vec![
+			hit("game", "Example Mod", "a"),
+			hit("game", "example-mod", "b"),
+			hit("game", "Unrelated", "c"),
+		];
+
+		let collisions = name_collisions(&hits);
+
+		assert_eq!(collisions.len(), 1);
+		assert_eq!(collisions.get(&("game".to_string(), "examplemod".to_string())), Some(&1));
+	}
+
+	#[test]
+	fn does_not_flag_the_same_name_across_games() {
+		let hits = vec![hit("one", "Example", "a"), hit("two", "Example", "b")];
+
+		assert!(name_collisions(&hits).is_empty());
+	}
 }

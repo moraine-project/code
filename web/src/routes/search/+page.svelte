@@ -93,6 +93,9 @@
 						<p class="text-base-content/80 text-sm">{result.summary}</p>
 						<div class="flex flex-wrap items-center gap-2">
 							<Digest value={result.project_id} label="the project id" length={12} />
+							{#each result.annotations ?? [] as annotation (annotation.kind)}
+								<span class="badge badge-warning badge-sm" role="note">{annotation.label}</span>
+							{/each}
 							{#if result.instance_popularity}
 								<span class="badge badge-ghost badge-sm">
 									{result.instance_popularity.value} downloads and follows, this instance
