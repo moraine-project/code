@@ -4,6 +4,27 @@
 
 	let { children } = $props();
 
+	let menu = $state<HTMLDetailsElement | null>(null);
+
+	function dismiss(event: MouseEvent) {
+		if (menu?.open && !menu.contains(event.target as Node)) {
+			menu.open = false;
+		}
+	}
+
+	function onKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape' && menu?.open) {
+			menu.open = false;
+			menu.focus();
+		}
+	}
+
+	function close() {
+		if (menu) {
+			menu.open = false;
+		}
+	}
+
 	const links = [
 		['/games', 'Browse'],
 		['/search', 'Search'],
@@ -22,6 +43,8 @@
 	<link rel="icon" href={favicon} />
 	<title>Moraine</title>
 </svelte:head>
+
+<svelte:window onclick={dismiss} onkeydown={onKeydown} />
 
 <div class="min-h-screen bg-base-100">
 	<a
@@ -42,11 +65,11 @@
 			<span class="badge badge-ghost">federated registry</span>
 		</div>
 		<div class="navbar-end lg:hidden">
-			<details class="dropdown dropdown-end">
+			<details class="dropdown dropdown-end" bind:this={menu}>
 				<summary class="btn btn-ghost" aria-label="Open navigation">Menu</summary>
 				<ul class="menu menu-sm dropdown-content bg-base-100 rounded-box z-50 mt-3 w-52 p-2 shadow">
 					{#each links as [href, label] (href)}
-						<li><a {href}>{label}</a></li>
+						<li><a {href} onclick={close}>{label}</a></li>
 					{/each}
 				</ul>
 			</details>
