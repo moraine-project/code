@@ -1,6 +1,43 @@
+use std::path::Path;
 use std::time::Duration;
 
 use reqwest::Url;
+
+fn extra_roots(path: &Path) -> Result<Vec<reqwest::Certificate>, String> {
+	let text = std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
+	let blocks = pem_blocks(&text);
+	if blocks.is_empty() {
+		return Err(format!("{}: no certificates found", path.display()));
+	}
+	blocks
+		.iter()
+		.map(|block| {
+			reqwest::Certificate::from_pem(block.as_bytes()).map_err(|error| format!("{}: {error}", path.display()))
+		})
+		.collect()
+}
+
+fn pem_blocks(text: &str) -> Vec<String> {
+	const END: &str = "-----END CERTIFICATE-----";
+	let mut blocks = Vec::new();
+	let mut current = String::new();
+	let mut inside = false;
+	for line in text.lines() {
+		if line.contains("-----BEGIN CERTIFICATE-----") {
+			inside = true;
+			current.clear();
+		}
+		if inside {
+			current.push_str(line);
+			current.push('\n');
+		}
+		if inside && line.contains(END) {
+			blocks.push(current.clone());
+			inside = false;
+		}
+	}
+	blocks
+}
 
 pub struct Home {
 	client: reqwest::Client,
@@ -15,9 +52,9 @@ impl Home {
 		}
 		let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(30));
 		if let Ok(path) = std::env::var("MORAINE_TLS_EXTRA_ROOTS") {
-			let text = std::fs::read_to_string(&path).map_err(|error| format!("{path}: {error}"))?;
-			let certificate = reqwest::Certificate::from_pem(text.as_bytes()).map_err(|error| format!("{path}: {error}"))?;
-			builder = builder.add_root_certificate(certificate);
+			for certificate in extra_roots(Path::new(&path))? {
+				builder = builder.add_root_certificate(certificate);
+			}
 		}
 		let client = builder.build().map_err(|error| error.to_string())?;
 		Ok(Self {
@@ -109,4 +146,23 @@ async fn read_json(response: reqwest::Response) -> Result<serde_json::Value, Str
 		return Err(format!("home returned {status}: {text}"));
 	}
 	serde_json::from_str(&text).map_err(|error| format!("home returned non-JSON: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn splits_a_bundle_into_blocks() {
+		let text = "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----\nnoise\n-----BEGIN CERTIFICATE-----\nBBB\n-----END CERTIFICATE-----\n";
+		assert_eq!(pem_blocks(text).len(), 2);
+	}
+
+	#[test]
+	fn rejects_a_file_with_no_certificates() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let path = directory.path().join("roots.pem");
+		std::fs::write(&path, "not a certificate").expect("write");
+		assert!(extra_roots(&path).is_err());
+	}
 }
