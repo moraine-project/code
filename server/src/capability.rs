@@ -47,14 +47,21 @@ impl Capability {
 			publishing: config.publishing.as_str().to_string(),
 			webhook_public_key,
 			allow_insecure_federation_local: config.allow_insecure_federation_local,
-			tls_extra_roots: config
-				.tls_extra_roots
-				.as_deref()
-				.map(crate::egress::load_extra_roots)
-				.unwrap_or_default(),
+			tls_extra_roots: extra_roots(config),
 			webhook_signer,
 		}
 	}
+}
+
+fn extra_roots(config: &Config) -> Vec<reqwest::Certificate> {
+	let Some(path) = config.tls_extra_roots.as_deref() else {
+		return Vec::new();
+	};
+	let (roots, skipped) = crate::egress::load_extra_roots(path);
+	if skipped > 0 {
+		tracing::warn!(path = %path.display(), skipped, "some TLS roots were not parsed");
+	}
+	roots
 }
 
 fn load_or_create_webhook_key(config: &Config) -> Option<SigningKey> {

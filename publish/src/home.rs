@@ -13,10 +13,13 @@ impl Home {
 		if url.scheme() != "https" && url.scheme() != "http" {
 			return Err(format!("home url must use http or https, not `{}`", url.scheme()));
 		}
-		let client = reqwest::Client::builder()
-			.timeout(Duration::from_secs(30))
-			.build()
-			.map_err(|error| error.to_string())?;
+		let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(30));
+		if let Ok(path) = std::env::var("MORAINE_TLS_EXTRA_ROOTS") {
+			let text = std::fs::read_to_string(&path).map_err(|error| format!("{path}: {error}"))?;
+			let certificate = reqwest::Certificate::from_pem(text.as_bytes()).map_err(|error| format!("{path}: {error}"))?;
+			builder = builder.add_root_certificate(certificate);
+		}
+		let client = builder.build().map_err(|error| error.to_string())?;
 		Ok(Self {
 			client,
 			base: base.trim_end_matches('/').to_string(),

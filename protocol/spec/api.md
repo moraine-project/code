@@ -32,7 +32,9 @@ insecure local federation. Redirects are never followed, so a target cannot
 bounce a request to an address that the initial check allowed. Outbound TLS
 anchors are the bundled public roots; `MORAINE_TLS_EXTRA_ROOTS` names a PEM
 bundle whose certificates are added as additional roots, which is how a
-deployment reaches a home behind a private certificate authority. A home response
+deployment reaches a home behind a private certificate authority. The server
+reads a bundle and reports how many certificates it could not parse; the
+publishing CLI reads the same variable and expects a single certificate. A home response
 is additionally capped at the advertised `max_response_bytes` budget; the
 worker refuses a response whose declared or streamed length exceeds it.
 

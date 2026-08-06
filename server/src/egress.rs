@@ -10,14 +10,22 @@ pub fn client_builder(extra_roots: &[reqwest::Certificate]) -> reqwest::ClientBu
 	builder
 }
 
-pub fn load_extra_roots(path: &std::path::Path) -> Vec<reqwest::Certificate> {
-	let Ok(text) = std::fs::read_to_string(path) else {
-		return Vec::new();
+pub fn load_extra_roots(path: &std::path::Path) -> (Vec<reqwest::Certificate>, usize) {
+	let text = match std::fs::read_to_string(path) {
+		Ok(text) => text,
+		Err(error) => {
+			tracing::warn!(path = %path.display(), %error, "extra TLS roots were not read");
+			return (Vec::new(), 0);
+		}
 	};
-	pem_blocks(&text)
+	let blocks = pem_blocks(&text);
+	let total = blocks.len();
+	let roots: Vec<reqwest::Certificate> = blocks
 		.iter()
 		.filter_map(|block| reqwest::Certificate::from_pem(block.as_bytes()).ok())
-		.collect()
+		.collect();
+	let skipped = total.saturating_sub(roots.len());
+	(roots, skipped)
 }
 
 fn pem_blocks(text: &str) -> Vec<String> {
