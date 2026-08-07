@@ -91,7 +91,17 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		.and_then(|value| value.to_str().ok())
 		.unwrap_or_default()
 		.to_string();
-	let collisions = name_collisions(&hits);
+	let keys: Vec<(String, String)> = hits
+		.iter()
+		.map(|hit| (hit.game_id.clone(), normalize_name(&hit.display_name)))
+		.collect();
+	let collisions = match state.metadata.name_collision_counts(&keys).await {
+		Ok(collisions) => collisions,
+		Err(error) => {
+			tracing::error!(%error, "name collision lookup failed");
+			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
+		}
+	};
 	let results: Vec<SearchResult> = hits
 		.iter()
 		.map(|hit| SearchResult {
@@ -106,13 +116,14 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 			source_instance: source_instance.clone(),
 			annotations: collisions
 				.get(&(hit.game_id.clone(), normalize_name(&hit.display_name)))
-				.map(|others| {
+				.filter(|count| **count > 1)
+				.map(|count| {
 					vec![Annotation {
 						kind: "name-collision".to_string(),
 						ref_digest: None,
 						label: format!(
-							"{} other project(s) in this game use the same name; compare the IDs, not the names",
-							others
+							"{} projects in this game share this name; compare the IDs, not the names",
+							count
 						),
 					}]
 				})
@@ -161,17 +172,6 @@ fn normalize_name(name: &str) -> String {
 		.collect()
 }
 
-fn name_collisions(hits: &[SearchHit]) -> std::collections::HashMap<(String, String), usize> {
-	let mut counts: std::collections::HashMap<(String, String), usize> = std::collections::HashMap::new();
-	for hit in hits {
-		*counts
-			.entry((hit.game_id.clone(), normalize_name(&hit.display_name)))
-			.or_insert(0) += 1;
-	}
-	counts.retain(|_, count| *count > 1);
-	counts.into_iter().map(|(key, count)| (key, count - 1)).collect()
-}
-
 #[derive(Debug, Clone)]
 pub struct SearchHit {
 	pub project_id: String,
@@ -217,14 +217,16 @@ impl MetadataStore {
 	pub async fn put_search_document(&self, document: SearchDocument<'_>) -> Result<(), sqlx::Error> {
 		let mut transaction = self.pool.begin().await?;
 		sqlx::query(
-			"INSERT INTO search_documents (project_id, game_id, display_name, summary, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)
-			 ON CONFLICT(project_id) DO UPDATE SET game_id = ?2, display_name = ?3, summary = ?4, updated_at = ?5",
+			"INSERT INTO search_documents (project_id, game_id, display_name, summary, updated_at, created_at, normalized_name)
+			 VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)
+			 ON CONFLICT(project_id) DO UPDATE SET game_id = ?2, display_name = ?3, summary = ?4, updated_at = ?5, normalized_name = ?6",
 		)
 		.bind(document.project_id)
 		.bind(document.game_id)
 		.bind(document.display_name)
 		.bind(document.summary)
 		.bind(document.updated_at)
+		.bind(normalize_name(document.display_name))
 		.execute(&mut *transaction)
 		.await?;
 		sqlx::query("DELETE FROM search_labels WHERE project_id = ?1 AND label_kind IN ('category', 'tag')")
@@ -243,6 +245,35 @@ impl MetadataStore {
 		}
 		transaction.commit().await?;
 		Ok(())
+	}
+
+	pub async fn name_collision_counts(
+		&self,
+		keys: &[(String, String)],
+	) -> Result<std::collections::HashMap<(String, String), i64>, sqlx::Error> {
+		let mut counts = std::collections::HashMap::new();
+		if keys.is_empty() {
+			return Ok(counts);
+		}
+		let mut sql = String::from(
+			"SELECT game_id, normalized_name, COUNT(*) AS total FROM search_documents
+			 WHERE (game_id, normalized_name) IN (",
+		);
+		for index in 0..keys.len() {
+			if index > 0 {
+				sql.push(',');
+			}
+			sql.push_str("(?, ?)");
+		}
+		sql.push_str(") GROUP BY game_id, normalized_name");
+		let mut query = sqlx::query(&sql);
+		for (game_id, name) in keys {
+			query = query.bind(game_id).bind(name);
+		}
+		for row in query.fetch_all(&self.pool).await? {
+			counts.insert((row.get("game_id"), row.get("normalized_name")), row.get("total"));
+		}
+		Ok(counts)
 	}
 
 	pub async fn add_search_labels(&self, project_id: &str, label_kind: &str, labels: &[String]) -> Result<(), sqlx::Error> {
@@ -424,36 +455,42 @@ fn now() -> i64 {
 mod tests {
 	use super::*;
 
-	fn hit(game: &str, name: &str, id: &str) -> SearchHit {
-		SearchHit {
-			project_id: id.to_string(),
-			game_id: game.to_string(),
-			display_name: name.to_string(),
-			summary: String::new(),
-			updated_at: 0,
-			created_at: 0,
-			popularity: 0,
+	#[tokio::test]
+	async fn counts_same_names_across_the_whole_index() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = MetadataStore::open(directory.path().join("metadata.sqlite"))
+			.await
+			.expect("store");
+		for (id, name, game) in [
+			("a", "Example Mod", "game"),
+			("b", "example-mod", "game"),
+			("c", "Example Mod", "other"),
+		] {
+			store
+				.put_search_document(SearchDocument {
+					project_id: id,
+					game_id: game,
+					display_name: name,
+					summary: "",
+					categories: &[],
+					tags: &[],
+					updated_at: 0,
+				})
+				.await
+				.expect("document");
 		}
-	}
 
-	#[test]
-	fn flags_the_same_name_within_one_game() {
-		let hits = vec![
-			hit("game", "Example Mod", "a"),
-			hit("game", "example-mod", "b"),
-			hit("game", "Unrelated", "c"),
-		];
+		let counts = store
+			.name_collision_counts(&[
+				("game".to_string(), "examplemod".to_string()),
+				("other".to_string(), "examplemod".to_string()),
+				("game".to_string(), "unrelated".to_string()),
+			])
+			.await
+			.expect("counts");
 
-		let collisions = name_collisions(&hits);
-
-		assert_eq!(collisions.len(), 1);
-		assert_eq!(collisions.get(&("game".to_string(), "examplemod".to_string())), Some(&1));
-	}
-
-	#[test]
-	fn does_not_flag_the_same_name_across_games() {
-		let hits = vec![hit("one", "Example", "a"), hit("two", "Example", "b")];
-
-		assert!(name_collisions(&hits).is_empty());
+		assert_eq!(counts.get(&("game".to_string(), "examplemod".to_string())), Some(&2));
+		assert_eq!(counts.get(&("other".to_string(), "examplemod".to_string())), Some(&1));
+		assert_eq!(counts.get(&("game".to_string(), "unrelated".to_string())), None);
 	}
 }

@@ -60,9 +60,10 @@ declare, so a loader filter matches a project that has published for it.
 Impersonation detection begins here: when two results in one game share a
 normalized display name (case and punctuation removed) under different stable
 IDs, both carry a `name-collision` annotation telling the reader to compare
-IDs rather than names. This is a page-local signal, not a check against a
-registry of well-known projects, and results kept apart by pagination are not
-compared.
+IDs rather than names. The comparison runs against the whole index through a stored
+normalized name, not just the returned page, so two projects separated by
+pagination are still flagged. It is not a check against a registry of
+well-known projects.
 
 ## Merging
 

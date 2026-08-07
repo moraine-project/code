@@ -100,7 +100,8 @@ CREATE TABLE IF NOT EXISTS search_documents (
 	display_name TEXT NOT NULL,
 	summary TEXT NOT NULL,
 	updated_at INTEGER NOT NULL,
-	created_at INTEGER NOT NULL DEFAULT 0
+	created_at INTEGER NOT NULL DEFAULT 0,
+	normalized_name TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS search_labels (
 	project_id TEXT NOT NULL,
@@ -329,6 +330,7 @@ impl MetadataStore {
 		sqlx::raw_sql(SCHEMA).execute(&pool).await?;
 		ensure_column(&pool, "submissions", "assigned_to", "TEXT").await?;
 		ensure_column(&pool, "search_documents", "created_at", "INTEGER NOT NULL DEFAULT 0").await?;
+		ensure_column(&pool, "search_documents", "normalized_name", "TEXT NOT NULL DEFAULT ''").await?;
 		ensure_column(&pool, "subscriptions", "remote_head_seq", "INTEGER NOT NULL DEFAULT 0").await?;
 		ensure_column(&pool, "subscriptions", "reset_count", "INTEGER NOT NULL DEFAULT 0").await?;
 		Ok(Self { pool })
