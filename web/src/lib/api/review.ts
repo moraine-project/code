@@ -11,7 +11,7 @@ export const submissionSchema = z.object({
 	assigned_to: z.string().nullable().optional(),
 	submitted_by: z.string(),
 	created_at: z.number(),
-	updated_at: z.number()
+	updated_at: z.number(),
 });
 
 export type Submission = z.infer<typeof submissionSchema>;
@@ -26,7 +26,7 @@ export const reasonCodes = [
 	'spam',
 	'fork-detected',
 	'broken',
-	'author-request'
+	'author-request',
 ] as const;
 
 export async function reviewQueue(): Promise<Submission[]> {
@@ -41,7 +41,9 @@ export async function reviewQueue(): Promise<Submission[]> {
 }
 
 export async function assign(id: string): Promise<void> {
-	const response = await authorizedFetch(`/v1/submissions/${encodeURIComponent(id)}/assign`, { method: 'POST' });
+	const response = await authorizedFetch(`/v1/submissions/${encodeURIComponent(id)}/assign`, {
+		method: 'POST',
+	});
 	if (!response.ok) {
 		throw new Error(await failure(response));
 	}
@@ -50,12 +52,12 @@ export async function assign(id: string): Promise<void> {
 export async function decide(
 	id: string,
 	decision: 'accept' | 'reject' | 'quarantine',
-	reasonCode?: string
+	reasonCode?: string,
 ): Promise<void> {
 	const response = await authorizedFetch(`/v1/submissions/${encodeURIComponent(id)}/review`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ decision, reason_code: reasonCode ?? null })
+		body: JSON.stringify({ decision, reason_code: reasonCode ?? null }),
 	});
 	if (!response.ok) {
 		throw new Error(await failure(response));
@@ -68,12 +70,12 @@ export const decisionSchema = z.object({
 	reason_taxonomy_version: z.number(),
 	reviewer_id: z.string(),
 	decided_at: z.number(),
-	appeal_route: z.string().nullable().optional()
+	appeal_route: z.string().nullable().optional(),
 });
 
 export const submissionDetailSchema = z.object({
 	submission: submissionSchema,
-	decisions: z.array(decisionSchema)
+	decisions: z.array(decisionSchema),
 });
 
 export type Decision = z.infer<typeof decisionSchema>;

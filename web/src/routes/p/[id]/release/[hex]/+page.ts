@@ -8,7 +8,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 		const base = normalizeBase(home);
 		const [summary, release] = await Promise.all([
 			fetchProject(base, params.id, fetch),
-			fetchRelease(base, params.id, params.hex, fetch)
+			fetchRelease(base, params.id, params.hex, fetch),
 		]);
 		return {
 			home: base,
@@ -16,7 +16,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 			hex: params.hex,
 			summary,
 			release,
-			error: release === null ? 'No such release on this home.' : null
+			error: release === null ? 'No such release on this home.' : null,
 		};
 	} catch (cause) {
 		return {
@@ -25,7 +25,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 			hex: params.hex,
 			summary: null,
 			release: null,
-			error: cause instanceof Error ? cause.message : 'the release could not be loaded'
+			error: cause instanceof Error ? cause.message : 'the release could not be loaded',
 		};
 	}
 };

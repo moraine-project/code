@@ -65,7 +65,10 @@
 				<li class="card card-border">
 					<div class="card-body flex-row items-center justify-between gap-2 py-3">
 						<div>
-							<a class="link link-hover font-semibold" href={`/orgs/${encodeURIComponent(org.handle)}`}>
+							<a
+								class="link link-hover font-semibold"
+								href={`/orgs/${encodeURIComponent(org.handle)}`}
+							>
 								{org.display_name}
 							</a>
 							<span class="text-base-content/60 font-mono text-xs">{org.handle}</span>
@@ -93,7 +96,12 @@
 				</label>
 				<label class="form-control">
 					<span class="label-text">Display name</span>
-					<input class="input input-bordered" bind:value={displayName} required aria-label="Organization display name" />
+					<input
+						class="input input-bordered"
+						bind:value={displayName}
+						required
+						aria-label="Organization display name"
+					/>
 				</label>
 				<button class="btn" type="submit" disabled={creating}>Create</button>
 			</form>

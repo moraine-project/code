@@ -27,7 +27,9 @@
 		checkResult = null;
 		try {
 			const actual = await fileSha256(file);
-			const match = data.release.artifacts.some((artifact) => digestHex(artifact.digest) === actual);
+			const match = data.release.artifacts.some(
+				(artifact) => digestHex(artifact.digest) === actual,
+			);
 			checkResult = { file: file.name, match };
 		} finally {
 			checking = false;
@@ -40,7 +42,10 @@
 </svelte:head>
 
 <div class="flex flex-col gap-6">
-	<a class="link link-hover w-fit" href={`/p/${encodeURIComponent(data.projectId)}?home=${encodeURIComponent(data.home)}`}>
+	<a
+		class="link link-hover w-fit"
+		href={`/p/${encodeURIComponent(data.projectId)}?home=${encodeURIComponent(data.home)}`}
+	>
 		← Back to project
 	</a>
 
@@ -51,9 +56,9 @@
 			<div role="alert" class="alert alert-warning">
 				<span>
 					<strong>{advisory.provider_id}</strong>
-					reports {advisory.severity} {advisory.category}{advisory.block_promotion
-						? ' and blocks promotion'
-						: ''}. Evidence, not a verdict.
+					reports {advisory.severity}
+					{advisory.category}{advisory.block_promotion ? ' and blocks promotion' : ''}. Evidence,
+					not a verdict.
 				</span>
 			</div>
 		{/each}
@@ -65,8 +70,8 @@
 					— {data.release.withdrawal.reason}{data.release.withdrawal.note
 						? `: ${data.release.withdrawal.note}`
 						: ''}
-					({formatTime(data.release.withdrawal.declared_time)}). The release record and its
-					digest are unchanged.
+					({formatTime(data.release.withdrawal.declared_time)}). The release record and its digest
+					are unchanged.
 				</span>
 			</div>
 		{/if}
@@ -81,7 +86,9 @@
 						<span class="badge">{data.release.license_expression}</span>
 					{/if}
 				</div>
-				<p class="text-base-content/60 text-sm">Declared {formatTime(data.release.declared_time)}</p>
+				<p class="text-base-content/60 text-sm">
+					Declared {formatTime(data.release.declared_time)}
+				</p>
 			</div>
 		</section>
 
@@ -107,7 +114,12 @@
 											<span class="badge badge-ghost badge-sm">primary</span>
 										{/if}
 									</td>
-									<td><Digest value={artifact.digest} label={`the ${artifact.filename} digest`} /></td>
+									<td
+										><Digest
+											value={artifact.digest}
+											label={`the ${artifact.filename} digest`}
+										/></td
+									>
 									<td>{formatBytes(artifact.size)}</td>
 									<td>
 										<a class="btn btn-sm" href={blobUrl(data.home, artifact.digest)}>Download</a>
@@ -203,7 +215,9 @@
 				<div class="card-body">
 					<h2 class="card-title">Rights</h2>
 					<ul class="flex flex-wrap gap-2 text-sm">
-						<li class="badge badge-outline">redistribution: {data.release.rights.redistribution}</li>
+						<li class="badge badge-outline">
+							redistribution: {data.release.rights.redistribution}
+						</li>
 						<li class="badge badge-outline">modpacks: {data.release.rights.modpack_inclusion}</li>
 						<li class="badge badge-outline">mirroring: {data.release.rights.mirroring}</li>
 						{#if data.release.rights.attribution_required}

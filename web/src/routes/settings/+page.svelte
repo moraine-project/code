@@ -1,7 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
-	import { follow, resync, resetCursor, subscriptions, unfollow, type Subscription } from '$lib/api/federation';
+	import {
+		follow,
+		resync,
+		resetCursor,
+		subscriptions,
+		unfollow,
+		type Subscription,
+	} from '$lib/api/federation';
 	import Digest from '$lib/components/Digest.svelte';
 
 	let homes = $state<Subscription[]>([]);
@@ -98,8 +105,8 @@
 			<h2 class="card-title">Chosen directory</h2>
 			<p class="text-base-content/80 text-sm">
 				{#if PUBLIC_MORAINE_REGISTRY}
-					This build resolves through <strong>{PUBLIC_MORAINE_REGISTRY}</strong> unless a page is
-					given another home. A deployment can point elsewhere by setting that value at build time.
+					This build resolves through <strong>{PUBLIC_MORAINE_REGISTRY}</strong> unless a page is given
+					another home. A deployment can point elsewhere by setting that value at build time.
 				{:else}
 					This build has no default directory. Pages fall back to whatever home they are given.
 				{/if}

@@ -56,7 +56,7 @@
 			versions,
 			`--version ${version || '<version>'}`,
 			`--channel ${channel}`,
-			`--file ${file?.name ?? '<artifact>'}${loaderFlag}`
+			`--file ${file?.name ?? '<artifact>'}${loaderFlag}`,
 		]
 			.filter(Boolean)
 			.join(' \\\n  ');
@@ -70,7 +70,7 @@
 				'moraine-publish publish --key publisher.key',
 				`--home ${origin}`,
 				`--project ${project}`,
-				'--object <release-id>'
+				'--object <release-id>',
 			].join(' \\\n  ');
 		}
 		return [
@@ -78,7 +78,7 @@
 			`--home ${origin}`,
 			`--project ${project}`,
 			'--object <release-id>',
-			'--api-key $MORAINE_API_KEY'
+			'--api-key $MORAINE_API_KEY',
 		].join(' \\\n  ');
 	}
 
@@ -122,9 +122,8 @@
 			</div>
 			{#if receipt}
 				<p class="text-sm">
-					Stored as <span class="font-mono">{receipt.digest}</span> ({receipt.size} bytes). The
-					release must record this exact digest; <code>moraine-publish</code> computes it from the
-					same file.
+					Stored as <span class="font-mono">{receipt.digest}</span> ({receipt.size} bytes). The release
+					must record this exact digest; <code>moraine-publish</code> computes it from the same file.
 				</p>
 			{/if}
 		</div>

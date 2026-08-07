@@ -5,12 +5,12 @@ export const projectSummarySchema = z.object({
 	genesis: z.string(),
 	head_seq: z.number(),
 	head_entry: z.string().nullable().optional(),
-	profile: z.string().nullable().optional()
+	profile: z.string().nullable().optional(),
 });
 
 export const linkSchema = z.object({
 	kind: z.string(),
-	url: z.string()
+	url: z.string(),
 });
 
 export const profileSchema = z.object({
@@ -22,7 +22,7 @@ export const profileSchema = z.object({
 	tags: z.array(z.string()),
 	links: z.array(linkSchema),
 	communities: z.array(linkSchema),
-	revision: z.string()
+	revision: z.string(),
 });
 
 export const feedEntrySchema = z.object({
@@ -32,26 +32,26 @@ export const feedEntrySchema = z.object({
 	object: z.string(),
 	entry: z.string(),
 	declared_at: z.number(),
-	previous: z.string().nullable().optional()
+	previous: z.string().nullable().optional(),
 });
 
 export const feedPageSchema = z.object({
 	project_id: z.string(),
 	head_seq: z.number(),
 	entries: z.array(feedEntrySchema),
-	next: z.number().nullable().optional()
+	next: z.number().nullable().optional(),
 });
 
 export const lookupMatchSchema = z.object({
 	project_id: z.string(),
 	release: z.string(),
 	human_version: z.string().nullable().optional(),
-	filename: z.string().nullable().optional()
+	filename: z.string().nullable().optional(),
 });
 
 export const digestLookupSchema = z.object({
 	digest: z.string(),
-	matches: z.array(lookupMatchSchema)
+	matches: z.array(lookupMatchSchema),
 });
 
 export const artifactSchema = z.object({
@@ -59,33 +59,33 @@ export const artifactSchema = z.object({
 	size: z.number(),
 	media_type: z.string(),
 	filename: z.string(),
-	is_primary: z.boolean()
+	is_primary: z.boolean(),
 });
 
 export const compatibilitySchema = z.object({
 	scheme: z.string(),
 	values: z.array(z.string()),
 	loader_id: z.string().nullable().optional(),
-	side: z.string()
+	side: z.string(),
 });
 
 export const dependencySchema = z.object({
 	target_kind: z.string(),
 	target_id: z.string(),
-	kind: z.string()
+	kind: z.string(),
 });
 
 export const rightsSchema = z.object({
 	redistribution: z.string(),
 	modpack_inclusion: z.string(),
 	mirroring: z.string(),
-	attribution_required: z.boolean()
+	attribution_required: z.boolean(),
 });
 
 export const withdrawalSchema = z.object({
 	reason: z.string(),
 	note: z.string().nullable().optional(),
-	declared_time: z.number()
+	declared_time: z.number(),
 });
 
 export const advisorySchema = z.object({
@@ -97,7 +97,7 @@ export const advisorySchema = z.object({
 	block_promotion: z.boolean(),
 	affected_digest: z.string().nullable().optional(),
 	published_at: z.number(),
-	retracted_at: z.number().nullable().optional()
+	retracted_at: z.number().nullable().optional(),
 });
 
 export const releaseSchema = z.object({
@@ -112,7 +112,7 @@ export const releaseSchema = z.object({
 	dependencies: z.array(dependencySchema),
 	rights: rightsSchema.nullable().optional(),
 	withdrawal: withdrawalSchema.nullable().optional(),
-	advisories: z.array(advisorySchema).optional()
+	advisories: z.array(advisorySchema).optional(),
 });
 
 export const searchResultSchema = z.object({
@@ -123,27 +123,22 @@ export const searchResultSchema = z.object({
 	icon_url: z.string().nullable().optional(),
 	listing_state: z.string(),
 	source_instance: z.string(),
-	annotations: z
-		.array(z.object({ kind: z.string(), label: z.string() }))
-		.optional(),
-	instance_popularity: z
-		.object({ window: z.string(), value: z.number() })
-		.nullable()
-		.optional()
+	annotations: z.array(z.object({ kind: z.string(), label: z.string() })).optional(),
+	instance_popularity: z.object({ window: z.string(), value: z.number() }).nullable().optional(),
 });
 
 export const searchResponseSchema = z.object({
 	protocol: z.number(),
 	results: z.array(searchResultSchema),
 	next_cursor: z.string().nullable().optional(),
-	total_estimate: z.number().nullable().optional()
+	total_estimate: z.number().nullable().optional(),
 });
 
 export const definitionSummarySchema = z.object({
 	id: z.string(),
 	kind: z.string(),
 	current: z.string().nullable().optional(),
-	display_name: z.string().nullable().optional()
+	display_name: z.string().nullable().optional(),
 });
 
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
@@ -166,8 +161,14 @@ export function normalizeBase(base: string): string {
 	return trimmed;
 }
 
-export async function fetchProject(base: string, projectId: string, fetchFn: Fetcher = fetch): Promise<ProjectSummary> {
-	const response = await fetchFn(`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}`);
+export async function fetchProject(
+	base: string,
+	projectId: string,
+	fetchFn: Fetcher = fetch,
+): Promise<ProjectSummary> {
+	const response = await fetchFn(
+		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}`,
+	);
 	if (!response.ok) {
 		throw new Error(`home returned ${response.status} for the project`);
 	}
@@ -177,9 +178,11 @@ export async function fetchProject(base: string, projectId: string, fetchFn: Fet
 export async function fetchProfile(
 	base: string,
 	projectId: string,
-	fetchFn: Fetcher = fetch
+	fetchFn: Fetcher = fetch,
 ): Promise<Profile | null> {
-	const response = await fetchFn(`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/profile`);
+	const response = await fetchFn(
+		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/profile`,
+	);
 	if (response.status === 404) {
 		return null;
 	}
@@ -194,10 +197,10 @@ export async function fetchFeed(
 	projectId: string,
 	after = 0,
 	limit = 50,
-	fetchFn: Fetcher = fetch
+	fetchFn: Fetcher = fetch,
 ): Promise<FeedPage> {
 	const response = await fetchFn(
-		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/feed?after=${after}&limit=${limit}`
+		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/feed?after=${after}&limit=${limit}`,
 	);
 	if (!response.ok) {
 		throw new Error(`home returned ${response.status} for the feed`);
@@ -205,7 +208,11 @@ export async function fetchFeed(
 	return feedPageSchema.parse(await response.json());
 }
 
-export async function fetchObject(base: string, objectId: string, fetchFn: Fetcher = fetch): Promise<Uint8Array> {
+export async function fetchObject(
+	base: string,
+	objectId: string,
+	fetchFn: Fetcher = fetch,
+): Promise<Uint8Array> {
 	const hex = objectId.startsWith('gd:sha256:') ? objectId.slice('gd:sha256:'.length) : objectId;
 	const response = await fetchFn(`${normalizeBase(base)}/v1/objects/${hex}`);
 	if (!response.ok) {
@@ -214,8 +221,14 @@ export async function fetchObject(base: string, objectId: string, fetchFn: Fetch
 	return new Uint8Array(await response.arrayBuffer());
 }
 
-export async function lookupDigest(base: string, digest: string, fetchFn: Fetcher = fetch): Promise<DigestLookup> {
-	const response = await fetchFn(`${normalizeBase(base)}/v1/lookup?sha256=${encodeURIComponent(digest.trim())}`);
+export async function lookupDigest(
+	base: string,
+	digest: string,
+	fetchFn: Fetcher = fetch,
+): Promise<DigestLookup> {
+	const response = await fetchFn(
+		`${normalizeBase(base)}/v1/lookup?sha256=${encodeURIComponent(digest.trim())}`,
+	);
 	if (!response.ok) {
 		throw new Error(`home returned ${response.status} for the digest`);
 	}
@@ -233,7 +246,7 @@ export async function searchProjects(
 		sort?: string;
 		limit?: number;
 	},
-	fetchFn: Fetcher = fetch
+	fetchFn: Fetcher = fetch,
 ): Promise<SearchResult[]> {
 	const params = new URLSearchParams();
 	if (query.q) params.set('q', query.q);
@@ -253,7 +266,7 @@ export async function searchProjects(
 export async function listDefinitions(
 	base: string,
 	kind: 'games' | 'loaders' | 'runtimes',
-	fetchFn: Fetcher = fetch
+	fetchFn: Fetcher = fetch,
 ): Promise<DefinitionSummary[]> {
 	const response = await fetchFn(`${normalizeBase(base)}/v1/${kind}`);
 	if (!response.ok) {
@@ -266,9 +279,11 @@ export async function fetchRelease(
 	base: string,
 	projectId: string,
 	hex: string,
-	fetchFn: Fetcher = fetch
+	fetchFn: Fetcher = fetch,
 ): Promise<Release | null> {
-	const response = await fetchFn(`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/releases/${hex}`);
+	const response = await fetchFn(
+		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/releases/${hex}`,
+	);
 	if (response.status === 404) {
 		return null;
 	}
@@ -294,7 +309,7 @@ export async function fileSha256(file: File): Promise<string> {
 
 export const uploadReceiptSchema = z.object({
 	digest: z.string(),
-	size: z.number()
+	size: z.number(),
 });
 
 export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
@@ -303,7 +318,7 @@ export async function uploadBlob(file: File, fetchFn: Fetcher = fetch): Promise<
 	const response = await fetchFn('/v1/blobs', {
 		method: 'POST',
 		headers: { 'content-type': 'application/octet-stream' },
-		body: file
+		body: file,
 	});
 	if (!response.ok) {
 		throw new Error(`upload failed (${response.status})`);

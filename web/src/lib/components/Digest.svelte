@@ -6,7 +6,7 @@
 		value,
 		label = 'digest',
 		length = 16,
-		copyOnly = false
+		copyOnly = false,
 	}: { value: string; label?: string; length?: number; copyOnly?: boolean } = $props();
 	let copied = $state(false);
 	let timer: ReturnType<typeof setTimeout> | undefined;

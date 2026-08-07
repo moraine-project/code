@@ -23,7 +23,7 @@ export const load: PageLoad = async ({ url, fetch }) => {
 			loader,
 			sort,
 			results: [],
-			error: cause instanceof Error ? cause.message : 'the search failed'
+			error: cause instanceof Error ? cause.message : 'the search failed',
 		};
 	}
 };

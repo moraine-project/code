@@ -9,7 +9,7 @@ export const notificationSchema = z.object({
 	object: z.string().nullable().optional(),
 	feed_seq: z.number().nullable().optional(),
 	created_at: z.number(),
-	read: z.boolean()
+	read: z.boolean(),
 });
 
 export type Notification = z.infer<typeof notificationSchema>;
@@ -26,7 +26,9 @@ export async function notifications(unread = false): Promise<Notification[]> {
 }
 
 export async function readNotification(id: string): Promise<void> {
-	const response = await authorizedFetch(`/v1/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
+	const response = await authorizedFetch(`/v1/notifications/${encodeURIComponent(id)}/read`, {
+		method: 'POST',
+	});
 	if (!response.ok) {
 		throw new Error(await failure(response));
 	}

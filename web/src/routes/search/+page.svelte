@@ -14,7 +14,7 @@
 		['updated', 'Recently updated'],
 		['created', 'Recently added'],
 		['popularity', 'Most downloaded here'],
-		['name', 'Name']
+		['name', 'Name'],
 	] as const;
 
 	function sortParam(): string {
@@ -66,7 +66,12 @@
 
 	<label class="form-control w-fit">
 		<span class="label-text">Sort</span>
-		<select class="select select-bordered select-sm" bind:value={sort} onchange={submit} aria-label="Sort results">
+		<select
+			class="select select-bordered select-sm"
+			bind:value={sort}
+			onchange={submit}
+			aria-label="Sort results"
+		>
 			{#each sorts as [value, label] (value)}
 				<option {value}>{label}</option>
 			{/each}

@@ -9,7 +9,7 @@
 		removeOrgMember,
 		type OrgDetail,
 		type OrgMember,
-		type OrgTeam
+		type OrgTeam,
 	} from '$lib/api/orgs';
 	import type { PageProps } from './$types';
 
@@ -28,14 +28,19 @@
 
 	const canManage = $derived(role === 'owner' || role === 'admin');
 	const rootTeams = $derived(detail?.teams.filter((team) => !team.parent_team_id) ?? []);
-	const childrenOf = (parentId: string) => detail?.teams.filter((team) => team.parent_team_id === parentId) ?? [];
+	const childrenOf = (parentId: string) =>
+		detail?.teams.filter((team) => team.parent_team_id === parentId) ?? [];
 
 	onMount(load);
 
 	async function load() {
 		loading = true;
 		try {
-			const [org, people, mine] = await Promise.all([orgDetail(params.handle), orgMembers(params.handle), myOrgs()]);
+			const [org, people, mine] = await Promise.all([
+				orgDetail(params.handle),
+				orgMembers(params.handle),
+				myOrgs(),
+			]);
 			detail = org;
 			members = people;
 			role = mine.find((entry) => entry.handle === org.handle)?.role ?? null;
@@ -146,11 +151,21 @@
 					<form class="flex flex-wrap items-end gap-3" onsubmit={addMember}>
 						<label class="form-control">
 							<span class="label-text">Account email</span>
-							<input class="input input-bordered" type="email" bind:value={email} required aria-label="Member email" />
+							<input
+								class="input input-bordered"
+								type="email"
+								bind:value={email}
+								required
+								aria-label="Member email"
+							/>
 						</label>
 						<label class="form-control">
 							<span class="label-text">Role</span>
-							<select class="select select-bordered" bind:value={memberRole} aria-label="Member role">
+							<select
+								class="select select-bordered"
+								bind:value={memberRole}
+								aria-label="Member role"
+							>
 								<option value="member">member</option>
 								<option value="admin">admin</option>
 								<option value="owner">owner</option>
@@ -194,11 +209,20 @@
 					<form class="flex flex-wrap items-end gap-3" onsubmit={addTeam}>
 						<label class="form-control">
 							<span class="label-text">Team name</span>
-							<input class="input input-bordered" bind:value={teamName} required aria-label="Team name" />
+							<input
+								class="input input-bordered"
+								bind:value={teamName}
+								required
+								aria-label="Team name"
+							/>
 						</label>
 						<label class="form-control">
 							<span class="label-text">Parent team</span>
-							<select class="select select-bordered" bind:value={parentTeamId} aria-label="Parent team">
+							<select
+								class="select select-bordered"
+								bind:value={parentTeamId}
+								aria-label="Parent team"
+							>
 								<option value="">none</option>
 								{#each detail.teams as team (team.id)}
 									<option value={team.id}>{team.display_name}</option>

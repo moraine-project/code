@@ -72,7 +72,12 @@
 							{#each [...data.profile.links, ...data.profile.communities] as link (link.url)}
 								<li>
 									<span class="text-base-content/60">{link.kind}</span>
-									<a class="link link-hover break-all" href={link.url} rel="noreferrer noopener" target="_blank">
+									<a
+										class="link link-hover break-all"
+										href={link.url}
+										rel="noreferrer noopener"
+										target="_blank"
+									>
 										{link.url}
 									</a>
 								</li>
@@ -130,9 +135,9 @@
 
 		<div role="alert" class="alert alert-info">
 			<span>
-				This page fetched live data from <strong>{data.home}</strong> and checked that it parses.
-				It did not verify signatures. Run the verifier CLI against the files you download to check
-				the publisher's signature and the artifact digest.
+				This page fetched live data from <strong>{data.home}</strong> and checked that it parses. It did
+				not verify signatures. Run the verifier CLI against the files you download to check the publisher's
+				signature and the artifact digest.
 			</span>
 		</div>
 	{/if}

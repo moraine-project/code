@@ -70,8 +70,8 @@
 		<div class="card-body">
 			<h2 class="card-title">Find a release by file digest</h2>
 			<p class="text-base-content/80 text-sm">
-				Have a JAR or ZIP of unknown origin? Its SHA-256 points back to the release that
-				published it.
+				Have a JAR or ZIP of unknown origin? Its SHA-256 points back to the release that published
+				it.
 			</p>
 			<form class="join w-full" onsubmit={lookup}>
 				<input
@@ -119,8 +119,8 @@
 			<div class="card-body">
 				<h3 class="card-title text-base">Signed by the publisher</h3>
 				<p class="text-base-content/80 text-sm">
-					A release is addressed by digest and signed by a key the project's root authorized. A
-					home cannot forge it.
+					A release is addressed by digest and signed by a key the project's root authorized. A home
+					cannot forge it.
 				</p>
 			</div>
 		</div>
@@ -137,8 +137,8 @@
 			<div class="card-body">
 				<h3 class="card-title text-base">Verified on your machine</h3>
 				<p class="text-base-content/80 text-sm">
-					This page shows what the home claims. Independent verification happens with the
-					verifier CLI, on the bytes you actually download.
+					This page shows what the home claims. Independent verification happens with the verifier
+					CLI, on the bytes you actually download.
 				</p>
 			</div>
 		</div>

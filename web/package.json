@@ -1,7 +1,7 @@
 {
 	"name": "moraine-web",
-	"private": true,
 	"version": "0.1.0",
+	"private": true,
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -11,7 +11,14 @@
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"lint": "oxlint",
+		"lint:fix": "oxlint --fix",
+		"fmt": "oxfmt",
+		"fmt:check": "oxfmt --check"
+	},
+	"dependencies": {
+		"zod": "^4.0.0"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-cloudflare": "^7.0.0",
@@ -21,13 +28,12 @@
 		"@tailwindcss/vite": "^4.0.0",
 		"@types/node": "^26.6.0",
 		"daisyui": "^5.0.0",
+		"oxfmt": "^0.68.0",
+		"oxlint": "^1.83.0",
 		"svelte": "^5.56.1",
 		"svelte-check": "^4.6.0",
 		"tailwindcss": "^4.0.0",
 		"typescript": "^6.0.3",
 		"vite": "^8.0.16"
-	},
-	"dependencies": {
-		"zod": "^4.0.0"
 	}
 }

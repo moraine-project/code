@@ -30,7 +30,10 @@
 		more = true;
 		try {
 			const last = items.at(-1)?.submission;
-			const page = await mySubmissions(pageSize, last ? `${last.created_at}:${last.id}` : undefined);
+			const page = await mySubmissions(
+				pageSize,
+				last ? `${last.created_at}:${last.id}` : undefined,
+			);
 			items = items.concat(page);
 			hasMore = page.length === pageSize;
 		} catch (cause) {
@@ -52,9 +55,9 @@
 <div class="flex flex-col gap-6">
 	<h1 class="text-2xl font-bold">Your submissions</h1>
 	<p class="text-base-content/80 max-w-2xl">
-		Acceptance is this home's listing decision, not a safety guarantee. A rejection keeps the
-		signed record for audit and states a reason; it does not change what your keys authorize, and
-		you can publish the same signed release through another home.
+		Acceptance is this home's listing decision, not a safety guarantee. A rejection keeps the signed
+		record for audit and states a reason; it does not change what your keys authorize, and you can
+		publish the same signed release through another home.
 	</p>
 
 	{#if error}
@@ -76,7 +79,9 @@
 								<span class="badge badge-outline">{item.submission.state}</span>
 								<Digest value={item.submission.object} label="the object id" />
 							</div>
-							<span class="text-base-content/60 text-sm">{formatTime(item.submission.created_at)}</span>
+							<span class="text-base-content/60 text-sm"
+								>{formatTime(item.submission.created_at)}</span
+							>
 						</div>
 						{#each item.decisions as decision (decision.decided_at)}
 							<p class="text-base-content/80 text-sm">

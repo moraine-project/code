@@ -8,7 +8,7 @@ export const load: PageLoad = async ({ fetch }) => {
 		const base = normalizeBase(home);
 		const [games, loaders] = await Promise.all([
 			listDefinitions(base, 'games', fetch),
-			listDefinitions(base, 'loaders', fetch)
+			listDefinitions(base, 'loaders', fetch),
 		]);
 		return { home: base, games, loaders, error: null };
 	} catch (cause) {
@@ -16,7 +16,7 @@ export const load: PageLoad = async ({ fetch }) => {
 			home,
 			games: [] as DefinitionSummary[],
 			loaders: [] as DefinitionSummary[],
-			error: cause instanceof Error ? cause.message : 'the definitions could not be read'
+			error: cause instanceof Error ? cause.message : 'the definitions could not be read',
 		};
 	}
 };

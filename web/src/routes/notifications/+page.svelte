@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { shortDigest } from '$lib/api/registry';
-	import { follows, notifications, readAll, readNotification, type Notification } from '$lib/api/notifications';
+	import {
+		follows,
+		notifications,
+		readAll,
+		readNotification,
+		type Notification,
+	} from '$lib/api/notifications';
 	import Digest from '$lib/components/Digest.svelte';
 
 	let items = $state<Notification[]>([]);
@@ -84,7 +90,9 @@
 						{#if item.read}
 							<span class="badge badge-ghost">read</span>
 						{:else}
-							<button class="btn btn-sm btn-outline" onclick={() => markRead(item)}>Mark read</button>
+							<button class="btn btn-sm btn-outline" onclick={() => markRead(item)}
+								>Mark read</button
+							>
 						{/if}
 					</div>
 				</li>

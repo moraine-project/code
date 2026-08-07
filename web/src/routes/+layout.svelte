@@ -35,7 +35,7 @@
 		['/account', 'Account'],
 		['/settings', 'Settings'],
 		['/about', 'About'],
-		['/security', 'Security']
+		['/security', 'Security'],
 	] as const;
 </script>
 

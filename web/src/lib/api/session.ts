@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const accountSchema = z.object({
 	user_id: z.string(),
 	email: z.string(),
-	via: z.string()
+	via: z.string(),
 });
 
 export type Account = z.infer<typeof accountSchema>;
@@ -37,7 +37,7 @@ export async function login(email: string, password: string): Promise<void> {
 	const response = await authorizedFetch('/v1/auth/session', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ email, password })
+		body: JSON.stringify({ email, password }),
 	});
 	if (!response.ok) {
 		throw new Error(await failure(response));
@@ -48,7 +48,7 @@ export async function register(email: string, password: string): Promise<void> {
 	const response = await authorizedFetch('/v1/auth/register', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ email, password })
+		body: JSON.stringify({ email, password }),
 	});
 	if (!response.ok) {
 		throw new Error(await failure(response));
