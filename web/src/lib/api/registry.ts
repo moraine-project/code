@@ -123,6 +123,7 @@ export const searchResultSchema = z.object({
 	icon_url: z.string().nullable().optional(),
 	listing_state: z.string(),
 	source_instance: z.string(),
+	home: z.string().nullable().optional(),
 	annotations: z.array(z.object({ kind: z.string(), label: z.string() })).optional(),
 	instance_popularity: z.object({ window: z.string(), value: z.number() }).nullable().optional(),
 });

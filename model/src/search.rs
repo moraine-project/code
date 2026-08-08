@@ -64,6 +64,8 @@ pub struct SearchResult {
 	pub matched_release_id: Option<String>,
 	pub listing_state: ListingState,
 	pub source_instance: String,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub home: Option<String>,
 	#[serde(default)]
 	pub annotations: Vec<Annotation>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
@@ -170,6 +172,7 @@ mod tests {
 			matched_release_id: None,
 			listing_state: state,
 			source_instance: instance.to_string(),
+			home: None,
 			annotations: Vec::new(),
 			instance_popularity: None,
 		}

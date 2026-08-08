@@ -98,6 +98,15 @@
 						<p class="text-base-content/80 text-sm">{result.summary}</p>
 						<div class="flex flex-wrap items-center gap-2">
 							<Digest value={result.project_id} label="the project id" length={12} />
+							{#if result.home}
+								<span class="text-base-content/60 text-xs">
+									home: <a
+										class="link link-hover"
+										href={`/p/${encodeURIComponent(result.project_id)}?home=${encodeURIComponent(result.home)}`}
+										>{result.home}</a
+									>
+								</span>
+							{/if}
 							{#each result.annotations ?? [] as annotation (annotation.kind)}
 								<span class="badge badge-warning badge-sm" role="note">{annotation.label}</span>
 							{/each}

@@ -86,6 +86,13 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
 		}
 	};
+	let homes = match state.metadata.project_homes(&project_ids).await {
+		Ok(homes) => homes,
+		Err(error) => {
+			tracing::error!(%error, "home lookup failed");
+			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
+		}
+	};
 	let source_instance = headers
 		.get(header::HOST)
 		.and_then(|value| value.to_str().ok())
@@ -114,6 +121,7 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 			matched_release_id: None,
 			listing_state: ListingState::Listed,
 			source_instance: source_instance.clone(),
+			home: homes.get(&hit.project_id).cloned(),
 			annotations: collisions
 				.get(&(hit.game_id.clone(), normalize_name(&hit.display_name)))
 				.filter(|count| **count > 1)
@@ -245,6 +253,32 @@ impl MetadataStore {
 		}
 		transaction.commit().await?;
 		Ok(())
+	}
+
+	pub async fn project_homes(
+		&self,
+		project_ids: &[String],
+	) -> Result<std::collections::HashMap<String, String>, sqlx::Error> {
+		let mut homes = std::collections::HashMap::new();
+		if project_ids.is_empty() {
+			return Ok(homes);
+		}
+		let mut sql = String::from("SELECT project_id, home_url FROM subscriptions WHERE project_id IN (");
+		for index in 0..project_ids.len() {
+			if index > 0 {
+				sql.push(',');
+			}
+			sql.push('?');
+		}
+		sql.push(')');
+		let mut query = sqlx::query(&sql);
+		for project_id in project_ids {
+			query = query.bind(project_id);
+		}
+		for row in query.fetch_all(&self.pool).await? {
+			homes.insert(row.get("project_id"), row.get("home_url"));
+		}
+		Ok(homes)
 	}
 
 	pub async fn name_collision_counts(
@@ -492,5 +526,27 @@ mod tests {
 		assert_eq!(counts.get(&("game".to_string(), "examplemod".to_string())), Some(&2));
 		assert_eq!(counts.get(&("other".to_string(), "examplemod".to_string())), Some(&1));
 		assert_eq!(counts.get(&("game".to_string(), "unrelated".to_string())), None);
+	}
+}
+
+#[cfg(test)]
+mod home_tests {
+	use super::*;
+
+	#[tokio::test]
+	async fn reports_the_home_a_project_was_followed_from() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = MetadataStore::open(directory.path().join("metadata.sqlite"))
+			.await
+			.expect("store");
+		store
+			.upsert_subscription("https://home.example", "p", "active", 1)
+			.await
+			.expect("subscribe");
+
+		let homes = store.project_homes(&["p".to_string(), "q".to_string()]).await.expect("homes");
+
+		assert_eq!(homes.get("p"), Some(&"https://home.example".to_string()));
+		assert_eq!(homes.get("q"), None);
 	}
 }
