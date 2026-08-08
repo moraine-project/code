@@ -276,7 +276,7 @@ impl MetadataStore {
 			query = query.bind(project_id);
 		}
 		for row in query.fetch_all(&self.pool).await? {
-			homes.insert(row.get("project_id"), row.get("home_url"));
+			homes.entry(row.get("project_id")).or_insert_with(|| row.get("home_url"));
 		}
 		Ok(homes)
 	}
@@ -540,13 +540,17 @@ mod home_tests {
 			.await
 			.expect("store");
 		store
-			.upsert_subscription("https://home.example", "p", "active", 1)
+			.upsert_subscription("https://older.example", "p", "active", 1)
+			.await
+			.expect("subscribe");
+		store
+			.upsert_subscription("https://newer.example", "p", "active", 5)
 			.await
 			.expect("subscribe");
 
 		let homes = store.project_homes(&["p".to_string(), "q".to_string()]).await.expect("homes");
 
-		assert_eq!(homes.get("p"), Some(&"https://home.example".to_string()));
+		assert_eq!(homes.get("p"), Some(&"https://newer.example".to_string()));
 		assert_eq!(homes.get("q"), None);
 	}
 }

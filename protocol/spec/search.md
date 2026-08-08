@@ -15,7 +15,9 @@ A result carries the project and game IDs, display name, summary, optional
 icon and release IDs, a listing state, the source instance, annotations, and
 an optional instance popularity. It also carries `home`, the home URL a
 federation subscription recorded for the project, when this instance followed
-it from elsewhere; a project served locally has no recorded home.
+it from elsewhere; a project served locally has no recorded home. When a
+project is followed from several homes, the most recently synced one is
+reported.
 
 Mapping a project ID to a result and a result to its source is what makes the
 shape portable across directories.
