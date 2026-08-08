@@ -188,8 +188,11 @@ material, not by trusting the home's summary. `GET /v1/projects/{id}/feed?after=
 bounded page of entries. Each entry carries a human `title` derived from the
 referenced object (a release's version and channel, a profile's display name,
 an advisory's severity and category, a delegation's purpose), so a page can say
-what changed without fetching every object. The title is a convenience for
-display; the object digest next to it is the fact. `GET /v1/objects/{hex}` returns the exact signed wire
+what changed without fetching every object. A release entry also carries a
+`release` summary with its channel, game ID, and the loaders its compatibility
+entries declare, so a client can filter a feed by loader without fetching each
+release. Both are conveniences for display; the object digest next to them is
+the fact. `GET /v1/objects/{hex}` returns the exact signed wire
 bytes with immutable caching, and supports `HEAD` and single byte ranges, so a
 large object can be resumed like a blob. A `416` reports an unsatisfiable
 range.

@@ -418,6 +418,32 @@ fn serve_bytes(bytes: Vec<u8>, headers: &HeaderMap, head: bool) -> Response {
 	response
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct ReleaseSummary {
+	pub channel: String,
+	pub game_id: String,
+	pub loaders: Vec<String>,
+}
+
+pub(crate) fn summarize_release(object: &StoredObject) -> Option<ReleaseSummary> {
+	let release = match moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload) {
+		Ok(moraine_model::release::ReleaseObject::Release(release)) => release,
+		_ => return None,
+	};
+	let mut loaders: Vec<String> = release
+		.compatibility
+		.iter()
+		.filter_map(|entry| entry.loader_id.clone())
+		.collect();
+	loaders.sort();
+	loaders.dedup();
+	Some(ReleaseSummary {
+		channel: release.channel,
+		game_id: release.game_id,
+		loaders,
+	})
+}
+
 pub(crate) fn describe_stored(object: &StoredObject) -> Option<String> {
 	match object.kind.as_str() {
 		"release" => match moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload) {

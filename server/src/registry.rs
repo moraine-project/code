@@ -68,6 +68,7 @@ struct FeedEntryView {
 	seq: i64,
 	kind: String,
 	title: Option<String>,
+	release: Option<crate::views::ReleaseSummary>,
 	object: String,
 	entry: String,
 	declared_at: i64,
@@ -423,14 +424,15 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 		let declared_at = FeedEntry::from_canonical_bytes(&row.payload)
 			.map(|entry| entry.declared_at)
 			.unwrap_or(0);
-		let title = match state.metadata.object(&row.object_digest).await {
-			Ok(Some(object)) => describe_stored(&object),
-			_ => None,
+		let (title, release) = match state.metadata.object(&row.object_digest).await {
+			Ok(Some(object)) => (describe_stored(&object), crate::views::summarize_release(&object)),
+			_ => (None, None),
 		};
 		entries.push(FeedEntryView {
 			seq: row.seq,
 			kind: row.kind.clone(),
 			title,
+			release,
 			object: id_for(&row.object_digest),
 			entry: id_for(&row.entry_digest),
 			declared_at,

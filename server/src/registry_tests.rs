@@ -47,6 +47,9 @@ async fn publishes_project_object_and_feed_end_to_end() {
 	assert_eq!(page["entries"].as_array().expect("entries").len(), 1);
 	assert_eq!(page["head_seq"], 1);
 	assert_eq!(page["entries"][0]["title"], "1.0.0 (release)");
+	assert_eq!(page["entries"][0]["release"]["channel"], "release");
+	assert_eq!(page["entries"][0]["release"]["game_id"], sample_id("minecraft"));
+	assert_eq!(page["entries"][0]["release"]["loaders"].as_array().expect("loaders").len(), 1);
 
 	let object_path = format!("/v1/objects/{}", hex::encode(release_digest));
 	let request = axum::http::Request::get(&object_path).body(Body::empty()).expect("request");

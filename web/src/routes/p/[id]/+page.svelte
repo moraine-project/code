@@ -4,6 +4,18 @@
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+	let loader = $state('');
+
+	const loaders = $derived(
+		Array.from(
+			new Set(data.feed?.entries.flatMap((entry) => entry.release?.loaders ?? []) ?? []),
+		).toSorted(),
+	);
+	const entries = $derived(
+		(data.feed?.entries ?? []).filter(
+			(entry) => loader.length === 0 || (entry.release?.loaders ?? []).includes(loader),
+		),
+	);
 
 	function formatTime(seconds: number): string {
 		return new Date(seconds * 1000).toLocaleString();
@@ -91,8 +103,28 @@
 		<section class="card card-border">
 			<div class="card-body">
 				<h2 class="card-title">Feed</h2>
+				{#if loaders.length > 0}
+					<label class="form-control w-fit">
+						<span class="label-text">Loader</span>
+						<select
+							class="select select-bordered select-sm"
+							bind:value={loader}
+							aria-label="Filter by loader"
+						>
+							<option value="">any</option>
+							{#each loaders as id (id)}
+								<option value={id}>{id}</option>
+							{/each}
+						</select>
+					</label>
+					<p class="text-base-content/60 text-sm">
+						Filtering uses the loaders each release declares; it does not evaluate version ranges.
+					</p>
+				{/if}
 				{#if data.feed.entries.length === 0}
 					<p class="text-base-content/80 text-sm">No feed entries yet.</p>
+				{:else if entries.length === 0}
+					<p class="text-base-content/80 text-sm">No feed entry declares that loader.</p>
 				{:else}
 					<div class="overflow-x-auto">
 						<table class="table table-sm">
@@ -106,7 +138,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each data.feed.entries as entry (entry.entry)}
+								{#each entries as entry (entry.entry)}
 									<tr>
 										<td>{entry.seq}</td>
 										<td>{entry.kind}</td>

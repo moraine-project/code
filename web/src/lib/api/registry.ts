@@ -25,10 +25,17 @@ export const profileSchema = z.object({
 	revision: z.string(),
 });
 
+export const releaseSummarySchema = z.object({
+	channel: z.string(),
+	game_id: z.string(),
+	loaders: z.array(z.string()),
+});
+
 export const feedEntrySchema = z.object({
 	seq: z.number(),
 	kind: z.string(),
 	title: z.string().nullable().optional(),
+	release: releaseSummarySchema.nullable().optional(),
 	object: z.string(),
 	entry: z.string(),
 	declared_at: z.number(),
