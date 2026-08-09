@@ -205,10 +205,15 @@ export async function fetchFeed(
 	projectId: string,
 	after = 0,
 	limit = 50,
+	gameVersion?: string,
 	fetchFn: Fetcher = fetch,
 ): Promise<FeedPage> {
+	const params = new URLSearchParams({ after: String(after), limit: String(limit) });
+	if (gameVersion) {
+		params.set('game_version', gameVersion);
+	}
 	const response = await fetchFn(
-		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/feed?after=${after}&limit=${limit}`,
+		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/feed?${params.toString()}`,
 	);
 	if (!response.ok) {
 		throw new Error(`home returned ${response.status} for the feed`);

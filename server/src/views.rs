@@ -425,6 +425,23 @@ pub(crate) struct ReleaseSummary {
 	pub loaders: Vec<String>,
 }
 
+pub(crate) fn release_matches_game_version(
+	object: &StoredObject,
+	version: &str,
+	scheme: moraine_model::version::OrderingScheme,
+) -> bool {
+	use moraine_model::Canonical;
+	let Ok(moraine_model::release::ReleaseObject::Release(release)) =
+		moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload)
+	else {
+		return false;
+	};
+	let catalog = moraine_model::version::VersionCatalog::new(scheme, Vec::new());
+	release.compatibility.iter().any(|entry| {
+		catalog.evaluate(&entry.game_version_predicate, version) == moraine_model::compatibility::PredicateResult::Satisfied
+	})
+}
+
 pub(crate) fn summarize_release(object: &StoredObject) -> Option<ReleaseSummary> {
 	let release = match moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload) {
 		Ok(moraine_model::release::ReleaseObject::Release(release)) => release,

@@ -3,6 +3,7 @@ import { fetchFeed, fetchProfile, fetchProject, normalizeBase } from '$lib/api/r
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ params, url, fetch }) => {
+	const gameVersion = url.searchParams.get('game_version') ?? undefined;
 	const requested = url.searchParams.get('home') ?? PUBLIC_MORAINE_REGISTRY ?? '';
 	let base: string;
 	try {
@@ -11,6 +12,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 		return {
 			home: requested,
 			projectId: params.id,
+			gameVersion: gameVersion ?? '',
 			summary: null,
 			profile: null,
 			feed: null,
@@ -20,14 +22,23 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 	try {
 		const [summary, feed, profile] = await Promise.all([
 			fetchProject(base, params.id, fetch),
-			fetchFeed(base, params.id, 0, 50, fetch),
+			fetchFeed(base, params.id, 0, 50, gameVersion, fetch),
 			fetchProfile(base, params.id, fetch).catch(() => null),
 		]);
-		return { home: base, projectId: params.id, summary, profile, feed, error: null };
+		return {
+			home: base,
+			projectId: params.id,
+			gameVersion: gameVersion ?? '',
+			summary,
+			profile,
+			feed,
+			error: null,
+		};
 	} catch (cause) {
 		return {
 			home: base,
 			projectId: params.id,
+			gameVersion: gameVersion ?? '',
 			summary: null,
 			profile: null,
 			feed: null,

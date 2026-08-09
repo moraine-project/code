@@ -1,10 +1,20 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { shortDigest } from '$lib/api/registry';
 	import Digest from '$lib/components/Digest.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 	let loader = $state('');
+	let gameVersion = $state(untrack(() => data.gameVersion));
+
+	function applyGameVersion() {
+		const params = new URLSearchParams();
+		if (data.home) params.set('home', data.home);
+		if (gameVersion.trim()) params.set('game_version', gameVersion.trim());
+		goto(`/p/${encodeURIComponent(data.projectId)}?${params.toString()}`);
+	}
 
 	const loaders = $derived(
 		Array.from(
@@ -103,6 +113,27 @@
 		<section class="card card-border">
 			<div class="card-body">
 				<h2 class="card-title">Feed</h2>
+				<form
+					class="flex flex-wrap items-end gap-3"
+					onsubmit={(event) => {
+						event.preventDefault();
+						applyGameVersion();
+					}}
+				>
+					<label class="form-control">
+						<span class="label-text">Game version</span>
+						<input
+							class="input input-bordered input-sm"
+							bind:value={gameVersion}
+							placeholder="1.20.1"
+							aria-label="Filter by game version"
+						/>
+					</label>
+					<button class="btn btn-sm" type="submit">Apply</button>
+				</form>
+				<p class="text-base-content/60 text-sm">
+					The game version filter runs on the home and uses the game's declared version ordering.
+				</p>
 				{#if loaders.length > 0}
 					<label class="form-control w-fit">
 						<span class="label-text">Loader</span>

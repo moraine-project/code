@@ -88,6 +88,8 @@ struct FeedQuery {
 	#[serde(default)]
 	after: i64,
 	limit: Option<i64>,
+	#[serde(default)]
+	game_version: Option<String>,
 }
 
 async fn create_project(State(state): State<AppState>, body: Bytes) -> Response {
@@ -420,12 +422,32 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 		Err(error) => return storage_error(error),
 	};
 	let mut entries = Vec::with_capacity(rows.len());
+	let mut scheme = None;
 	for row in &rows {
 		let declared_at = FeedEntry::from_canonical_bytes(&row.payload)
 			.map(|entry| entry.declared_at)
 			.unwrap_or(0);
-		let (title, release) = match state.metadata.object(&row.object_digest).await {
-			Ok(Some(object)) => (describe_stored(&object), crate::views::summarize_release(&object)),
+		let object = match state.metadata.object(&row.object_digest).await {
+			Ok(Some(object)) => Some(object),
+			_ => None,
+		};
+		if let (Some(version), Some(object)) = (query.game_version.as_deref(), object.as_ref())
+			&& object.kind == "release"
+		{
+			let ordering = match scheme {
+				Some(ordering) => ordering,
+				None => {
+					let resolved = game_ordering(&state, object).await;
+					scheme = Some(resolved);
+					resolved
+				}
+			};
+			if !crate::views::release_matches_game_version(object, version, ordering) {
+				continue;
+			}
+		}
+		let (title, release) = match object.as_ref() {
+			Some(object) => (describe_stored(object), crate::views::summarize_release(object)),
 			_ => (None, None),
 		};
 		entries.push(FeedEntryView {
@@ -515,6 +537,33 @@ pub(crate) fn stored(object: &verify::VerifiedObject) -> StoredObject {
 
 pub(crate) fn id_for(digest: &[u8]) -> String {
 	format!("gd:sha256:{}", hex::encode(digest))
+}
+
+async fn game_ordering(state: &AppState, object: &crate::store::StoredObject) -> moraine_model::version::OrderingScheme {
+	use moraine_model::Canonical;
+	use moraine_model::version::OrderingScheme;
+	let Some(release) = moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload)
+		.ok()
+		.and_then(|release| match release {
+			moraine_model::release::ReleaseObject::Release(release) => Some(release),
+			_ => None,
+		})
+	else {
+		return OrderingScheme::Semver;
+	};
+	let Some(definition) = state.metadata.definition(&release.game_id).await.ok().flatten() else {
+		return OrderingScheme::Semver;
+	};
+	let Some(current) = definition.current_digest else {
+		return OrderingScheme::Semver;
+	};
+	let Some(object) = state.metadata.object(&current).await.ok().flatten() else {
+		return OrderingScheme::Semver;
+	};
+	moraine_model::definition::GameDef::from_canonical_bytes(&object.payload)
+		.ok()
+		.and_then(|definition| OrderingScheme::parse(&definition.version_ordering))
+		.unwrap_or(OrderingScheme::Semver)
 }
 
 pub(crate) fn parse_hex_digest(value: &str) -> Option<[u8; 32]> {

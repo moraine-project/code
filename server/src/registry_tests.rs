@@ -51,6 +51,20 @@ async fn publishes_project_object_and_feed_end_to_end() {
 	assert_eq!(page["entries"][0]["release"]["game_id"], sample_id("minecraft"));
 	assert_eq!(page["entries"][0]["release"]["loaders"].as_array().expect("loaders").len(), 1);
 
+	let matching = axum::http::Request::get(format!("/v1/projects/{project_id}/feed?game_version=1.20.1"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(matching).await.expect("response");
+	let page = body_json(response).await;
+	assert_eq!(page["entries"].as_array().expect("entries").len(), 1);
+
+	let other = axum::http::Request::get(format!("/v1/projects/{project_id}/feed?game_version=1.19.0"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(other).await.expect("response");
+	let page = body_json(response).await;
+	assert!(page["entries"].as_array().expect("entries").is_empty());
+
 	let object_path = format!("/v1/objects/{}", hex::encode(release_digest));
 	let request = axum::http::Request::get(&object_path).body(Body::empty()).expect("request");
 	let response = application.oneshot(request).await.expect("response");
