@@ -83,6 +83,8 @@ struct FeedPage {
 	next: Option<i64>,
 }
 
+const MAX_FILTER_PAGES: usize = 50;
+
 #[derive(Deserialize)]
 struct FeedQuery {
 	#[serde(default)]
@@ -417,51 +419,71 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 		.limit
 		.unwrap_or(state.capability.max_feed_page_entries as i64)
 		.clamp(1, state.capability.max_feed_page_entries as i64);
-	let rows = match state.metadata.feed_after(&id, query.after, limit).await {
-		Ok(rows) => rows,
-		Err(error) => return storage_error(error),
-	};
-	let mut entries = Vec::with_capacity(rows.len());
+	let mut entries = Vec::with_capacity(limit as usize);
 	let mut scheme = None;
-	for row in &rows {
-		let declared_at = FeedEntry::from_canonical_bytes(&row.payload)
-			.map(|entry| entry.declared_at)
-			.unwrap_or(0);
-		let object = match state.metadata.object(&row.object_digest).await {
-			Ok(Some(object)) => Some(object),
-			_ => None,
+	let mut scanned = query.after;
+	let mut pages = 0;
+	loop {
+		let rows = match state.metadata.feed_after(&id, scanned, limit).await {
+			Ok(rows) => rows,
+			Err(error) => return storage_error(error),
 		};
-		if let (Some(version), Some(object)) = (query.game_version.as_deref(), object.as_ref())
-			&& object.kind == "release"
-		{
-			let ordering = match scheme {
-				Some(ordering) => ordering,
-				None => {
-					let resolved = game_ordering(&state, object).await;
-					scheme = Some(resolved);
-					resolved
-				}
-			};
-			if !crate::views::release_matches_game_version(object, version, ordering) {
-				continue;
-			}
+		if rows.is_empty() {
+			break;
 		}
-		let (title, release) = match object.as_ref() {
-			Some(object) => (describe_stored(object), crate::views::summarize_release(object)),
-			_ => (None, None),
-		};
-		entries.push(FeedEntryView {
-			seq: row.seq,
-			kind: row.kind.clone(),
-			title,
-			release,
-			object: id_for(&row.object_digest),
-			entry: id_for(&row.entry_digest),
-			declared_at,
-			previous: row.previous.as_deref().map(id_for),
-		});
+		let fetched = rows.len() as i64;
+		scanned = rows.last().map(|row| row.seq).unwrap_or(scanned);
+		for row in &rows {
+			if entries.len() as i64 >= limit {
+				break;
+			}
+			let declared_at = FeedEntry::from_canonical_bytes(&row.payload)
+				.map(|entry| entry.declared_at)
+				.unwrap_or(0);
+			let object = match state.metadata.object(&row.object_digest).await {
+				Ok(Some(object)) => Some(object),
+				_ => None,
+			};
+			if let (Some(version), Some(object)) = (query.game_version.as_deref(), object.as_ref())
+				&& object.kind == "release"
+			{
+				let ordering = match scheme {
+					Some(ordering) => ordering,
+					None => {
+						let resolved = game_ordering(&state, object).await;
+						scheme = Some(resolved);
+						resolved
+					}
+				};
+				if !crate::views::release_matches_game_version(object, version, ordering) {
+					continue;
+				}
+			}
+			let (title, release) = match object.as_ref() {
+				Some(object) => (describe_stored(object), crate::views::summarize_release(object)),
+				_ => (None, None),
+			};
+			entries.push(FeedEntryView {
+				seq: row.seq,
+				kind: row.kind.clone(),
+				title,
+				release,
+				object: id_for(&row.object_digest),
+				entry: id_for(&row.entry_digest),
+				declared_at,
+				previous: row.previous.as_deref().map(id_for),
+			});
+		}
+		pages += 1;
+		if entries.len() as i64 >= limit || fetched < limit || pages >= MAX_FILTER_PAGES {
+			break;
+		}
 	}
-	let next = entries.last().map(|entry| entry.seq);
+	let next = match entries.last() {
+		Some(entry) => Some(entry.seq),
+		None if scanned > query.after => Some(scanned),
+		None => None,
+	};
 	let page = FeedPage {
 		project_id: project.id,
 		head_seq: project.head_seq,

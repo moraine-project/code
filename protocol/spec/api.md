@@ -189,7 +189,10 @@ bounded page of entries. An optional `game_version` filters the page to release
 entries whose declared compatibility is satisfied by that version, evaluated
 through the game's declared version ordering rather than string comparison;
 compatibility that cannot be evaluated without an ordered list of versions is
-treated as unsatisfied, and non-release entries are kept. Each entry carries a human `title` derived from the
+treated as unsatisfied, and non-release entries are kept. The page reads
+further when a full batch yields fewer than the requested entries, up to a
+bounded number of batches, so a filter does not return a short page while
+matching entries sit immediately after. Each entry carries a human `title` derived from the
 referenced object (a release's version and channel, a profile's display name,
 an advisory's severity and category, a delegation's purpose), so a page can say
 what changed without fetching every object. A release entry also carries a

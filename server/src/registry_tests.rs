@@ -773,3 +773,42 @@ async fn object_documents_support_range_and_head() {
 	let response = application.oneshot(beyond).await.expect("response");
 	assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
 }
+
+#[tokio::test]
+async fn a_filtered_page_reads_past_a_full_page_of_misses() {
+	let (application, _directory) = app().await;
+	let signer = key(4);
+	let (project_id, first_release) = publish_project(&application, &signer).await;
+	let first = feed_wire(&signer, &project_id, 1, None, first_release);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(first))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	let previous = id_bytes(body_json(response).await["entry"].as_str().expect("entry id"));
+
+	let (release, digest) = release_wire_for_game(&signer, &project_id, 0x71, "2.0.0", "1.19.0");
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+		.body(Body::from(release))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+	let second = feed_wire(&signer, &project_id, 2, Some(previous), digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(second))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let request = axum::http::Request::get(format!("/v1/projects/{project_id}/feed?limit=1&game_version=1.19.0"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	let page = body_json(response).await;
+	let entries = page["entries"].as_array().expect("entries");
+	assert_eq!(entries.len(), 1);
+	assert_eq!(entries[0]["seq"], 2);
+}

@@ -100,6 +100,16 @@ pub(crate) fn release_wire_variant(
 	nonce: u8,
 	human_version: &str,
 ) -> (Vec<u8>, [u8; 32]) {
+	release_wire_for_game(signer, project_id, nonce, human_version, "1.20.1")
+}
+
+pub(crate) fn release_wire_for_game(
+	signer: &SigningKey,
+	project_id: &str,
+	nonce: u8,
+	human_version: &str,
+	game_version: &str,
+) -> (Vec<u8>, [u8; 32]) {
 	let release = ReleasePayload {
 		protocol: 1,
 		project_id: project_id.to_string(),
@@ -110,7 +120,7 @@ pub(crate) fn release_wire_variant(
 		kind: "mod".to_string(),
 		declared_time: 1_760_000_000,
 		compatibility: vec![Compatibility {
-			game_version_predicate: Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]),
+			game_version_predicate: Predicate::new(Scheme::Exact, vec![game_version.to_string()]),
 			loader_id: Some(sample_id("fabric")),
 			loader_version_predicate: None,
 			side: Side::Both,
