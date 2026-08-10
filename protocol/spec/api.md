@@ -190,9 +190,11 @@ entries whose declared compatibility is satisfied by that version, evaluated
 through the game's declared version ordering rather than string comparison;
 compatibility that cannot be evaluated without an ordered list of versions is
 treated as unsatisfied, and non-release entries are kept. The page reads
-further when a full batch yields fewer than the requested entries, up to a
-bounded number of batches, so a filter does not return a short page while
-matching entries sit immediately after. Each entry carries a human `title` derived from the
+further when a full batch yields fewer than the requested entries, up to
+`max_feed_scan_pages` batches (50 by default, advertised in the capability
+document), so a filter does not return a short page while matching entries sit
+immediately after. When the scan stops at that bound with the page still
+short, the page sets `truncated` and a client continues from `next`. Each entry carries a human `title` derived from the
 referenced object (a release's version and channel, a profile's display name,
 an advisory's severity and category, a delegation's purpose), so a page can say
 what changed without fetching every object. A release entry also carries a

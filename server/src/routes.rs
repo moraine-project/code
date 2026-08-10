@@ -325,6 +325,7 @@ mod tests {
 			requests_per_minute: 600,
 			max_concurrent_syncs: 4,
 			tls_extra_roots: None,
+			max_feed_scan_pages: 50,
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Review,
 			web_dir: web_dir.clone(),

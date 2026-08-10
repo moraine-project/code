@@ -208,6 +208,20 @@ pub(crate) async fn app_with_rate_limit(requests_per_minute: u32) -> (Router, te
 	app_with_limits(crate::config::Publishing::Open, false, 100, requests_per_minute).await
 }
 
+pub(crate) async fn app_with_scan_pages(max_feed_scan_pages: u32) -> (Router, tempfile::TempDir) {
+	let directory = tempfile::tempdir().expect("tempdir");
+	let application = app_in_with_scan(
+		directory.path(),
+		crate::config::Publishing::Open,
+		false,
+		100,
+		600,
+		max_feed_scan_pages,
+	)
+	.await;
+	(application, directory)
+}
+
 pub(crate) async fn app_with_limits(
 	publishing: crate::config::Publishing,
 	allow_insecure_federation_local: bool,
@@ -233,6 +247,25 @@ pub(crate) async fn app_in(
 	max_feed_page_entries: u32,
 	requests_per_minute: u32,
 ) -> Router {
+	app_in_with_scan(
+		directory,
+		publishing,
+		allow_insecure_federation_local,
+		max_feed_page_entries,
+		requests_per_minute,
+		50,
+	)
+	.await
+}
+
+pub(crate) async fn app_in_with_scan(
+	directory: &std::path::Path,
+	publishing: crate::config::Publishing,
+	allow_insecure_federation_local: bool,
+	max_feed_page_entries: u32,
+	requests_per_minute: u32,
+	max_feed_scan_pages: u32,
+) -> Router {
 	let store = Arc::new(BlobStore::new(directory).await.expect("blob store"));
 	let metadata = Arc::new(
 		MetadataStore::open(directory.join("metadata.sqlite"))
@@ -244,6 +277,7 @@ pub(crate) async fn app_in(
 		data_dir: directory.to_path_buf(),
 		max_artifact_bytes: 1024,
 		max_feed_page_entries,
+		max_feed_scan_pages,
 		max_response_bytes: 16_777_216,
 		staging_retention_seconds: 3_600,
 		blob_retention_seconds: 604_800,

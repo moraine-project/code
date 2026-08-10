@@ -155,7 +155,7 @@
 				{#if data.feed.entries.length === 0}
 					<p class="text-base-content/80 text-sm">No feed entries yet.</p>
 				{:else if entries.length === 0}
-					<p class="text-base-content/80 text-sm">No feed entry declares that loader.</p>
+					<p class="text-base-content/80 text-sm">No feed entry matches these filters.</p>
 				{:else}
 					<div class="overflow-x-auto">
 						<table class="table table-sm">
@@ -192,6 +192,12 @@
 							</tbody>
 						</table>
 					</div>
+					{#if data.feed.truncated}
+						<p class="text-base-content/60 text-sm" role="status">
+							The home stopped scanning at its limit, so more matching entries may follow. Continue
+							from sequence {data.feed.next}.
+						</p>
+					{/if}
 				{/if}
 			</div>
 		</section>

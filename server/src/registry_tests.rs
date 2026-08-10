@@ -812,3 +812,28 @@ async fn a_filtered_page_reads_past_a_full_page_of_misses() {
 	assert_eq!(entries.len(), 1);
 	assert_eq!(entries[0]["seq"], 2);
 }
+
+#[tokio::test]
+async fn a_filter_reports_when_it_stopped_scanning() {
+	let (application, _directory) = app_with_scan_pages(1).await;
+	let signer = key(5);
+	let (project_id, release_digest) = publish_project(&application, &signer).await;
+	let entry = feed_wire(&signer, &project_id, 1, None, release_digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(entry))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let request = axum::http::Request::get(format!("/v1/projects/{project_id}/feed?limit=1&game_version=9.9.9"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	let page = body_json(response).await;
+
+	assert!(page["entries"].as_array().expect("entries").is_empty());
+	assert_eq!(page["truncated"], true);
+	assert_eq!(page["next"], 1);
+}

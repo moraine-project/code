@@ -84,6 +84,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_TLS_EXTRA_ROOTS")]
 	pub tls_extra_roots: Option<PathBuf>,
 
+	#[arg(long, env = "MORAINE_MAX_FEED_SCAN_PAGES", default_value_t = 50)]
+	pub max_feed_scan_pages: u32,
+
 	#[arg(long, env = "MORAINE_PUBLISHING", value_enum, default_value_t = Publishing::Review)]
 	pub publishing: Publishing,
 

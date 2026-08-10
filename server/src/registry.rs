@@ -81,9 +81,8 @@ struct FeedPage {
 	head_seq: i64,
 	entries: Vec<FeedEntryView>,
 	next: Option<i64>,
+	truncated: bool,
 }
-
-const MAX_FILTER_PAGES: usize = 50;
 
 #[derive(Deserialize)]
 struct FeedQuery {
@@ -475,7 +474,10 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 			});
 		}
 		pages += 1;
-		if entries.len() as i64 >= limit || fetched < limit || pages >= MAX_FILTER_PAGES {
+		if (entries.len() as i64) >= limit
+			|| fetched < limit
+			|| pages >= state.capability.max_feed_scan_pages.max(1) as usize
+		{
 			break;
 		}
 	}
@@ -484,11 +486,15 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 		None if scanned > query.after => Some(scanned),
 		None => None,
 	};
+	let truncated = (entries.len() as i64) < limit
+		&& scanned > query.after
+		&& pages >= state.capability.max_feed_scan_pages.max(1) as usize;
 	let page = FeedPage {
 		project_id: project.id,
 		head_seq: project.head_seq,
 		entries,
 		next,
+		truncated,
 	};
 	Json(page).into_response()
 }

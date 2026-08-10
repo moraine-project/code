@@ -47,6 +47,7 @@ export const feedPageSchema = z.object({
 	head_seq: z.number(),
 	entries: z.array(feedEntrySchema),
 	next: z.number().nullable().optional(),
+	truncated: z.boolean().optional(),
 });
 
 export const lookupMatchSchema = z.object({
