@@ -91,6 +91,8 @@ struct FeedQuery {
 	limit: Option<i64>,
 	#[serde(default)]
 	game_version: Option<String>,
+	#[serde(default)]
+	loader: Option<String>,
 }
 
 async fn create_project(State(state): State<AppState>, body: Bytes) -> Response {
@@ -443,18 +445,25 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 				Ok(Some(object)) => Some(object),
 				_ => None,
 			};
-			if let (Some(version), Some(object)) = (query.game_version.as_deref(), object.as_ref())
+			if let Some(object) = object.as_ref()
 				&& object.kind == "release"
 			{
-				let ordering = match scheme {
-					Some(ordering) => ordering,
-					None => {
-						let resolved = game_ordering(&state, object).await;
-						scheme = Some(resolved);
-						resolved
+				if let Some(version) = query.game_version.as_deref() {
+					let ordering = match scheme {
+						Some(ordering) => ordering,
+						None => {
+							let resolved = game_ordering(&state, object).await;
+							scheme = Some(resolved);
+							resolved
+						}
+					};
+					if !crate::views::release_matches_game_version(object, version, ordering) {
+						continue;
 					}
-				};
-				if !crate::views::release_matches_game_version(object, version, ordering) {
+				}
+				if let Some(loader) = query.loader.as_deref()
+					&& !crate::views::release_declares_loader(object, loader)
+				{
 					continue;
 				}
 			}

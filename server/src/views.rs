@@ -442,6 +442,19 @@ pub(crate) fn release_matches_game_version(
 	})
 }
 
+pub(crate) fn release_declares_loader(object: &StoredObject, loader_id: &str) -> bool {
+	use moraine_model::Canonical;
+	let Ok(moraine_model::release::ReleaseObject::Release(release)) =
+		moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload)
+	else {
+		return false;
+	};
+	release
+		.compatibility
+		.iter()
+		.any(|entry| entry.loader_id.as_deref() == Some(loader_id))
+}
+
 pub(crate) fn summarize_release(object: &StoredObject) -> Option<ReleaseSummary> {
 	let release = match moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload) {
 		Ok(moraine_model::release::ReleaseObject::Release(release)) => release,

@@ -837,3 +837,42 @@ async fn a_filter_reports_when_it_stopped_scanning() {
 	assert_eq!(page["truncated"], true);
 	assert_eq!(page["next"], 1);
 }
+
+#[tokio::test]
+async fn a_feed_can_be_filtered_by_loader() {
+	let (application, _directory) = app().await;
+	let signer = key(6);
+	let (project_id, release_digest) = publish_project(&application, &signer).await;
+	let entry = feed_wire(&signer, &project_id, 1, None, release_digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(entry))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	let previous = id_bytes(body_json(response).await["entry"].as_str().expect("entry id"));
+
+	let (release, digest) = release_wire_no_loader(&signer, &project_id, 0x81, "2.0.0");
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+		.body(Body::from(release))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+	let entry = feed_wire(&signer, &project_id, 2, Some(previous), digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(entry))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let request = axum::http::Request::get(format!("/v1/projects/{project_id}/feed?loader={}", sample_id("fabric")))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	let page = body_json(response).await;
+	let entries = page["entries"].as_array().expect("entries");
+	assert_eq!(entries.len(), 1);
+	assert_eq!(entries[0]["seq"], 1);
+}

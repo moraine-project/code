@@ -6,26 +6,24 @@
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
-	let loader = $state('');
+	let loader = $state(untrack(() => data.loader));
 	let gameVersion = $state(untrack(() => data.gameVersion));
-
-	function applyGameVersion() {
-		const params = new URLSearchParams();
-		if (data.home) params.set('home', data.home);
-		if (gameVersion.trim()) params.set('game_version', gameVersion.trim());
-		goto(`/p/${encodeURIComponent(data.projectId)}?${params.toString()}`);
-	}
 
 	const loaders = $derived(
 		Array.from(
 			new Set(data.feed?.entries.flatMap((entry) => entry.release?.loaders ?? []) ?? []),
 		).toSorted(),
 	);
-	const entries = $derived(
-		(data.feed?.entries ?? []).filter(
-			(entry) => loader.length === 0 || (entry.release?.loaders ?? []).includes(loader),
-		),
-	);
+
+	function applyFilters() {
+		const params = new URLSearchParams();
+		if (data.home) params.set('home', data.home);
+		if (gameVersion.trim()) params.set('game_version', gameVersion.trim());
+		if (loader) params.set('loader', loader);
+		goto(`/p/${encodeURIComponent(data.projectId)}?${params.toString()}`);
+	}
+
+	const entries = $derived(data.feed?.entries ?? []);
 
 	function formatTime(seconds: number): string {
 		return new Date(seconds * 1000).toLocaleString();
@@ -117,7 +115,7 @@
 					class="flex flex-wrap items-end gap-3"
 					onsubmit={(event) => {
 						event.preventDefault();
-						applyGameVersion();
+						applyFilters();
 					}}
 				>
 					<label class="form-control">
@@ -132,7 +130,8 @@
 					<button class="btn btn-sm" type="submit">Apply</button>
 				</form>
 				<p class="text-base-content/60 text-sm">
-					The game version filter runs on the home and uses the game's declared version ordering.
+					Filters run on the home. The game version filter uses the game's declared version
+					ordering; the loader filter matches the loader a release declares.
 				</p>
 				{#if loaders.length > 0}
 					<label class="form-control w-fit">

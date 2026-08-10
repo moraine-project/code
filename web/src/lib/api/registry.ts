@@ -206,12 +206,15 @@ export async function fetchFeed(
 	projectId: string,
 	after = 0,
 	limit = 50,
-	gameVersion?: string,
+	filters: { gameVersion?: string; loader?: string } = {},
 	fetchFn: Fetcher = fetch,
 ): Promise<FeedPage> {
 	const params = new URLSearchParams({ after: String(after), limit: String(limit) });
-	if (gameVersion) {
-		params.set('game_version', gameVersion);
+	if (filters.gameVersion) {
+		params.set('game_version', filters.gameVersion);
+	}
+	if (filters.loader) {
+		params.set('loader', filters.loader);
 	}
 	const response = await fetchFn(
 		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/feed?${params.toString()}`,

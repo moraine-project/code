@@ -4,6 +4,7 @@ import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ params, url, fetch }) => {
 	const gameVersion = url.searchParams.get('game_version') ?? undefined;
+	const loader = url.searchParams.get('loader') ?? undefined;
 	const requested = url.searchParams.get('home') ?? PUBLIC_MORAINE_REGISTRY ?? '';
 	let base: string;
 	try {
@@ -13,6 +14,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 			home: requested,
 			projectId: params.id,
 			gameVersion: gameVersion ?? '',
+			loader: loader ?? '',
 			summary: null,
 			profile: null,
 			feed: null,
@@ -22,13 +24,14 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 	try {
 		const [summary, feed, profile] = await Promise.all([
 			fetchProject(base, params.id, fetch),
-			fetchFeed(base, params.id, 0, 50, gameVersion, fetch),
+			fetchFeed(base, params.id, 0, 50, { gameVersion, loader }, fetch),
 			fetchProfile(base, params.id, fetch).catch(() => null),
 		]);
 		return {
 			home: base,
 			projectId: params.id,
 			gameVersion: gameVersion ?? '',
+			loader: loader ?? '',
 			summary,
 			profile,
 			feed,
@@ -39,6 +42,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 			home: base,
 			projectId: params.id,
 			gameVersion: gameVersion ?? '',
+			loader: loader ?? '',
 			summary: null,
 			profile: null,
 			feed: null,

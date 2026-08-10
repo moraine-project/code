@@ -110,6 +110,17 @@ pub(crate) fn release_wire_for_game(
 	human_version: &str,
 	game_version: &str,
 ) -> (Vec<u8>, [u8; 32]) {
+	release_wire_for_game_with_loader(signer, project_id, nonce, human_version, game_version, Some("fabric"))
+}
+
+pub(crate) fn release_wire_for_game_with_loader(
+	signer: &SigningKey,
+	project_id: &str,
+	nonce: u8,
+	human_version: &str,
+	game_version: &str,
+	loader: Option<&str>,
+) -> (Vec<u8>, [u8; 32]) {
 	let release = ReleasePayload {
 		protocol: 1,
 		project_id: project_id.to_string(),
@@ -121,7 +132,7 @@ pub(crate) fn release_wire_for_game(
 		declared_time: 1_760_000_000,
 		compatibility: vec![Compatibility {
 			game_version_predicate: Predicate::new(Scheme::Exact, vec![game_version.to_string()]),
-			loader_id: Some(sample_id("fabric")),
+			loader_id: loader.map(sample_id),
 			loader_version_predicate: None,
 			side: Side::Both,
 			runtime_predicate: None,
@@ -149,6 +160,15 @@ pub(crate) fn release_wire_for_game(
 	let signed = sign_payload(Kind::Release, &release, &[signer]);
 	let digest = object_id(Kind::Release, &signed.payload_bytes);
 	(signed.wire_bytes(), digest)
+}
+
+pub(crate) fn release_wire_no_loader(
+	signer: &SigningKey,
+	project_id: &str,
+	nonce: u8,
+	human_version: &str,
+) -> (Vec<u8>, [u8; 32]) {
+	release_wire_for_game_with_loader(signer, project_id, nonce, human_version, "1.20.1", None)
 }
 
 pub(crate) fn feed_wire(
