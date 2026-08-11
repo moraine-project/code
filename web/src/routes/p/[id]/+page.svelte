@@ -7,6 +7,7 @@
 
 	let { data }: PageProps = $props();
 	let loader = $state(untrack(() => data.loader));
+	let loaderVersion = $state(untrack(() => data.loaderVersion));
 	let gameVersion = $state(untrack(() => data.gameVersion));
 
 	const loaders = $derived(
@@ -20,6 +21,7 @@
 		if (data.home) params.set('home', data.home);
 		if (gameVersion.trim()) params.set('game_version', gameVersion.trim());
 		if (loader) params.set('loader', loader);
+		if (loaderVersion.trim()) params.set('loader_version', loaderVersion.trim());
 		goto(`/p/${encodeURIComponent(data.projectId)}?${params.toString()}`);
 	}
 

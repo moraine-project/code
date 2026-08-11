@@ -206,7 +206,7 @@ export async function fetchFeed(
 	projectId: string,
 	after = 0,
 	limit = 50,
-	filters: { gameVersion?: string; loader?: string } = {},
+	filters: { gameVersion?: string; loader?: string; loaderVersion?: string } = {},
 	fetchFn: Fetcher = fetch,
 ): Promise<FeedPage> {
 	const params = new URLSearchParams({ after: String(after), limit: String(limit) });
@@ -215,6 +215,9 @@ export async function fetchFeed(
 	}
 	if (filters.loader) {
 		params.set('loader', filters.loader);
+	}
+	if (filters.loaderVersion) {
+		params.set('loader_version', filters.loaderVersion);
 	}
 	const response = await fetchFn(
 		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/feed?${params.toString()}`,

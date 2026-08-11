@@ -5,6 +5,7 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ params, url, fetch }) => {
 	const gameVersion = url.searchParams.get('game_version') ?? undefined;
 	const loader = url.searchParams.get('loader') ?? undefined;
+	const loaderVersion = url.searchParams.get('loader_version') ?? undefined;
 	const requested = url.searchParams.get('home') ?? PUBLIC_MORAINE_REGISTRY ?? '';
 	let base: string;
 	try {
@@ -15,6 +16,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 			projectId: params.id,
 			gameVersion: gameVersion ?? '',
 			loader: loader ?? '',
+			loaderVersion: loaderVersion ?? '',
 			summary: null,
 			profile: null,
 			feed: null,
@@ -24,7 +26,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 	try {
 		const [summary, feed, profile] = await Promise.all([
 			fetchProject(base, params.id, fetch),
-			fetchFeed(base, params.id, 0, 50, { gameVersion, loader }, fetch),
+			fetchFeed(base, params.id, 0, 50, { gameVersion, loader, loaderVersion }, fetch),
 			fetchProfile(base, params.id, fetch).catch(() => null),
 		]);
 		return {
@@ -32,6 +34,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 			projectId: params.id,
 			gameVersion: gameVersion ?? '',
 			loader: loader ?? '',
+			loaderVersion: loaderVersion ?? '',
 			summary,
 			profile,
 			feed,
@@ -43,6 +46,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 			projectId: params.id,
 			gameVersion: gameVersion ?? '',
 			loader: loader ?? '',
+			loaderVersion: loaderVersion ?? '',
 			summary: null,
 			profile: null,
 			feed: null,

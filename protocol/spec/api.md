@@ -185,10 +185,13 @@ review acceptance, and during federation sync, and it re-verifies the transfer
 and requires that it start from the currently recorded owner. Ownership is
 therefore a feed fact: a directory learns it by verifying the same signed
 material, not by trusting the home's summary. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
-bounded page of entries. Optional `game_version` and `loader` filters restrict the page to release
-entries whose declared compatibility matches them. The game version is
-evaluated through the game's declared version ordering rather than string
-comparison, and the loader is matched by the loader ID a release declares;
+bounded page of entries. Optional `game_version`, `loader`, and `loader_version` filters restrict the
+page to release entries whose declared compatibility matches them. The game
+version is evaluated through the game's declared version ordering and the
+loader version through the loader definition's declared ordering, rather than
+string comparison; the loader is matched by the loader ID a release declares.
+A `loader_version` without a `loader` matches nothing, and a release that names
+a loader without a version predicate matches every version of it.
 compatibility that cannot be evaluated without an ordered list of versions is
 treated as unsatisfied, and non-release entries are kept. The page reads
 further when a full batch yields fewer than the requested entries, up to

@@ -876,3 +876,70 @@ async fn a_feed_can_be_filtered_by_loader() {
 	assert_eq!(entries.len(), 1);
 	assert_eq!(entries[0]["seq"], 1);
 }
+
+#[tokio::test]
+async fn a_feed_can_be_filtered_by_loader_version() {
+	let (application, _directory) = app().await;
+	let signer = key(7);
+	let request = axum::http::Request::post("/v1/projects")
+		.body(Body::from(genesis_wire(&signer, PROJECT_KINDS)))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	let project_id = body_json(response).await["project_id"]
+		.as_str()
+		.expect("project id")
+		.to_string();
+
+	let (older, older_digest) =
+		release_wire_for_game_with_loader(&signer, &project_id, 0x90, "1.0.0", "1.20.1", Some("fabric"), Some("0.14.0"));
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+		.body(Body::from(older))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+	let entry = feed_wire(&signer, &project_id, 1, None, older_digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(entry))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	let previous = id_bytes(body_json(response).await["entry"].as_str().expect("entry id"));
+
+	let (newer, newer_digest) =
+		release_wire_for_game_with_loader(&signer, &project_id, 0x91, "2.0.0", "1.20.1", Some("fabric"), Some("0.15.0"));
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+		.body(Body::from(newer))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+	let entry = feed_wire(&signer, &project_id, 2, Some(previous), newer_digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(entry))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let loader = sample_id("fabric");
+	let request = axum::http::Request::get(format!(
+		"/v1/projects/{project_id}/feed?loader={loader}&loader_version=0.15.0"
+	))
+	.body(Body::empty())
+	.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	let page = body_json(response).await;
+	let entries = page["entries"].as_array().expect("entries");
+	assert_eq!(entries.len(), 1);
+	assert_eq!(entries[0]["seq"], 2);
+
+	let request = axum::http::Request::get(format!("/v1/projects/{project_id}/feed?loader={loader}&loader_version=9.9.9"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	let page = body_json(response).await;
+	assert!(page["entries"].as_array().expect("entries").is_empty());
+}

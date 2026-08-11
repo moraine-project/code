@@ -455,6 +455,32 @@ pub(crate) fn release_declares_loader(object: &StoredObject, loader_id: &str) ->
 		.any(|entry| entry.loader_id.as_deref() == Some(loader_id))
 }
 
+pub(crate) fn release_matches_loader_version(
+	object: &StoredObject,
+	loader_id: &str,
+	version: &str,
+	scheme: moraine_model::version::OrderingScheme,
+) -> bool {
+	use moraine_model::Canonical;
+	let Ok(moraine_model::release::ReleaseObject::Release(release)) =
+		moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload)
+	else {
+		return false;
+	};
+	let catalog = moraine_model::version::VersionCatalog::new(scheme, Vec::new());
+	release.compatibility.iter().any(|entry| {
+		if entry.loader_id.as_deref() != Some(loader_id) {
+			return false;
+		}
+		match &entry.loader_version_predicate {
+			None => true,
+			Some(predicate) => {
+				catalog.evaluate(predicate, version) == moraine_model::compatibility::PredicateResult::Satisfied
+			}
+		}
+	})
+}
+
 pub(crate) fn summarize_release(object: &StoredObject) -> Option<ReleaseSummary> {
 	let release = match moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload) {
 		Ok(moraine_model::release::ReleaseObject::Release(release)) => release,
