@@ -4,19 +4,24 @@
 	import Digest from '$lib/components/Digest.svelte';
 	import { assign, decide, reasonCodes, reviewQueue, type Submission } from '$lib/api/review';
 
+	const pageSize = 100;
+
 	let submissions = $state<Submission[]>([]);
 	let reasons = $state<Record<string, string>>({});
 	let error = $state<string | null>(null);
 	let notice = $state<string | null>(null);
 	let loading = $state(true);
 	let busy = $state<string | null>(null);
+	let more = $state(false);
+	let hasMore = $state(false);
 
 	onMount(load);
 
 	async function load() {
 		loading = true;
 		try {
-			submissions = await reviewQueue();
+			submissions = await reviewQueue(pageSize);
+			hasMore = submissions.length === pageSize;
 			for (const submission of submissions) {
 				reasons[submission.id] ??= reasonCodes[0];
 			}
@@ -41,6 +46,22 @@
 			error = cause instanceof Error ? cause.message : 'the decision failed';
 		} finally {
 			busy = null;
+		}
+	}
+
+	async function loadMore() {
+		more = true;
+		notice = null;
+		error = null;
+		try {
+			const last = submissions.at(-1);
+			const page = await reviewQueue(pageSize, last ? `${last.created_at}:${last.id}` : undefined);
+			submissions = submissions.concat(page);
+			hasMore = page.length === pageSize;
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not load more submissions';
+		} finally {
+			more = false;
 		}
 	}
 
@@ -165,5 +186,10 @@
 				</tbody>
 			</table>
 		</div>
+		{#if hasMore}
+			<button class="btn btn-outline w-fit" type="button" onclick={loadMore} disabled={more}>
+				Load more
+			</button>
+		{/if}
 	{/if}
 </div>

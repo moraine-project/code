@@ -29,8 +29,12 @@ export const reasonCodes = [
 	'author-request',
 ] as const;
 
-export async function reviewQueue(): Promise<Submission[]> {
-	const response = await authorizedFetch('/v1/review-queue');
+export async function reviewQueue(limit = 100, cursor?: string): Promise<Submission[]> {
+	const params = new URLSearchParams({ limit: String(limit) });
+	if (cursor) {
+		params.set('cursor', cursor);
+	}
+	const response = await authorizedFetch(`/v1/review-queue?${params.toString()}`);
 	if (response.status === 401 || response.status === 403) {
 		throw new Error('sign in with an account that can review submissions');
 	}

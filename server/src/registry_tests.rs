@@ -195,6 +195,19 @@ async fn review_mode_queues_then_accepts() {
 	assert_eq!(queued[0]["state"], "under_review");
 	assert!(queued[0]["assigned_to"].as_str().is_some());
 
+	let cursor = format!(
+		"{}:{}",
+		queued[0]["created_at"].as_i64().expect("created_at"),
+		queued[0]["id"].as_str().expect("id")
+	);
+	let paged = axum::http::Request::get(format!("/v1/review-queue?cursor={cursor}"))
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(paged).await.expect("response");
+	let queued = body_json(response).await;
+	assert!(queued.as_array().expect("queue").is_empty());
+
 	let review = axum::http::Request::post(format!("/v1/submissions/{submission_id}/review"))
 		.header(header::CONTENT_TYPE, "application/json")
 		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
