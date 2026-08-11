@@ -423,8 +423,8 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 		.unwrap_or(state.capability.max_feed_page_entries as i64)
 		.clamp(1, state.capability.max_feed_page_entries as i64);
 	let mut entries = Vec::with_capacity(limit as usize);
-	let mut scheme = None;
-	let mut loader_scheme = None;
+	let mut scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
+	let mut loader_scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
 	let mut scanned = query.after;
 	let mut pages = 0;
 	loop {
@@ -592,22 +592,13 @@ pub(crate) fn id_for(digest: &[u8]) -> String {
 	format!("gd:sha256:{}", hex::encode(digest))
 }
 
-async fn loader_ordering(state: &AppState, loader_id: &str) -> moraine_model::version::OrderingScheme {
+async fn loader_ordering(state: &AppState, loader_id: &str) -> Option<moraine_model::version::OrderingScheme> {
 	use moraine_model::Canonical;
-	use moraine_model::version::OrderingScheme;
-	let Some(definition) = state.metadata.definition(loader_id).await.ok().flatten() else {
-		return OrderingScheme::Semver;
-	};
-	let Some(current) = definition.current_digest else {
-		return OrderingScheme::Semver;
-	};
-	let Some(object) = state.metadata.object(&current).await.ok().flatten() else {
-		return OrderingScheme::Semver;
-	};
-	let Ok(loader) = moraine_model::definition::LoaderObject::from_canonical_bytes(&object.payload) else {
-		return OrderingScheme::Semver;
-	};
-	loader_ordering_of(&loader).unwrap_or(OrderingScheme::Semver)
+	let definition = state.metadata.definition(loader_id).await.ok().flatten()?;
+	let current = definition.current_digest?;
+	let object = state.metadata.object(&current).await.ok().flatten()?;
+	let loader = moraine_model::definition::LoaderObject::from_canonical_bytes(&object.payload).ok()?;
+	loader_ordering_of(&loader)
 }
 
 fn loader_ordering_of(loader: &moraine_model::definition::LoaderObject) -> Option<moraine_model::version::OrderingScheme> {
@@ -617,31 +608,24 @@ fn loader_ordering_of(loader: &moraine_model::definition::LoaderObject) -> Optio
 	}
 }
 
-async fn game_ordering(state: &AppState, object: &crate::store::StoredObject) -> moraine_model::version::OrderingScheme {
+async fn game_ordering(
+	state: &AppState,
+	object: &crate::store::StoredObject,
+) -> Option<moraine_model::version::OrderingScheme> {
 	use moraine_model::Canonical;
 	use moraine_model::version::OrderingScheme;
-	let Some(release) = moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload)
+	let release = moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload)
 		.ok()
 		.and_then(|release| match release {
 			moraine_model::release::ReleaseObject::Release(release) => Some(release),
 			_ => None,
-		})
-	else {
-		return OrderingScheme::Semver;
-	};
-	let Some(definition) = state.metadata.definition(&release.game_id).await.ok().flatten() else {
-		return OrderingScheme::Semver;
-	};
-	let Some(current) = definition.current_digest else {
-		return OrderingScheme::Semver;
-	};
-	let Some(object) = state.metadata.object(&current).await.ok().flatten() else {
-		return OrderingScheme::Semver;
-	};
+		})?;
+	let definition = state.metadata.definition(&release.game_id).await.ok().flatten()?;
+	let current = definition.current_digest?;
+	let object = state.metadata.object(&current).await.ok().flatten()?;
 	moraine_model::definition::GameDef::from_canonical_bytes(&object.payload)
 		.ok()
 		.and_then(|definition| OrderingScheme::parse(&definition.version_ordering))
-		.unwrap_or(OrderingScheme::Semver)
 }
 
 pub(crate) fn parse_hex_digest(value: &str) -> Option<[u8; 32]> {

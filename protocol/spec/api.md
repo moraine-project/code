@@ -191,7 +191,10 @@ version is evaluated through the game's declared version ordering and the
 loader version through the loader definition's declared ordering, rather than
 string comparison; the loader is matched by the loader ID a release declares.
 A `loader_version` without a `loader` matches nothing, and a release that names
-a loader without a version predicate matches every version of it.
+a loader without a version predicate matches every version of it. A version
+range is only evaluated when the game or loader definition that declares its
+ordering is hosted here; without it the entry is treated as unsatisfied rather
+than assumed to be semver.
 compatibility that cannot be evaluated without an ordered list of versions is
 treated as unsatisfied, and non-release entries are kept. The page reads
 further when a full batch yields fewer than the requested entries, up to
