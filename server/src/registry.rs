@@ -455,17 +455,17 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 					let ordering = match scheme {
 						Some(ordering) => ordering,
 						None => {
-							let resolved = game_ordering(&state, object).await;
+							let resolved = crate::compatibility::game_ordering(&state, object).await;
 							scheme = Some(resolved);
 							resolved
 						}
 					};
-					if !crate::views::release_matches_game_version(object, version, ordering) {
+					if !crate::compatibility::release_matches_game_version(object, version, ordering) {
 						continue;
 					}
 				}
 				if let Some(loader) = query.loader.as_deref()
-					&& !crate::views::release_declares_loader(object, loader)
+					&& !crate::compatibility::release_declares_loader(object, loader)
 				{
 					continue;
 				}
@@ -473,12 +473,12 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 					let ordering = match loader_scheme {
 						Some(ordering) => ordering,
 						None => {
-							let resolved = loader_ordering(&state, loader).await;
+							let resolved = crate::compatibility::loader_ordering(&state, loader).await;
 							loader_scheme = Some(resolved);
 							resolved
 						}
 					};
-					if !crate::views::release_matches_loader_version(object, loader, version, ordering) {
+					if !crate::compatibility::release_matches_loader_version(object, loader, version, ordering) {
 						continue;
 					}
 				}
@@ -590,42 +590,6 @@ pub(crate) fn stored(object: &verify::VerifiedObject) -> StoredObject {
 
 pub(crate) fn id_for(digest: &[u8]) -> String {
 	format!("gd:sha256:{}", hex::encode(digest))
-}
-
-async fn loader_ordering(state: &AppState, loader_id: &str) -> Option<moraine_model::version::OrderingScheme> {
-	use moraine_model::Canonical;
-	let definition = state.metadata.definition(loader_id).await.ok().flatten()?;
-	let current = definition.current_digest?;
-	let object = state.metadata.object(&current).await.ok().flatten()?;
-	let loader = moraine_model::definition::LoaderObject::from_canonical_bytes(&object.payload).ok()?;
-	loader_ordering_of(&loader)
-}
-
-fn loader_ordering_of(loader: &moraine_model::definition::LoaderObject) -> Option<moraine_model::version::OrderingScheme> {
-	match loader {
-		moraine_model::definition::LoaderObject::Definition(definition) => definition.ordering(),
-		_ => None,
-	}
-}
-
-async fn game_ordering(
-	state: &AppState,
-	object: &crate::store::StoredObject,
-) -> Option<moraine_model::version::OrderingScheme> {
-	use moraine_model::Canonical;
-	use moraine_model::version::OrderingScheme;
-	let release = moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload)
-		.ok()
-		.and_then(|release| match release {
-			moraine_model::release::ReleaseObject::Release(release) => Some(release),
-			_ => None,
-		})?;
-	let definition = state.metadata.definition(&release.game_id).await.ok().flatten()?;
-	let current = definition.current_digest?;
-	let object = state.metadata.object(&current).await.ok().flatten()?;
-	moraine_model::definition::GameDef::from_canonical_bytes(&object.payload)
-		.ok()
-		.and_then(|definition| OrderingScheme::parse(&definition.version_ordering))
 }
 
 pub(crate) fn parse_hex_digest(value: &str) -> Option<[u8; 32]> {

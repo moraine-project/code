@@ -5,6 +5,7 @@ mod backup;
 mod blob;
 mod bootstrap;
 mod capability;
+mod compatibility;
 mod config;
 mod definitions;
 mod egress;
