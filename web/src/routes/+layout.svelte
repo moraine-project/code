@@ -1,8 +1,14 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
+	import { session } from '$lib/session.svelte';
 
 	let { children } = $props();
+
+	onMount(() => {
+		session.refresh();
+	});
 
 	let menu = $state<HTMLDetailsElement | null>(null);
 
@@ -62,7 +68,11 @@
 			{#each links as [href, label] (href)}
 				<a class="btn btn-ghost" {href}>{label}</a>
 			{/each}
-			<span class="badge badge-ghost">federated registry</span>
+			{#if session.user}
+				<span class="badge badge-ghost">{session.user.email}</span>
+			{:else}
+				<span class="badge badge-ghost">not signed in</span>
+			{/if}
 		</div>
 		<div class="navbar-end lg:hidden">
 			<details class="dropdown dropdown-end" bind:this={menu}>

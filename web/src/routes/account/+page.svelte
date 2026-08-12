@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { account, login, logout, register, type Account } from '$lib/api/session';
+	import { login, logout, register } from '$lib/api/session';
+	import { session } from '$lib/session.svelte';
 
-	let user = $state<Account | null>(null);
+	let user = $state<typeof session.user>(null);
 	let email = $state('');
 	let password = $state('');
 	let creating = $state(false);
@@ -13,11 +14,7 @@
 	onMount(refresh);
 
 	async function refresh() {
-		try {
-			user = await account();
-		} catch (cause) {
-			error = cause instanceof Error ? cause.message : 'could not load the account';
-		}
+		user = await session.refresh();
 	}
 
 	async function submit(event: SubmitEvent) {
@@ -47,6 +44,7 @@
 		busy = true;
 		try {
 			await logout();
+			session.set(null);
 			user = null;
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'sign out failed';

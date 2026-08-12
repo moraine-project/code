@@ -3,7 +3,7 @@
 	import { shortDigest } from '$lib/api/registry';
 	import Digest from '$lib/components/Digest.svelte';
 	import { assign, decide, reasonCodes, reviewQueue, type Submission } from '$lib/api/review';
-	import { account } from '$lib/api/session';
+	import { session } from '$lib/session.svelte';
 
 	const pageSize = 100;
 
@@ -21,7 +21,7 @@
 
 	async function load() {
 		loading = true;
-		me ??= (await account().catch(() => null))?.user_id ?? null;
+		me ??= (await session.refresh())?.user_id ?? null;
 		try {
 			submissions = await reviewQueue(pageSize);
 			hasMore = submissions.length === pageSize;
