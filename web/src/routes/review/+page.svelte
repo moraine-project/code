@@ -3,6 +3,7 @@
 	import { shortDigest } from '$lib/api/registry';
 	import Digest from '$lib/components/Digest.svelte';
 	import { assign, decide, reasonCodes, reviewQueue, type Submission } from '$lib/api/review';
+	import { account } from '$lib/api/session';
 
 	const pageSize = 100;
 
@@ -14,11 +15,13 @@
 	let busy = $state<string | null>(null);
 	let more = $state(false);
 	let hasMore = $state(false);
+	let me = $state<string | null>(null);
 
 	onMount(load);
 
 	async function load() {
 		loading = true;
+		me ??= (await account().catch(() => null))?.user_id ?? null;
 		try {
 			submissions = await reviewQueue(pageSize);
 			hasMore = submissions.length === pageSize;
@@ -133,7 +136,9 @@
 							<td>
 								<span class="badge badge-outline">{submission.state}</span>
 								{#if submission.assigned_to}
-									<span class="text-base-content/60 text-xs">yours</span>
+									<span class="text-base-content/60 text-xs">
+										{submission.assigned_to === me ? 'yours' : 'assigned to another reviewer'}
+									</span>
 								{/if}
 							</td>
 							<td>
@@ -157,28 +162,32 @@
 										>
 											Take
 										</button>
+									{:else if submission.assigned_to !== me}
+										<span class="text-base-content/60 text-xs">held by another reviewer</span>
 									{/if}
-									<button
-										class="btn btn-sm"
-										onclick={() => act(submission, 'accept')}
-										disabled={busy === submission.id}
-									>
-										Accept
-									</button>
-									<button
-										class="btn btn-sm btn-outline"
-										onclick={() => act(submission, 'reject')}
-										disabled={busy === submission.id}
-									>
-										Reject
-									</button>
-									<button
-										class="btn btn-sm btn-outline"
-										onclick={() => act(submission, 'quarantine')}
-										disabled={busy === submission.id}
-									>
-										Quarantine
-									</button>
+									{#if submission.state === 'submitted' || submission.assigned_to === me}
+										<button
+											class="btn btn-sm"
+											onclick={() => act(submission, 'accept')}
+											disabled={busy === submission.id}
+										>
+											Accept
+										</button>
+										<button
+											class="btn btn-sm btn-outline"
+											onclick={() => act(submission, 'reject')}
+											disabled={busy === submission.id}
+										>
+											Reject
+										</button>
+										<button
+											class="btn btn-sm btn-outline"
+											onclick={() => act(submission, 'quarantine')}
+											disabled={busy === submission.id}
+										>
+											Quarantine
+										</button>
+									{/if}
 								</div>
 							</td>
 						</tr>
