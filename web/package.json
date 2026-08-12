@@ -15,7 +15,8 @@
 		"lint": "oxlint",
 		"lint:fix": "oxlint --fix",
 		"fmt": "oxfmt",
-		"fmt:check": "oxfmt --check"
+		"fmt:check": "oxfmt --check",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"zod": "^4.0.0"
@@ -34,6 +35,7 @@
 		"svelte-check": "^4.6.0",
 		"tailwindcss": "^4.0.0",
 		"typescript": "^6.0.3",
-		"vite": "^8.0.16"
+		"vite": "^8.0.16",
+		"vitest": "^5.0.1"
 	}
 }

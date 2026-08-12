@@ -204,8 +204,9 @@ pnpm dev
 ```
 
 `pnpm build:static` produces a static site. `pnpm build:cloudflare`
-produces a Worker build from the same source. `pnpm lint` runs Oxlint and
-`pnpm fmt:check` runs Oxfmt; `pnpm fmt` rewrites files in place. The site reads
+produces a Worker build from the same source. `pnpm lint` runs Oxlint,
+`pnpm fmt:check` runs Oxfmt, `pnpm fmt` rewrites files in place, and `pnpm test`
+runs the Vitest suite. The site reads
 `PUBLIC_MORAINE_REGISTRY` for its default home. The server answers read
 requests with permissive CORS and no credentials, so a static site on another
 origin can resolve projects and fetch blobs. Writes are not offered
