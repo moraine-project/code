@@ -56,6 +56,12 @@ and connections to the site itself.
 
 ## First run
 
+`moraine-server migrate` creates the data directory if needed, applies any
+pending schema migrations, and reports how many it applied. Migrations are
+numbered SQL files under `migrations/<engine>/`, applied in order and recorded
+in a `schema_migrations` table so re-running is a no-op. It is the explicit
+upgrade step to run before starting a new binary.
+
 `moraine-server bootstrap --email <address>` prepares a fresh data directory:
 it runs the database migrations, creates the operator account with a generated
 password, and writes the server's webhook signing key. The password is printed

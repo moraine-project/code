@@ -47,6 +47,7 @@ pub enum Command {
 		#[arg(long)]
 		force: bool,
 	},
+	Migrate,
 }
 
 #[derive(Debug, Clone, Parser)]

@@ -58,6 +58,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			Err(error) => Err(error.into()),
 		};
 	}
+	if let Some(Command::Migrate) = cli.command {
+		let path = config.data_dir.join("metadata.sqlite");
+		return match store::migrate(&path).await {
+			Ok(applied) => {
+				println!("{}: {} migration(s) applied", path.display(), applied);
+				Ok(())
+			}
+			Err(error) => Err(error.into()),
+		};
+	}
 	if let Some(Command::VerifyBackup { dir }) = cli.command {
 		return match backup::verify(&dir).await {
 			Ok(verified) => {
