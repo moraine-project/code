@@ -271,7 +271,7 @@ impl MetadataStore {
 			sql.push('?');
 		}
 		sql.push(')');
-		let mut query = sqlx::query(&sql);
+		let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
 		for project_id in project_ids {
 			query = query.bind(project_id);
 		}
@@ -300,7 +300,7 @@ impl MetadataStore {
 			sql.push_str("(?, ?)");
 		}
 		sql.push_str(") GROUP BY game_id, normalized_name");
-		let mut query = sqlx::query(&sql);
+		let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
 		for (game_id, name) in keys {
 			query = query.bind(game_id).bind(name);
 		}

@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
-getrandom = "0.3"
+getrandom = "0.4"
 hex.workspace = true
 moraine-crypto = { path = "../crypto" }
 moraine-install = { path = "../install" }

@@ -600,11 +600,15 @@ impl MetadataStore {
 	}
 
 	async fn scalar_count(&self, query: &str) -> Result<i64, sqlx::Error> {
-		sqlx::query_scalar::<_, i64>(query).fetch_one(&self.pool).await
+		sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(query))
+			.fetch_one(&self.pool)
+			.await
 	}
 
 	async fn scalar_opt(&self, query: &str) -> Result<Option<i64>, sqlx::Error> {
-		sqlx::query_scalar::<_, Option<i64>>(query).fetch_one(&self.pool).await
+		sqlx::query_scalar::<_, Option<i64>>(sqlx::AssertSqlSafe(query))
+			.fetch_one(&self.pool)
+			.await
 	}
 }
 
@@ -618,7 +622,7 @@ async fn run_migrations(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
 		.execute(&mut *connection)
 		.await?;
 	let mut applied = 0;
-	for (name, sql) in MIGRATIONS {
+	for &(name, sql) in MIGRATIONS {
 		sqlx::query("BEGIN IMMEDIATE").execute(&mut *connection).await?;
 		let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schema_migrations WHERE name = ?1")
 			.bind(name)

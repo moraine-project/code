@@ -9,5 +9,5 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-toml = "0.8"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+toml = "1.1"
+zip = { version = "8", default-features = false, features = ["deflate"] }

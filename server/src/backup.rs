@@ -21,7 +21,7 @@ pub async fn run(config: &Config, out: &Path) -> Result<Summary, String> {
 	let database = out.join("metadata.sqlite");
 	let _ = std::fs::remove_file(&database);
 	let escaped = database.to_string_lossy().replace('\'', "''");
-	sqlx::query(&format!("VACUUM INTO '{escaped}'"))
+	sqlx::query(sqlx::AssertSqlSafe(format!("VACUUM INTO '{escaped}'")))
 		.execute(&metadata.pool)
 		.await
 		.map_err(|error| error.to_string())?;
