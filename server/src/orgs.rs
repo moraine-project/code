@@ -47,7 +47,7 @@ pub struct TeamRow {
 
 impl MetadataStore {
 	pub async fn create_org(&self, id: &str, handle: &str, display_name: &str, created_at: i64) -> Result<(), sqlx::Error> {
-		sqlx::query("INSERT INTO orgs (id, handle, display_name, created_at) VALUES (?1, ?2, ?3, ?4)")
+		sqlx::query("INSERT INTO orgs (id, handle, display_name, created_at) VALUES ($1, $2, $3, $4)")
 			.bind(id)
 			.bind(handle)
 			.bind(display_name)
@@ -58,7 +58,7 @@ impl MetadataStore {
 	}
 
 	pub async fn org_by_handle(&self, handle: &str) -> Result<Option<OrgRow>, sqlx::Error> {
-		let row = sqlx::query("SELECT id, handle, display_name, created_at FROM orgs WHERE handle = ?1")
+		let row = sqlx::query("SELECT id, handle, display_name, created_at FROM orgs WHERE handle = $1")
 			.bind(handle)
 			.fetch_optional(&self.pool)
 			.await?;
@@ -72,8 +72,8 @@ impl MetadataStore {
 
 	pub async fn add_org_member(&self, org_id: &str, user_id: &str, role: &str, added_at: i64) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT INTO org_members (org_id, user_id, role, added_at) VALUES (?1, ?2, ?3, ?4)
-			 ON CONFLICT(org_id, user_id) DO UPDATE SET role = ?3",
+			"INSERT INTO org_members (org_id, user_id, role, added_at) VALUES ($1, $2, $3, $4)
+			 ON CONFLICT(org_id, user_id) DO UPDATE SET role = $3",
 		)
 		.bind(org_id)
 		.bind(user_id)
@@ -85,7 +85,7 @@ impl MetadataStore {
 	}
 
 	pub async fn delete_org_member(&self, org_id: &str, user_id: &str) -> Result<bool, sqlx::Error> {
-		let result = sqlx::query("DELETE FROM org_members WHERE org_id = ?1 AND user_id = ?2")
+		let result = sqlx::query("DELETE FROM org_members WHERE org_id = $1 AND user_id = $2")
 			.bind(org_id)
 			.bind(user_id)
 			.execute(&self.pool)
@@ -96,7 +96,7 @@ impl MetadataStore {
 	pub async fn orgs_for_user(&self, user_id: &str) -> Result<Vec<OrgMembership>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT o.id, o.handle, o.display_name, m.role FROM org_members m JOIN orgs o ON o.id = m.org_id
-			 WHERE m.user_id = ?1 ORDER BY m.added_at, o.handle",
+			 WHERE m.user_id = $1 ORDER BY m.added_at, o.handle",
 		)
 		.bind(user_id)
 		.fetch_all(&self.pool)
@@ -113,7 +113,7 @@ impl MetadataStore {
 	}
 
 	pub async fn org_role(&self, org_id: &str, user_id: &str) -> Result<Option<String>, sqlx::Error> {
-		let row = sqlx::query("SELECT role FROM org_members WHERE org_id = ?1 AND user_id = ?2")
+		let row = sqlx::query("SELECT role FROM org_members WHERE org_id = $1 AND user_id = $2")
 			.bind(org_id)
 			.bind(user_id)
 			.fetch_optional(&self.pool)
@@ -124,7 +124,7 @@ impl MetadataStore {
 	pub async fn org_members(&self, org_id: &str) -> Result<Vec<OrgMemberRow>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT m.user_id, u.email, m.role, m.added_at FROM org_members m JOIN users u ON u.id = m.user_id
-			 WHERE m.org_id = ?1 ORDER BY m.added_at, m.user_id",
+			 WHERE m.org_id = $1 ORDER BY m.added_at, m.user_id",
 		)
 		.bind(org_id)
 		.fetch_all(&self.pool)
@@ -141,7 +141,7 @@ impl MetadataStore {
 	}
 
 	pub async fn org_owner_count(&self, org_id: &str) -> Result<i64, sqlx::Error> {
-		let row = sqlx::query("SELECT COUNT(*) AS owners FROM org_members WHERE org_id = ?1 AND role = 'owner'")
+		let row = sqlx::query("SELECT COUNT(*) AS owners FROM org_members WHERE org_id = $1 AND role = 'owner'")
 			.bind(org_id)
 			.fetch_one(&self.pool)
 			.await?;
@@ -156,7 +156,7 @@ impl MetadataStore {
 		display_name: &str,
 		created_at: i64,
 	) -> Result<(), sqlx::Error> {
-		sqlx::query("INSERT INTO teams (id, org_id, parent_team_id, display_name, created_at) VALUES (?1, ?2, ?3, ?4, ?5)")
+		sqlx::query("INSERT INTO teams (id, org_id, parent_team_id, display_name, created_at) VALUES ($1, $2, $3, $4, $5)")
 			.bind(id)
 			.bind(org_id)
 			.bind(parent_team_id)
@@ -169,7 +169,7 @@ impl MetadataStore {
 
 	pub async fn org_teams(&self, org_id: &str) -> Result<Vec<TeamRow>, sqlx::Error> {
 		let rows = sqlx::query(
-			"SELECT id, org_id, parent_team_id, display_name FROM teams WHERE org_id = ?1 ORDER BY created_at, id",
+			"SELECT id, org_id, parent_team_id, display_name FROM teams WHERE org_id = $1 ORDER BY created_at, id",
 		)
 		.bind(org_id)
 		.fetch_all(&self.pool)
@@ -186,7 +186,7 @@ impl MetadataStore {
 	}
 
 	pub async fn team(&self, id: &str) -> Result<Option<TeamRow>, sqlx::Error> {
-		let row = sqlx::query("SELECT id, org_id, parent_team_id, display_name FROM teams WHERE id = ?1")
+		let row = sqlx::query("SELECT id, org_id, parent_team_id, display_name FROM teams WHERE id = $1")
 			.bind(id)
 			.fetch_optional(&self.pool)
 			.await?;
@@ -555,6 +555,7 @@ mod tests {
 			tls_extra_roots: None,
 			max_feed_scan_pages: 50,
 			skip_migrate_on_start: false,
+			database_url: None,
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Open,
 			web_dir: None,

@@ -12,7 +12,7 @@ pub async fn run(config: &Config, email: &str) -> Result<Bootstrapped, String> {
 		return Err("the operator email is not a valid address".to_string());
 	}
 	std::fs::create_dir_all(&config.data_dir).map_err(|error| error.to_string())?;
-	let metadata = crate::store::MetadataStore::open(config.data_dir.join("metadata.sqlite"))
+	let metadata = crate::store::MetadataStore::open_url(&config.database_url())
 		.await
 		.map_err(|error| error.to_string())?;
 	if metadata
@@ -79,6 +79,7 @@ mod tests {
 			tls_extra_roots: None,
 			max_feed_scan_pages: 50,
 			skip_migrate_on_start: false,
+			database_url: None,
 			publishing: crate::config::Publishing::Review,
 			allow_insecure_federation_local: false,
 			web_dir: None,

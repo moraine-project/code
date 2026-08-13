@@ -88,6 +88,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_SKIP_MIGRATE_ON_START", default_value_t = false)]
 	pub skip_migrate_on_start: bool,
 
+	#[arg(long, env = "MORAINE_DATABASE_URL")]
+	pub database_url: Option<String>,
+
 	#[arg(long, env = "MORAINE_MAX_FEED_SCAN_PAGES", default_value_t = 50)]
 	pub max_feed_scan_pages: u32,
 
@@ -99,4 +102,16 @@ pub struct Config {
 
 	#[arg(long, env = "MORAINE_WEB_DIR")]
 	pub web_dir: Option<PathBuf>,
+}
+
+impl Config {
+	pub fn database_url(&self) -> String {
+		self.database_url
+			.clone()
+			.unwrap_or_else(|| crate::store::sqlite_url(&self.data_dir.join("metadata.sqlite")))
+	}
+
+	pub fn uses_sqlite(&self) -> bool {
+		self.database_url().starts_with("sqlite:")
+	}
 }

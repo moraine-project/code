@@ -7,9 +7,10 @@ use moraine_model::Canonical;
 use moraine_model::profile::ProfileRevision;
 use moraine_model::search::{Annotation, InstancePopularity, ListingState, SearchQuery, SearchResponse, SearchResult};
 use serde::Deserialize;
-use sqlx::{QueryBuilder, Row};
+use sqlx::Row;
 
 use crate::routes::AppState;
+use crate::sql::SqlBuilder;
 use crate::store::MetadataStore;
 
 pub fn routes() -> Router<AppState> {
@@ -226,8 +227,8 @@ impl MetadataStore {
 		let mut transaction = self.pool.begin().await?;
 		sqlx::query(
 			"INSERT INTO search_documents (project_id, game_id, display_name, summary, updated_at, created_at, normalized_name)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)
-			 ON CONFLICT(project_id) DO UPDATE SET game_id = ?2, display_name = ?3, summary = ?4, updated_at = ?5, normalized_name = ?6",
+			 VALUES ($1, $2, $3, $4, $5, $5, $6)
+			 ON CONFLICT(project_id) DO UPDATE SET game_id = $2, display_name = $3, summary = $4, updated_at = $5, normalized_name = $6",
 		)
 		.bind(document.project_id)
 		.bind(document.game_id)
@@ -237,18 +238,20 @@ impl MetadataStore {
 		.bind(normalize_name(document.display_name))
 		.execute(&mut *transaction)
 		.await?;
-		sqlx::query("DELETE FROM search_labels WHERE project_id = ?1 AND label_kind IN ('category', 'tag')")
+		sqlx::query("DELETE FROM search_labels WHERE project_id = $1 AND label_kind IN ('category', 'tag')")
 			.bind(document.project_id)
 			.execute(&mut *transaction)
 			.await?;
 		for (label_kind, labels) in [("category", document.categories), ("tag", document.tags)] {
 			for label in labels {
-				sqlx::query("INSERT OR IGNORE INTO search_labels (project_id, label_kind, label_id) VALUES (?1, ?2, ?3)")
-					.bind(document.project_id)
-					.bind(label_kind)
-					.bind(label)
-					.execute(&mut *transaction)
-					.await?;
+				sqlx::query(
+					"INSERT INTO search_labels (project_id, label_kind, label_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+				)
+				.bind(document.project_id)
+				.bind(label_kind)
+				.bind(label)
+				.execute(&mut *transaction)
+				.await?;
 			}
 		}
 		transaction.commit().await?;
@@ -263,19 +266,18 @@ impl MetadataStore {
 		if project_ids.is_empty() {
 			return Ok(homes);
 		}
-		let mut sql = String::from("SELECT project_id, home_url FROM subscriptions WHERE project_id IN (");
-		for index in 0..project_ids.len() {
-			if index > 0 {
-				sql.push(',');
+		let mut builder = SqlBuilder::new("SELECT project_id, home_url FROM subscriptions WHERE project_id IN (");
+		{
+			let mut separated = builder.separated(", ");
+			for project_id in project_ids {
+				separated.push_bind(project_id);
 			}
-			sql.push('?');
 		}
-		sql.push(')');
-		let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
-		for project_id in project_ids {
-			query = query.bind(project_id);
-		}
-		for row in query.fetch_all(&self.pool).await? {
+		builder.push(
+			") AND updated_at = (SELECT MAX(updated_at) FROM subscriptions WHERE project_id = subscriptions.project_id)
+			 ORDER BY home_url",
+		);
+		for row in builder.into_query().fetch_all(&self.pool).await? {
 			homes.entry(row.get("project_id")).or_insert_with(|| row.get("home_url"));
 		}
 		Ok(homes)
@@ -289,22 +291,22 @@ impl MetadataStore {
 		if keys.is_empty() {
 			return Ok(counts);
 		}
-		let mut sql = String::from(
-			"SELECT game_id, normalized_name, COUNT(*) AS total FROM search_documents
-			 WHERE (game_id, normalized_name) IN (",
+		let mut builder = SqlBuilder::new(
+			"SELECT game_id, normalized_name, COUNT(*) AS total FROM search_documents WHERE (game_id, normalized_name) IN (",
 		);
-		for index in 0..keys.len() {
-			if index > 0 {
-				sql.push(',');
+		{
+			let mut separated = builder.separated(", ");
+			for (game_id, name) in keys {
+				separated
+					.push("(")
+					.push_bind_unseparated(game_id)
+					.push_unseparated(", ")
+					.push_bind_unseparated(name)
+					.push_unseparated(")");
 			}
-			sql.push_str("(?, ?)");
 		}
-		sql.push_str(") GROUP BY game_id, normalized_name");
-		let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
-		for (game_id, name) in keys {
-			query = query.bind(game_id).bind(name);
-		}
-		for row in query.fetch_all(&self.pool).await? {
+		builder.push(") GROUP BY game_id, normalized_name");
+		for row in builder.into_query().fetch_all(&self.pool).await? {
 			counts.insert((row.get("game_id"), row.get("normalized_name")), row.get("total"));
 		}
 		Ok(counts)
@@ -312,12 +314,14 @@ impl MetadataStore {
 
 	pub async fn add_search_labels(&self, project_id: &str, label_kind: &str, labels: &[String]) -> Result<(), sqlx::Error> {
 		for label in labels {
-			sqlx::query("INSERT OR IGNORE INTO search_labels (project_id, label_kind, label_id) VALUES (?1, ?2, ?3)")
-				.bind(project_id)
-				.bind(label_kind)
-				.bind(label)
-				.execute(&self.pool)
-				.await?;
+			sqlx::query(
+				"INSERT INTO search_labels (project_id, label_kind, label_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+			)
+			.bind(project_id)
+			.bind(label_kind)
+			.bind(label)
+			.execute(&self.pool)
+			.await?;
 		}
 		Ok(())
 	}
@@ -325,8 +329,8 @@ impl MetadataStore {
 	pub async fn search_documents(&self, filter: SearchFilter<'_>) -> Result<Vec<SearchHit>, sqlx::Error> {
 		let mut query = match filter.popularity_since {
 			Some((day, seconds)) => {
-				let mut query = QueryBuilder::new(
-					"WITH pop AS (SELECT project_id, SUM(count) AS total FROM download_counts WHERE day >= ",
+				let mut query = SqlBuilder::new(
+					"WITH pop AS (SELECT project_id, CAST(SUM(count) AS BIGINT) AS total FROM download_counts WHERE day >= ",
 				);
 				query
 					.push_bind(day)
@@ -344,7 +348,7 @@ impl MetadataStore {
 					);
 				query
 			}
-			None => QueryBuilder::new(
+			None => SqlBuilder::new(
 				"SELECT project_id, game_id, display_name, summary, updated_at, created_at, 0 AS popularity FROM search_documents WHERE 1 = 1",
 			),
 		};
@@ -410,15 +414,15 @@ impl MetadataStore {
 			SearchSort::Name => {
 				if let Some((value, id)) = filter.cursor {
 					query
-						.push(" AND (display_name COLLATE NOCASE > ")
+						.push(" AND (lower(display_name) > lower(")
 						.push_bind(value.to_string())
-						.push(" OR (display_name COLLATE NOCASE = ")
+						.push(") OR (lower(display_name) = lower(")
 						.push_bind(value.to_string())
-						.push(" AND project_id > ")
+						.push(") AND project_id > ")
 						.push_bind(id)
 						.push("))");
 				}
-				query.push(" ORDER BY display_name COLLATE NOCASE ASC, project_id ASC");
+				query.push(" ORDER BY lower(display_name) ASC, project_id ASC");
 			}
 			SearchSort::Popularity => {
 				const POPULARITY: &str = "(COALESCE(pop.total, 0) + COALESCE(fol.total, 0))";
@@ -441,7 +445,7 @@ impl MetadataStore {
 			}
 		}
 		query.push(" LIMIT ").push_bind(filter.limit);
-		let rows = query.build().fetch_all(&self.pool).await?;
+		let rows = query.into_query().fetch_all(&self.pool).await?;
 		Ok(rows
 			.into_iter()
 			.map(|row| SearchHit {

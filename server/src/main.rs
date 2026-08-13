@@ -21,6 +21,7 @@ mod registry;
 mod review;
 mod routes;
 mod search;
+mod sql;
 mod store;
 #[cfg(test)]
 mod test_support;
@@ -44,8 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let cli = Cli::parse();
 	let config = cli.config;
 	if config.skip_migrate_on_start {
-		let path = config.data_dir.join("metadata.sqlite");
-		match store::pending(&path).await {
+		match store::pending_url(&config.database_url()).await {
 			Ok(0) => {}
 			Ok(pending) => {
 				return Err(format!("{pending} migration(s) pending; run `moraine-server migrate`").into());
@@ -69,10 +69,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		};
 	}
 	if let Some(Command::Migrate) = cli.command {
-		let path = config.data_dir.join("metadata.sqlite");
-		return match store::migrate(&path).await {
+		let url = config.database_url();
+		return match store::migrate_url(&url).await {
 			Ok(applied) => {
-				println!("{}: {} migration(s) applied", path.display(), applied);
+				println!("{}: {} migration(s) applied", url, applied);
 				Ok(())
 			}
 			Err(error) => Err(error.into()),
@@ -122,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		}
 	}
 	let store = Arc::new(blob::BlobStore::new(&config.data_dir).await?);
-	let metadata = Arc::new(store::MetadataStore::open(config.data_dir.join("metadata.sqlite")).await?);
+	let metadata = Arc::new(store::MetadataStore::open_url(&config.database_url()).await?);
 	let capability = Arc::new(capability::Capability::discover(&config));
 	let state = routes::AppState {
 		store,

@@ -62,6 +62,15 @@ numbered SQL files under `migrations/<engine>/`, applied in order and recorded
 in a `schema_migrations` table so re-running is a no-op. It is the explicit
 upgrade step to run before starting a new binary.
 
+The database is SQLite by default: a `metadata.sqlite` file in the data
+directory. `MORAINE_DATABASE_URL` points the store at another engine instead,
+for example `postgres://user:password@host/database`. Both engines run the same
+statements through one driver layer, with a migration directory per engine
+because the column types differ (`BLOB` and `INTEGER` against `BYTEA` and
+`BIGINT`). PostgreSQL migrations take an advisory lock so two processes
+starting together cannot apply one twice. Backup and restore read the SQLite
+file directly and refuse a PostgreSQL database; use `pg_dump` there.
+
 The server also migrates on startup, taking an immediate write lock per
 migration so two processes starting together cannot both apply one. Set
 `MORAINE_SKIP_MIGRATE_ON_START` to make the step explicit: the server then

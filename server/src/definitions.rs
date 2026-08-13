@@ -33,7 +33,7 @@ impl MetadataStore {
 		genesis_digest: &[u8],
 		created_at: i64,
 	) -> Result<(), sqlx::Error> {
-		sqlx::query("INSERT INTO definitions (id, kind, genesis_digest, created_at) VALUES (?1, ?2, ?3, ?4)")
+		sqlx::query("INSERT INTO definitions (id, kind, genesis_digest, created_at) VALUES ($1, $2, $3, $4)")
 			.bind(id)
 			.bind(kind)
 			.bind(genesis_digest)
@@ -44,7 +44,7 @@ impl MetadataStore {
 	}
 
 	pub async fn definition(&self, id: &str) -> Result<Option<DefinitionRow>, sqlx::Error> {
-		let row = sqlx::query("SELECT id, kind, genesis_digest, current_digest FROM definitions WHERE id = ?1")
+		let row = sqlx::query("SELECT id, kind, genesis_digest, current_digest FROM definitions WHERE id = $1")
 			.bind(id)
 			.fetch_optional(&self.pool)
 			.await?;
@@ -58,7 +58,7 @@ impl MetadataStore {
 
 	pub async fn definitions_by_kind(&self, kind: &str) -> Result<Vec<DefinitionRow>, sqlx::Error> {
 		let rows =
-			sqlx::query("SELECT id, kind, genesis_digest, current_digest FROM definitions WHERE kind = ?1 ORDER BY id ASC")
+			sqlx::query("SELECT id, kind, genesis_digest, current_digest FROM definitions WHERE kind = $1 ORDER BY id ASC")
 				.bind(kind)
 				.fetch_all(&self.pool)
 				.await?;
@@ -74,7 +74,7 @@ impl MetadataStore {
 	}
 
 	pub async fn set_definition_current(&self, id: &str, current_digest: &[u8]) -> Result<(), sqlx::Error> {
-		sqlx::query("UPDATE definitions SET current_digest = ?1 WHERE id = ?2")
+		sqlx::query("UPDATE definitions SET current_digest = $1 WHERE id = $2")
 			.bind(current_digest)
 			.bind(id)
 			.execute(&self.pool)
@@ -444,6 +444,7 @@ mod tests {
 			tls_extra_roots: None,
 			max_feed_scan_pages: 50,
 			skip_migrate_on_start: false,
+			database_url: None,
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Open,
 			web_dir: None,

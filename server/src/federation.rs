@@ -48,8 +48,8 @@ impl MetadataStore {
 		updated_at: i64,
 	) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT INTO definition_subscriptions (home_url, id, kind, updated_at) VALUES (?1, ?2, ?3, ?4)
-			 ON CONFLICT(home_url, id) DO UPDATE SET kind = ?3, updated_at = ?4",
+			"INSERT INTO definition_subscriptions (home_url, id, kind, updated_at) VALUES ($1, $2, $3, $4)
+			 ON CONFLICT(home_url, id) DO UPDATE SET kind = $3, updated_at = $4",
 		)
 		.bind(home_url)
 		.bind(id)
@@ -762,8 +762,8 @@ impl MetadataStore {
 		updated_at: i64,
 	) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT INTO subscriptions (home_url, project_id, cursor_seq, status, updated_at) VALUES (?1, ?2, 0, ?3, ?4)
-			 ON CONFLICT(home_url, project_id) DO UPDATE SET status = ?3, updated_at = ?4",
+			"INSERT INTO subscriptions (home_url, project_id, cursor_seq, status, updated_at) VALUES ($1, $2, 0, $3, $4)
+			 ON CONFLICT(home_url, project_id) DO UPDATE SET status = $3, updated_at = $4",
 		)
 		.bind(home_url)
 		.bind(project_id)
@@ -776,7 +776,7 @@ impl MetadataStore {
 
 	pub async fn subscription(&self, home_url: &str, project_id: &str) -> Result<Option<SubscriptionRow>, sqlx::Error> {
 		let row = sqlx::query(
-			"SELECT home_url, project_id, cursor_seq, remote_head_seq, reset_count, status, updated_at FROM subscriptions WHERE home_url = ?1 AND project_id = ?2",
+			"SELECT home_url, project_id, cursor_seq, remote_head_seq, reset_count, status, updated_at FROM subscriptions WHERE home_url = $1 AND project_id = $2",
 		)
 		.bind(home_url)
 		.bind(project_id)
@@ -793,8 +793,8 @@ impl MetadataStore {
 		updated_at: i64,
 	) -> Result<bool, sqlx::Error> {
 		let result = sqlx::query(
-			"UPDATE subscriptions SET cursor_seq = ?1, remote_head_seq = ?1, reset_count = reset_count + 1, updated_at = ?2
-			 WHERE home_url = ?3 AND project_id = ?4",
+			"UPDATE subscriptions SET cursor_seq = $1, remote_head_seq = $1, reset_count = reset_count + 1, updated_at = $2
+			 WHERE home_url = $3 AND project_id = $4",
 		)
 		.bind(cursor_seq)
 		.bind(updated_at)
@@ -815,8 +815,8 @@ impl MetadataStore {
 		updated_at: i64,
 	) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"UPDATE subscriptions SET cursor_seq = ?1, remote_head_seq = ?2, status = ?3, updated_at = ?4
-			 WHERE home_url = ?5 AND project_id = ?6",
+			"UPDATE subscriptions SET cursor_seq = $1, remote_head_seq = $2, status = $3, updated_at = $4
+			 WHERE home_url = $5 AND project_id = $6",
 		)
 		.bind(cursor_seq)
 		.bind(remote_head_seq)
@@ -830,7 +830,7 @@ impl MetadataStore {
 	}
 
 	pub async fn remove_subscription(&self, home_url: &str, project_id: &str) -> Result<bool, sqlx::Error> {
-		let result = sqlx::query("DELETE FROM subscriptions WHERE home_url = ?1 AND project_id = ?2")
+		let result = sqlx::query("DELETE FROM subscriptions WHERE home_url = $1 AND project_id = $2")
 			.bind(home_url)
 			.bind(project_id)
 			.execute(&self.pool)
@@ -859,7 +859,7 @@ pub struct SubscriptionRow {
 	pub updated_at: i64,
 }
 
-fn subscription_from_row(row: sqlx::sqlite::SqliteRow) -> SubscriptionRow {
+fn subscription_from_row(row: sqlx::any::AnyRow) -> SubscriptionRow {
 	SubscriptionRow {
 		home_url: row.get("home_url"),
 		project_id: row.get("project_id"),

@@ -23,7 +23,7 @@ pub struct NotificationRow {
 
 impl MetadataStore {
 	pub async fn follow(&self, user_id: &str, project_id: &str, created_at: i64) -> Result<(), sqlx::Error> {
-		sqlx::query("INSERT OR IGNORE INTO follows (user_id, project_id, created_at) VALUES (?1, ?2, ?3)")
+		sqlx::query("INSERT INTO follows (user_id, project_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
 			.bind(user_id)
 			.bind(project_id)
 			.bind(created_at)
@@ -33,7 +33,7 @@ impl MetadataStore {
 	}
 
 	pub async fn unfollow(&self, user_id: &str, project_id: &str) -> Result<bool, sqlx::Error> {
-		let result = sqlx::query("DELETE FROM follows WHERE user_id = ?1 AND project_id = ?2")
+		let result = sqlx::query("DELETE FROM follows WHERE user_id = $1 AND project_id = $2")
 			.bind(user_id)
 			.bind(project_id)
 			.execute(&self.pool)
@@ -42,7 +42,7 @@ impl MetadataStore {
 	}
 
 	pub async fn follows(&self, user_id: &str) -> Result<Vec<String>, sqlx::Error> {
-		let rows = sqlx::query("SELECT project_id FROM follows WHERE user_id = ?1 ORDER BY created_at")
+		let rows = sqlx::query("SELECT project_id FROM follows WHERE user_id = $1 ORDER BY created_at")
 			.bind(user_id)
 			.fetch_all(&self.pool)
 			.await?;
@@ -50,7 +50,7 @@ impl MetadataStore {
 	}
 
 	pub async fn followers(&self, project_id: &str) -> Result<Vec<String>, sqlx::Error> {
-		let rows = sqlx::query("SELECT user_id FROM follows WHERE project_id = ?1")
+		let rows = sqlx::query("SELECT user_id FROM follows WHERE project_id = $1")
 			.bind(project_id)
 			.fetch_all(&self.pool)
 			.await?;
@@ -59,7 +59,7 @@ impl MetadataStore {
 
 	pub async fn insert_notification(&self, notification: &NotificationRow, user_id: &str) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT INTO notifications (id, user_id, project_id, event_kind, object_digest, feed_seq, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+			"INSERT INTO notifications (id, user_id, project_id, event_kind, object_digest, feed_seq, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
 		)
 		.bind(&notification.id)
 		.bind(user_id)
@@ -80,9 +80,9 @@ impl MetadataStore {
 		limit: i64,
 	) -> Result<Vec<NotificationRow>, sqlx::Error> {
 		let sql = if unread_only {
-			"SELECT id, project_id, event_kind, object_digest, feed_seq, created_at, read_at FROM notifications WHERE user_id = ?1 AND read_at IS NULL ORDER BY created_at DESC LIMIT ?2"
+			"SELECT id, project_id, event_kind, object_digest, feed_seq, created_at, read_at FROM notifications WHERE user_id = $1 AND read_at IS NULL ORDER BY created_at DESC LIMIT $2"
 		} else {
-			"SELECT id, project_id, event_kind, object_digest, feed_seq, created_at, read_at FROM notifications WHERE user_id = ?1 ORDER BY created_at DESC LIMIT ?2"
+			"SELECT id, project_id, event_kind, object_digest, feed_seq, created_at, read_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2"
 		};
 		let rows = sqlx::query(sql).bind(user_id).bind(limit).fetch_all(&self.pool).await?;
 		Ok(rows
@@ -100,7 +100,7 @@ impl MetadataStore {
 	}
 
 	pub async fn mark_notification_read(&self, user_id: &str, id: &str, read_at: i64) -> Result<bool, sqlx::Error> {
-		let result = sqlx::query("UPDATE notifications SET read_at = ?1 WHERE id = ?2 AND user_id = ?3 AND read_at IS NULL")
+		let result = sqlx::query("UPDATE notifications SET read_at = $1 WHERE id = $2 AND user_id = $3 AND read_at IS NULL")
 			.bind(read_at)
 			.bind(id)
 			.bind(user_id)
@@ -110,7 +110,7 @@ impl MetadataStore {
 	}
 
 	pub async fn mark_all_notifications_read(&self, user_id: &str, read_at: i64) -> Result<(), sqlx::Error> {
-		sqlx::query("UPDATE notifications SET read_at = ?1 WHERE user_id = ?2 AND read_at IS NULL")
+		sqlx::query("UPDATE notifications SET read_at = $1 WHERE user_id = $2 AND read_at IS NULL")
 			.bind(read_at)
 			.bind(user_id)
 			.execute(&self.pool)
@@ -119,7 +119,7 @@ impl MetadataStore {
 	}
 
 	pub async fn prune_notifications(&self, before: i64) -> Result<u64, sqlx::Error> {
-		let result = sqlx::query("DELETE FROM notifications WHERE created_at < ?1")
+		let result = sqlx::query("DELETE FROM notifications WHERE created_at < $1")
 			.bind(before)
 			.execute(&self.pool)
 			.await?;
@@ -310,6 +310,7 @@ mod tests {
 			tls_extra_roots: None,
 			max_feed_scan_pages: 50,
 			skip_migrate_on_start: false,
+			database_url: None,
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Open,
 			web_dir: None,

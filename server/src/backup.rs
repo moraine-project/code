@@ -14,6 +14,9 @@ pub struct Summary {
 }
 
 pub async fn run(config: &Config, out: &Path) -> Result<Summary, String> {
+	if !config.uses_sqlite() {
+		return Err("backup reads the SQLite database file; use pg_dump for PostgreSQL".to_string());
+	}
 	std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
 	let metadata = MetadataStore::open(config.data_dir.join("metadata.sqlite"))
 		.await
@@ -131,6 +134,7 @@ mod tests {
 			tls_extra_roots: None,
 			max_feed_scan_pages: 50,
 			skip_migrate_on_start: false,
+			database_url: None,
 			publishing: crate::config::Publishing::Review,
 			allow_insecure_federation_local: false,
 			web_dir: None,

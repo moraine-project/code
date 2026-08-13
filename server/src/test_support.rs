@@ -300,6 +300,7 @@ pub(crate) async fn app_in_with_scan(
 		max_feed_page_entries,
 		max_feed_scan_pages,
 		skip_migrate_on_start: false,
+		database_url: None,
 		max_response_bytes: 16_777_216,
 		staging_retention_seconds: 3_600,
 		blob_retention_seconds: 604_800,

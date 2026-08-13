@@ -39,8 +39,8 @@ impl MetadataStore {
 		added_at: i64,
 	) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT INTO mirrors (mirror_id, public_key, added_by, added_at) VALUES (?1, ?2, ?3, ?4)
-			 ON CONFLICT(mirror_id) DO UPDATE SET public_key = ?2, added_by = ?3, added_at = ?4",
+			"INSERT INTO mirrors (mirror_id, public_key, added_by, added_at) VALUES ($1, $2, $3, $4)
+			 ON CONFLICT(mirror_id) DO UPDATE SET public_key = $2, added_by = $3, added_at = $4",
 		)
 		.bind(mirror_id)
 		.bind(public_key)
@@ -52,7 +52,7 @@ impl MetadataStore {
 	}
 
 	pub async fn mirror_key(&self, mirror_id: &str) -> Result<Option<Vec<u8>>, sqlx::Error> {
-		let row = sqlx::query("SELECT public_key FROM mirrors WHERE mirror_id = ?1")
+		let row = sqlx::query("SELECT public_key FROM mirrors WHERE mirror_id = $1")
 			.bind(mirror_id)
 			.fetch_optional(&self.pool)
 			.await?;
@@ -68,7 +68,8 @@ impl MetadataStore {
 		object_digest: &[u8],
 	) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT OR REPLACE INTO locations (artifact_digest, url, kind, operator_id, object_digest) VALUES (?1, ?2, ?3, ?4, ?5)",
+			"INSERT INTO locations (artifact_digest, url, kind, operator_id, object_digest) VALUES ($1, $2, $3, $4, $5)
+			 ON CONFLICT (artifact_digest, url) DO UPDATE SET kind = $3, operator_id = $4, object_digest = $5",
 		)
 		.bind(artifact_digest)
 		.bind(url)
@@ -81,7 +82,7 @@ impl MetadataStore {
 	}
 
 	pub async fn locations_for(&self, artifact_digest: &[u8]) -> Result<Vec<LocationRow>, sqlx::Error> {
-		let rows = sqlx::query("SELECT url, kind, operator_id FROM locations WHERE artifact_digest = ?1 ORDER BY url")
+		let rows = sqlx::query("SELECT url, kind, operator_id FROM locations WHERE artifact_digest = $1 ORDER BY url")
 			.bind(artifact_digest)
 			.fetch_all(&self.pool)
 			.await?;
@@ -102,8 +103,10 @@ impl MetadataStore {
 		object_digest: &[u8],
 	) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT OR REPLACE INTO mirror_commitments (artifact_digest, mirror_id, size, accepted_at, retention_until, endpoint, object_digest)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+			"INSERT INTO mirror_commitments (artifact_digest, mirror_id, size, accepted_at, retention_until, endpoint, object_digest)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7)
+			 ON CONFLICT (artifact_digest, mirror_id) DO UPDATE SET size = $3, accepted_at = $4,
+			 retention_until = $5, endpoint = $6, object_digest = $7",
 		)
 		.bind(artifact_digest)
 		.bind(&commitment.mirror_id)
@@ -119,7 +122,7 @@ impl MetadataStore {
 
 	pub async fn commitments_for(&self, artifact_digest: &[u8]) -> Result<Vec<CommitmentRow>, sqlx::Error> {
 		let rows = sqlx::query(
-			"SELECT mirror_id, size, accepted_at, retention_until, endpoint FROM mirror_commitments WHERE artifact_digest = ?1 ORDER BY accepted_at DESC",
+			"SELECT mirror_id, size, accepted_at, retention_until, endpoint FROM mirror_commitments WHERE artifact_digest = $1 ORDER BY accepted_at DESC",
 		)
 		.bind(artifact_digest)
 		.fetch_all(&self.pool)
@@ -353,6 +356,7 @@ mod tests {
 			tls_extra_roots: None,
 			max_feed_scan_pages: 50,
 			skip_migrate_on_start: false,
+			database_url: None,
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Open,
 			web_dir: None,

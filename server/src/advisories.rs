@@ -37,8 +37,8 @@ impl MetadataStore {
 		added_at: i64,
 	) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT INTO providers (provider_id, public_key, added_by, added_at) VALUES (?1, ?2, ?3, ?4)
-			 ON CONFLICT(provider_id) DO UPDATE SET public_key = ?2, added_by = ?3, added_at = ?4",
+			"INSERT INTO providers (provider_id, public_key, added_by, added_at) VALUES ($1, $2, $3, $4)
+			 ON CONFLICT(provider_id) DO UPDATE SET public_key = $2, added_by = $3, added_at = $4",
 		)
 		.bind(provider_id)
 		.bind(public_key)
@@ -50,7 +50,7 @@ impl MetadataStore {
 	}
 
 	pub async fn provider(&self, provider_id: &str) -> Result<Option<Vec<u8>>, sqlx::Error> {
-		let row = sqlx::query("SELECT public_key FROM providers WHERE provider_id = ?1")
+		let row = sqlx::query("SELECT public_key FROM providers WHERE provider_id = $1")
 			.bind(provider_id)
 			.fetch_optional(&self.pool)
 			.await?;
@@ -59,9 +59,12 @@ impl MetadataStore {
 
 	pub async fn insert_advisory(&self, advisory: &AdvisoryRow) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT OR REPLACE INTO advisories
+			"INSERT INTO advisories
 			 (digest, provider_id, project_id, game_id, affected_digest, severity, category, block_promotion, published_at, retracted_at)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			 ON CONFLICT (digest) DO UPDATE SET provider_id = $2, project_id = $3, game_id = $4,
+			 affected_digest = $5, severity = $6, category = $7, block_promotion = $8,
+			 published_at = $9, retracted_at = $10",
 		)
 		.bind(&advisory.digest)
 		.bind(&advisory.provider_id)
@@ -81,7 +84,7 @@ impl MetadataStore {
 	pub async fn advisories_for_digest(&self, digest: &[u8]) -> Result<Vec<AdvisoryRow>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT digest, provider_id, project_id, game_id, affected_digest, severity, category, block_promotion, published_at, retracted_at
-			 FROM advisories WHERE affected_digest = ?1 ORDER BY published_at DESC",
+			 FROM advisories WHERE affected_digest = $1 ORDER BY published_at DESC",
 		)
 		.bind(digest)
 		.fetch_all(&self.pool)
@@ -92,7 +95,7 @@ impl MetadataStore {
 	pub async fn advisories_for_project(&self, project_id: &str) -> Result<Vec<AdvisoryRow>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT digest, provider_id, project_id, game_id, affected_digest, severity, category, block_promotion, published_at, retracted_at
-			 FROM advisories WHERE project_id = ?1 ORDER BY published_at DESC",
+			 FROM advisories WHERE project_id = $1 ORDER BY published_at DESC",
 		)
 		.bind(project_id)
 		.fetch_all(&self.pool)
@@ -101,7 +104,7 @@ impl MetadataStore {
 	}
 }
 
-fn advisory_from_row(row: sqlx::sqlite::SqliteRow) -> AdvisoryRow {
+fn advisory_from_row(row: sqlx::any::AnyRow) -> AdvisoryRow {
 	AdvisoryRow {
 		digest: row.get("digest"),
 		provider_id: row.get("provider_id"),

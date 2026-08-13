@@ -1,7 +1,9 @@
 use std::path::Path;
 
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{QueryBuilder, Row, SqlitePool, Transaction};
+use sqlx::any::AnyPoolOptions;
+use sqlx::{AnyPool, Row, Transaction};
+
+use crate::sql::SqlBuilder;
 
 #[derive(Debug, Clone)]
 pub struct StoredObject {
@@ -74,28 +76,46 @@ pub struct WithdrawalRow {
 	pub declared_time: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Engine {
+	Sqlite,
+	Postgres,
+}
+
+impl Engine {
+	pub fn of(url: &str) -> Self {
+		if url.starts_with("postgres://") || url.starts_with("postgresql://") {
+			Self::Postgres
+		} else {
+			Self::Sqlite
+		}
+	}
+}
+
+pub fn sqlite_url(path: &Path) -> String {
+	format!("sqlite:{}?mode=rwc", path.display())
+}
+
 pub struct MetadataStore {
-	pub(crate) pool: SqlitePool,
+	pub(crate) pool: AnyPool,
 }
 
 impl MetadataStore {
 	pub async fn open(path: impl AsRef<Path>) -> Result<Self, sqlx::Error> {
-		let options = SqliteConnectOptions::new()
-			.filename(path)
-			.create_if_missing(true)
-			.foreign_keys(true)
-			.busy_timeout(CONNECT_TIMEOUT);
-		let pool = SqlitePoolOptions::new()
-			.max_connections(5)
-			.acquire_timeout(CONNECT_TIMEOUT)
-			.connect_with(options)
-			.await?;
-		run_migrations(&pool).await?;
+		if let Some(parent) = path.as_ref().parent() {
+			std::fs::create_dir_all(parent).map_err(sqlx::Error::Io)?;
+		}
+		Self::open_url(&sqlite_url(path.as_ref())).await
+	}
+
+	pub async fn open_url(url: &str) -> Result<Self, sqlx::Error> {
+		let pool = connect(url, 5).await?;
+		run_migrations(&pool, Engine::of(url)).await?;
 		Ok(Self { pool })
 	}
 
 	pub async fn put_object(&self, object: &StoredObject) -> Result<(), sqlx::Error> {
-		sqlx::query("INSERT OR IGNORE INTO objects (digest, kind, payload, wire) VALUES (?1, ?2, ?3, ?4)")
+		sqlx::query("INSERT INTO objects (digest, kind, payload, wire) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING")
 			.bind(&object.digest)
 			.bind(&object.kind)
 			.bind(&object.payload)
@@ -106,7 +126,7 @@ impl MetadataStore {
 	}
 
 	pub async fn object(&self, digest: &[u8]) -> Result<Option<StoredObject>, sqlx::Error> {
-		let row = sqlx::query("SELECT digest, kind, payload, wire FROM objects WHERE digest = ?1")
+		let row = sqlx::query("SELECT digest, kind, payload, wire FROM objects WHERE digest = $1")
 			.bind(digest)
 			.fetch_optional(&self.pool)
 			.await?;
@@ -119,7 +139,7 @@ impl MetadataStore {
 	}
 
 	pub async fn objects_of_kind(&self, kind: &str, limit: i64) -> Result<Vec<StoredObject>, sqlx::Error> {
-		let rows = sqlx::query("SELECT digest, kind, payload, wire FROM objects WHERE kind = ?1 LIMIT ?2")
+		let rows = sqlx::query("SELECT digest, kind, payload, wire FROM objects WHERE kind = $1 LIMIT $2")
 			.bind(kind)
 			.bind(limit)
 			.fetch_all(&self.pool)
@@ -137,7 +157,7 @@ impl MetadataStore {
 
 	pub async fn project(&self, id: &str) -> Result<Option<ProjectRow>, sqlx::Error> {
 		let row = sqlx::query(
-			"SELECT id, genesis_digest, head_seq, head_digest, profile_digest, owner_kind, owner_id FROM projects WHERE id = ?1",
+			"SELECT id, genesis_digest, head_seq, head_digest, profile_digest, owner_kind, owner_id FROM projects WHERE id = $1",
 		)
 		.bind(id)
 		.fetch_optional(&self.pool)
@@ -154,7 +174,7 @@ impl MetadataStore {
 	}
 
 	pub async fn set_project_owner(&self, id: &str, owner_kind: &str, owner_id: &str) -> Result<bool, sqlx::Error> {
-		let result = sqlx::query("UPDATE projects SET owner_kind = ?1, owner_id = ?2 WHERE id = ?3")
+		let result = sqlx::query("UPDATE projects SET owner_kind = $1, owner_id = $2 WHERE id = $3")
 			.bind(owner_kind)
 			.bind(owner_id)
 			.bind(id)
@@ -164,7 +184,7 @@ impl MetadataStore {
 	}
 
 	pub async fn create_project(&self, id: &str, genesis_digest: &[u8]) -> Result<bool, sqlx::Error> {
-		let result = sqlx::query("INSERT OR IGNORE INTO projects (id, genesis_digest) VALUES (?1, ?2)")
+		let result = sqlx::query("INSERT INTO projects (id, genesis_digest) VALUES ($1, $2) ON CONFLICT DO NOTHING")
 			.bind(id)
 			.bind(genesis_digest)
 			.execute(&self.pool)
@@ -175,14 +195,14 @@ impl MetadataStore {
 	pub async fn append_feed(&self, entry: &FeedRow) -> Result<(), sqlx::Error> {
 		let mut transaction = self.pool.begin().await?;
 		insert_feed_entry(&mut transaction, entry).await?;
-		sqlx::query("UPDATE projects SET head_seq = ?1, head_digest = ?2 WHERE id = ?3")
+		sqlx::query("UPDATE projects SET head_seq = $1, head_digest = $2 WHERE id = $3")
 			.bind(entry.seq)
 			.bind(&entry.entry_digest)
 			.bind(&entry.project_id)
 			.execute(&mut *transaction)
 			.await?;
 		if entry.kind == "profile-updated" {
-			sqlx::query("UPDATE projects SET profile_digest = ?1 WHERE id = ?2")
+			sqlx::query("UPDATE projects SET profile_digest = $1 WHERE id = $2")
 				.bind(&entry.object_digest)
 				.bind(&entry.project_id)
 				.execute(&mut *transaction)
@@ -195,7 +215,7 @@ impl MetadataStore {
 	pub async fn feed_after(&self, project_id: &str, after: i64, limit: i64) -> Result<Vec<FeedRow>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT project_id, seq, previous, entry_digest, kind, object_digest, payload, wire
-			 FROM feed_entries WHERE project_id = ?1 AND seq > ?2 ORDER BY seq ASC LIMIT ?3",
+			 FROM feed_entries WHERE project_id = $1 AND seq > $2 ORDER BY seq ASC LIMIT $3",
 		)
 		.bind(project_id)
 		.bind(after)
@@ -226,8 +246,8 @@ impl MetadataStore {
 		declared_time: i64,
 	) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT INTO withdrawals (project_id, release_id, reason, note, declared_time) VALUES (?1, ?2, ?3, ?4, ?5)
-			 ON CONFLICT(project_id, release_id) DO UPDATE SET reason = ?3, note = ?4, declared_time = ?5",
+			"INSERT INTO withdrawals (project_id, release_id, reason, note, declared_time) VALUES ($1, $2, $3, $4, $5)
+			 ON CONFLICT(project_id, release_id) DO UPDATE SET reason = $3, note = $4, declared_time = $5",
 		)
 		.bind(project_id)
 		.bind(release_id)
@@ -241,7 +261,7 @@ impl MetadataStore {
 
 	pub async fn withdrawal(&self, project_id: &str, release_id: &str) -> Result<Option<WithdrawalRow>, sqlx::Error> {
 		let row = sqlx::query(
-			"SELECT release_id, reason, note, declared_time FROM withdrawals WHERE project_id = ?1 AND release_id = ?2",
+			"SELECT release_id, reason, note, declared_time FROM withdrawals WHERE project_id = $1 AND release_id = $2",
 		)
 		.bind(project_id)
 		.bind(release_id)
@@ -255,21 +275,23 @@ impl MetadataStore {
 	}
 
 	pub async fn index_artifact(&self, digest: &[u8], project_id: &str, release_digest: &[u8]) -> Result<(), sqlx::Error> {
-		sqlx::query("INSERT OR IGNORE INTO artifact_index (digest, project_id, release_digest) VALUES (?1, ?2, ?3)")
-			.bind(digest)
-			.bind(project_id)
-			.bind(release_digest)
-			.execute(&self.pool)
-			.await?;
+		sqlx::query(
+			"INSERT INTO artifact_index (digest, project_id, release_digest) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+		)
+		.bind(digest)
+		.bind(project_id)
+		.bind(release_digest)
+		.execute(&self.pool)
+		.await?;
 		Ok(())
 	}
 
 	pub async fn blob_is_referenced(&self, digest: &[u8]) -> Result<bool, sqlx::Error> {
 		let referenced = sqlx::query_scalar::<_, i64>(
 			"SELECT COUNT(*) FROM (
-				SELECT digest FROM artifact_index WHERE digest = ?1
-				UNION SELECT artifact_digest FROM locations WHERE artifact_digest = ?1
-				UNION SELECT artifact_digest FROM mirror_commitments WHERE artifact_digest = ?1)",
+				SELECT digest FROM artifact_index WHERE digest = $1
+				UNION SELECT artifact_digest FROM locations WHERE artifact_digest = $1
+				UNION SELECT artifact_digest FROM mirror_commitments WHERE artifact_digest = $1)",
 		)
 		.bind(digest)
 		.fetch_one(&self.pool)
@@ -280,8 +302,8 @@ impl MetadataStore {
 	pub async fn record_download(&self, digest: &[u8], day: i64) -> Result<(), sqlx::Error> {
 		sqlx::query(
 			"INSERT INTO download_counts (project_id, day, count)
-			 SELECT DISTINCT project_id, ?2, 1 FROM artifact_index WHERE digest = ?1
-			 ON CONFLICT(project_id, day) DO UPDATE SET count = count + 1",
+			 SELECT DISTINCT project_id, $2, 1 FROM artifact_index WHERE digest = $1
+			 ON CONFLICT(project_id, day) DO UPDATE SET count = download_counts.count + 1",
 		)
 		.bind(digest)
 		.bind(day)
@@ -299,26 +321,31 @@ impl MetadataStore {
 		if project_ids.is_empty() {
 			return Ok(totals);
 		}
-		let mut downloads = QueryBuilder::new("SELECT project_id, SUM(count) AS total FROM download_counts WHERE day >= ");
+		let mut downloads =
+			SqlBuilder::new("SELECT project_id, CAST(SUM(count) AS BIGINT) AS total FROM download_counts WHERE day >= ");
 		downloads.push_bind(since_day).push(" AND project_id IN (");
-		let mut separated = downloads.separated(", ");
-		for project_id in project_ids {
-			separated.push_bind(project_id);
+		{
+			let mut separated = downloads.separated(", ");
+			for project_id in project_ids {
+				separated.push_bind(project_id);
+			}
 		}
-		separated.push_unseparated(") GROUP BY project_id");
-		for row in downloads.build().fetch_all(&self.pool).await? {
+		downloads.push(") GROUP BY project_id");
+		for row in downloads.into_query().fetch_all(&self.pool).await? {
 			let project_id: String = row.get("project_id");
 			let total: i64 = row.get("total");
 			*totals.entry(project_id).or_insert(0) += total;
 		}
-		let mut follows = QueryBuilder::new("SELECT project_id, COUNT(*) AS total FROM follows WHERE created_at >= ");
+		let mut follows = SqlBuilder::new("SELECT project_id, COUNT(*) AS total FROM follows WHERE created_at >= ");
 		follows.push_bind(since_day * 86_400).push(" AND project_id IN (");
-		let mut separated = follows.separated(", ");
-		for project_id in project_ids {
-			separated.push_bind(project_id);
+		{
+			let mut separated = follows.separated(", ");
+			for project_id in project_ids {
+				separated.push_bind(project_id);
+			}
 		}
-		separated.push_unseparated(") GROUP BY project_id");
-		for row in follows.build().fetch_all(&self.pool).await? {
+		follows.push(") GROUP BY project_id");
+		for row in follows.into_query().fetch_all(&self.pool).await? {
 			let project_id: String = row.get("project_id");
 			let total: i64 = row.get("total");
 			*totals.entry(project_id).or_insert(0) += total;
@@ -327,7 +354,7 @@ impl MetadataStore {
 	}
 
 	pub async fn artifacts_for_digest(&self, digest: &[u8]) -> Result<Vec<ArtifactMatchRow>, sqlx::Error> {
-		let rows = sqlx::query("SELECT project_id, release_digest FROM artifact_index WHERE digest = ?1")
+		let rows = sqlx::query("SELECT project_id, release_digest FROM artifact_index WHERE digest = $1")
 			.bind(digest)
 			.fetch_all(&self.pool)
 			.await?;
@@ -343,7 +370,7 @@ impl MetadataStore {
 	pub async fn create_submission(&self, submission: &SubmissionRow) -> Result<(), sqlx::Error> {
 		sqlx::query(
 			"INSERT INTO submissions (id, project_id, object_digest, entry_digest, entry_wire, state, submitted_by, created_at, updated_at)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)",
 		)
 		.bind(&submission.id)
 		.bind(&submission.project_id)
@@ -361,7 +388,7 @@ impl MetadataStore {
 	pub async fn submission(&self, id: &str) -> Result<Option<SubmissionRow>, sqlx::Error> {
 		let row = sqlx::query(
 			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
-			 FROM submissions WHERE id = ?1",
+			 FROM submissions WHERE id = $1",
 		)
 		.bind(id)
 		.fetch_optional(&self.pool)
@@ -377,8 +404,8 @@ impl MetadataStore {
 		let rows = sqlx::query(
 			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
 			 FROM submissions WHERE state IN ('submitted', 'under_review')
-			 AND (created_at > ?1 OR (created_at = ?1 AND (?3 = 0 OR id > ?2)))
-			 ORDER BY created_at ASC, id ASC LIMIT ?4",
+			 AND (created_at > $1 OR (created_at = $1 AND ($3 = 0 OR id > $2)))
+			 ORDER BY created_at ASC, id ASC LIMIT $4",
 		)
 		.bind(cursor.map(|(created, _)| created).unwrap_or(i64::MIN))
 		.bind(cursor.map(|(_, id)| id).unwrap_or(""))
@@ -397,9 +424,9 @@ impl MetadataStore {
 	) -> Result<Vec<SubmissionRow>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
-			 FROM submissions WHERE submitted_by = ?1
-			 AND (created_at < ?2 OR (created_at = ?2 AND (?4 = 0 OR id < ?3)))
-			 ORDER BY created_at DESC, id DESC LIMIT ?5",
+			 FROM submissions WHERE submitted_by = $1
+			 AND (created_at < $2 OR (created_at = $2 AND ($4 = 0 OR id < $3)))
+			 ORDER BY created_at DESC, id DESC LIMIT $5",
 		)
 		.bind(user_id)
 		.bind(cursor.map(|(created, _)| created).unwrap_or(i64::MAX))
@@ -413,7 +440,7 @@ impl MetadataStore {
 
 	pub async fn assign_submission(&self, id: &str, reviewer_id: &str, updated_at: i64) -> Result<bool, sqlx::Error> {
 		let result = sqlx::query(
-			"UPDATE submissions SET state = 'under_review', assigned_to = ?1, updated_at = ?2 WHERE id = ?3 AND state = 'submitted'",
+			"UPDATE submissions SET state = 'under_review', assigned_to = $1, updated_at = $2 WHERE id = $3 AND state = 'submitted'",
 		)
 		.bind(reviewer_id)
 		.bind(updated_at)
@@ -424,7 +451,7 @@ impl MetadataStore {
 	}
 
 	pub async fn set_submission_state(&self, id: &str, state: &str, updated_at: i64) -> Result<(), sqlx::Error> {
-		sqlx::query("UPDATE submissions SET state = ?1, updated_at = ?2 WHERE id = ?3")
+		sqlx::query("UPDATE submissions SET state = $1, updated_at = $2 WHERE id = $3")
 			.bind(state)
 			.bind(updated_at)
 			.bind(id)
@@ -436,7 +463,7 @@ impl MetadataStore {
 	pub async fn insert_decision(&self, decision: &ReviewDecisionRow) -> Result<(), sqlx::Error> {
 		sqlx::query(
 			"INSERT INTO review_decisions (id, submission_id, object_digest, reviewer_id, decision, reason_code, reason_taxonomy_version, decided_at, appeal_route)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
 		)
 		.bind(&decision.id)
 		.bind(&decision.submission_id)
@@ -444,7 +471,7 @@ impl MetadataStore {
 		.bind(&decision.reviewer_id)
 		.bind(&decision.decision)
 		.bind(&decision.reason_code)
-		.bind(decision.reason_taxonomy_version)
+		.bind(i64::from(decision.reason_taxonomy_version))
 		.bind(decision.decided_at)
 		.bind(&decision.appeal_route)
 		.execute(&self.pool)
@@ -455,7 +482,7 @@ impl MetadataStore {
 	pub async fn decisions_for(&self, submission_id: &str) -> Result<Vec<ReviewDecisionRow>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT id, submission_id, object_digest, reviewer_id, decision, reason_code, reason_taxonomy_version, decided_at, appeal_route
-			 FROM review_decisions WHERE submission_id = ?1 ORDER BY decided_at ASC",
+			 FROM review_decisions WHERE submission_id = $1 ORDER BY decided_at ASC",
 		)
 		.bind(submission_id)
 		.fetch_all(&self.pool)
@@ -477,7 +504,7 @@ impl MetadataStore {
 	}
 }
 
-fn submission_row(row: sqlx::sqlite::SqliteRow) -> SubmissionRow {
+fn submission_row(row: sqlx::any::AnyRow) -> SubmissionRow {
 	SubmissionRow {
 		id: row.get("id"),
 		project_id: row.get("project_id"),
@@ -492,10 +519,10 @@ fn submission_row(row: sqlx::sqlite::SqliteRow) -> SubmissionRow {
 	}
 }
 
-async fn insert_feed_entry(transaction: &mut Transaction<'_, sqlx::Sqlite>, entry: &FeedRow) -> Result<(), sqlx::Error> {
+async fn insert_feed_entry(transaction: &mut Transaction<'_, sqlx::Any>, entry: &FeedRow) -> Result<(), sqlx::Error> {
 	sqlx::query(
 		"INSERT INTO feed_entries (project_id, seq, previous, entry_digest, kind, object_digest, payload, wire)
-		 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
 	)
 	.bind(&entry.project_id)
 	.bind(entry.seq)
@@ -572,7 +599,7 @@ impl MetadataStore {
 				.await?
 				.unwrap_or(0),
 			subscription_resets: self
-				.scalar_opt("SELECT SUM(reset_count) FROM subscriptions")
+				.scalar_opt("SELECT CAST(SUM(reset_count) AS BIGINT) FROM subscriptions")
 				.await?
 				.unwrap_or(0),
 			oldest_pending_submission: self
@@ -614,27 +641,77 @@ impl MetadataStore {
 
 const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-const MIGRATIONS: &[(&str, &str)] = &[("0001_initial", include_str!("../migrations/sqlite/0001_initial.sql"))];
+const MIGRATION_LOCK_KEY: i64 = 0x6d6f7261696e65;
 
-async fn run_migrations(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
+struct Migration {
+	name: &'static str,
+	sqlite: &'static str,
+	postgres: &'static str,
+}
+
+impl Migration {
+	fn sql(&self, engine: Engine) -> &'static str {
+		match engine {
+			Engine::Sqlite => self.sqlite,
+			Engine::Postgres => self.postgres,
+		}
+	}
+}
+
+const MIGRATIONS: &[Migration] = &[Migration {
+	name: "0001_initial",
+	sqlite: include_str!("../migrations/sqlite/0001_initial.sql"),
+	postgres: include_str!("../migrations/postgres/0001_initial.sql"),
+}];
+
+async fn connect(url: &str, max_connections: u32) -> Result<AnyPool, sqlx::Error> {
+	sqlx::any::install_default_drivers();
+	let engine = Engine::of(url);
+	AnyPoolOptions::new()
+		.max_connections(max_connections)
+		.acquire_timeout(CONNECT_TIMEOUT)
+		.after_connect(move |connection, _| {
+			Box::pin(async move {
+				if engine == Engine::Sqlite {
+					sqlx::query("PRAGMA foreign_keys = ON").execute(&mut *connection).await?;
+					sqlx::query("PRAGMA busy_timeout = 10000").execute(&mut *connection).await?;
+				}
+				Ok(())
+			})
+		})
+		.connect(url)
+		.await
+}
+
+async fn run_migrations(pool: &AnyPool, engine: Engine) -> Result<usize, sqlx::Error> {
 	let mut connection = pool.acquire().await?;
-	sqlx::query("CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)")
+	sqlx::query("CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at BIGINT NOT NULL)")
 		.execute(&mut *connection)
 		.await?;
 	let mut applied = 0;
-	for &(name, sql) in MIGRATIONS {
-		sqlx::query("BEGIN IMMEDIATE").execute(&mut *connection).await?;
-		let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schema_migrations WHERE name = ?1")
-			.bind(name)
+	for migration in MIGRATIONS {
+		let begin = match engine {
+			Engine::Sqlite => "BEGIN IMMEDIATE",
+			Engine::Postgres => "BEGIN",
+		};
+		sqlx::query(begin).execute(&mut *connection).await?;
+		if engine == Engine::Postgres {
+			sqlx::query("SELECT pg_advisory_xact_lock($1)")
+				.bind(MIGRATION_LOCK_KEY)
+				.execute(&mut *connection)
+				.await?;
+		}
+		let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schema_migrations WHERE name = $1")
+			.bind(migration.name)
 			.fetch_one(&mut *connection)
 			.await?;
 		if exists > 0 {
 			sqlx::query("ROLLBACK").execute(&mut *connection).await?;
 			continue;
 		}
-		sqlx::raw_sql(sql).execute(&mut *connection).await?;
-		sqlx::query("INSERT INTO schema_migrations (name, applied_at) VALUES (?1, ?2) ON CONFLICT(name) DO NOTHING")
-			.bind(name)
+		sqlx::raw_sql(migration.sql(engine)).execute(&mut *connection).await?;
+		sqlx::query("INSERT INTO schema_migrations (name, applied_at) VALUES ($1, $2) ON CONFLICT(name) DO NOTHING")
+			.bind(migration.name)
 			.bind(unix_now())
 			.execute(&mut *connection)
 			.await?;
@@ -644,20 +721,36 @@ async fn run_migrations(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
 	Ok(applied)
 }
 
-pub async fn pending(path: impl AsRef<Path>) -> Result<usize, sqlx::Error> {
-	if !path.as_ref().exists() {
-		return Ok(MIGRATIONS.len());
+pub async fn migrate_url(url: &str) -> Result<usize, sqlx::Error> {
+	let pool = connect(url, 1).await?;
+	run_migrations(&pool, Engine::of(url)).await
+}
+
+pub async fn pending_url(url: &str) -> Result<usize, sqlx::Error> {
+	let engine = Engine::of(url);
+	if engine == Engine::Sqlite {
+		let path = url.trim_start_matches("sqlite:").split('?').next().unwrap_or_default();
+		if !Path::new(path).exists() {
+			return Ok(MIGRATIONS.len());
+		}
 	}
-	let options = SqliteConnectOptions::new()
-		.filename(path)
-		.create_if_missing(false)
-		.busy_timeout(CONNECT_TIMEOUT);
-	let pool = SqlitePoolOptions::new().max_connections(1).connect_with(options).await?;
-	let tracked = sqlx::query_scalar::<_, i64>(
-		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'",
-	)
-	.fetch_one(&pool)
-	.await?;
+	let pool = connect(url, 1).await?;
+	let tracked = match engine {
+		Engine::Sqlite => {
+			sqlx::query_scalar::<_, i64>(
+				"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'",
+			)
+			.fetch_one(&pool)
+			.await?
+		}
+		Engine::Postgres => {
+			sqlx::query_scalar::<_, i64>(
+				"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'schema_migrations'",
+			)
+			.fetch_one(&pool)
+			.await?
+		}
+	};
 	if tracked == 0 {
 		return Ok(MIGRATIONS.len());
 	}
@@ -672,19 +765,6 @@ fn unix_now() -> i64 {
 		.duration_since(std::time::UNIX_EPOCH)
 		.map(|elapsed| elapsed.as_secs() as i64)
 		.unwrap_or(0)
-}
-
-pub async fn migrate(path: impl AsRef<Path>) -> Result<usize, sqlx::Error> {
-	if let Some(parent) = path.as_ref().parent() {
-		std::fs::create_dir_all(parent).map_err(sqlx::Error::Io)?;
-	}
-	let options = SqliteConnectOptions::new()
-		.filename(path)
-		.create_if_missing(true)
-		.foreign_keys(true)
-		.busy_timeout(CONNECT_TIMEOUT);
-	let pool = SqlitePoolOptions::new().max_connections(1).connect_with(options).await?;
-	run_migrations(&pool).await
 }
 
 #[cfg(test)]
@@ -801,13 +881,13 @@ mod migration_tests {
 	#[tokio::test]
 	async fn migrations_are_pending_until_applied() {
 		let directory = tempfile::tempdir().expect("tempdir");
-		let path = directory.path().join("metadata.sqlite");
+		let url = sqlite_url(&directory.path().join("metadata.sqlite"));
 
-		assert_eq!(pending(&path).await.expect("pending"), MIGRATIONS.len());
+		assert_eq!(pending_url(&url).await.expect("pending"), MIGRATIONS.len());
 
-		assert_eq!(migrate(&path).await.expect("migrate"), MIGRATIONS.len());
-		assert_eq!(pending(&path).await.expect("pending"), 0);
-		assert_eq!(migrate(&path).await.expect("migrate again"), 0);
+		assert_eq!(migrate_url(&url).await.expect("migrate"), MIGRATIONS.len());
+		assert_eq!(pending_url(&url).await.expect("pending"), 0);
+		assert_eq!(migrate_url(&url).await.expect("migrate again"), 0);
 	}
 
 	#[tokio::test]
@@ -819,6 +899,128 @@ mod migration_tests {
 
 		assert!(first.is_ok(), "{:?}", first.err());
 		assert!(second.is_ok(), "{:?}", second.err());
-		assert_eq!(pending(&path).await.expect("pending"), 0);
+		assert_eq!(pending_url(&sqlite_url(&path)).await.expect("pending"), 0);
+	}
+}
+
+#[cfg(test)]
+mod postgres_tests {
+	use super::*;
+	use crate::search::SearchDocument;
+
+	async fn admin_pool(url: &str) -> AnyPool {
+		sqlx::any::install_default_drivers();
+		AnyPoolOptions::new()
+			.max_connections(1)
+			.connect(url)
+			.await
+			.expect("admin pool")
+	}
+
+	#[tokio::test]
+	async fn round_trips_through_postgres() {
+		let Ok(url) = std::env::var("MORAINE_TEST_POSTGRES") else {
+			return;
+		};
+		assert!(url.contains("test"), "refusing to reset a non-test database: {url}");
+
+		let pool = admin_pool(&url).await;
+		sqlx::raw_sql("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+			.execute(&pool)
+			.await
+			.expect("reset schema");
+		drop(pool);
+
+		let store = MetadataStore::open_url(&url).await.expect("open");
+		assert_eq!(pending_url(&url).await.expect("pending"), 0);
+
+		store
+			.put_object(&StoredObject {
+				digest: vec![1u8; 32],
+				kind: "release".to_string(),
+				payload: vec![2u8; 8],
+				wire: vec![3u8; 8],
+			})
+			.await
+			.expect("put object");
+		assert_eq!(
+			store.object(&[1u8; 32]).await.expect("object").expect("present").payload,
+			vec![2u8; 8]
+		);
+
+		store.create_project("p", &[1u8; 32]).await.expect("project");
+		store
+			.append_feed(&FeedRow {
+				project_id: "p".to_string(),
+				seq: 1,
+				previous: None,
+				entry_digest: vec![4u8; 32],
+				kind: "release-published".to_string(),
+				object_digest: vec![1u8; 32],
+				payload: vec![5u8; 4],
+				wire: vec![6u8; 4],
+			})
+			.await
+			.expect("append");
+		assert_eq!(store.feed_after("p", 0, 10).await.expect("feed").len(), 1);
+
+		store.index_artifact(&[1u8; 32], "p", &[7u8; 32]).await.expect("index");
+		store.record_download(&[1u8; 32], 100).await.expect("download");
+		let popularities = store.popularities(&["p".to_string()], 0).await.expect("popularities");
+		assert_eq!(popularities.get("p"), Some(&1));
+
+		store
+			.create_submission(&SubmissionRow {
+				id: "s".to_string(),
+				project_id: "p".to_string(),
+				object_digest: vec![1u8; 32],
+				entry_digest: vec![4u8; 32],
+				entry_wire: vec![6u8; 4],
+				state: "submitted".to_string(),
+				assigned_to: None,
+				submitted_by: "u".to_string(),
+				created_at: 1,
+				updated_at: 1,
+			})
+			.await
+			.expect("submission");
+		assert!(store.assign_submission("s", "r", 2).await.expect("assign"));
+		store
+			.insert_decision(&ReviewDecisionRow {
+				id: "d".to_string(),
+				submission_id: "s".to_string(),
+				object_digest: vec![1u8; 32],
+				reviewer_id: "r".to_string(),
+				decision: "reject".to_string(),
+				reason_code: Some("spam".to_string()),
+				reason_taxonomy_version: 1,
+				decided_at: 3,
+				appeal_route: None,
+			})
+			.await
+			.expect("decision");
+		assert_eq!(store.decisions_for("s").await.expect("decisions").len(), 1);
+
+		store
+			.put_search_document(SearchDocument {
+				project_id: "p",
+				game_id: "g",
+				display_name: "Example",
+				summary: "s",
+				categories: &[],
+				tags: &[],
+				updated_at: 1,
+			})
+			.await
+			.expect("document");
+		let collision = store
+			.name_collision_counts(&[("g".to_string(), "example".to_string())])
+			.await
+			.expect("collisions");
+		assert_eq!(collision.get(&("g".to_string(), "example".to_string())), Some(&1));
+
+		let snapshot = store.metrics_snapshot().await.expect("metrics");
+		assert_eq!(snapshot.projects, 1);
+		assert_eq!(snapshot.artifacts, 1);
 	}
 }

@@ -42,7 +42,7 @@ impl MetadataStore {
 		event_kinds: &str,
 		created_at: i64,
 	) -> Result<(), sqlx::Error> {
-		sqlx::query("INSERT INTO webhooks (id, owner_id, url, event_kinds, created_at) VALUES (?1, ?2, ?3, ?4, ?5)")
+		sqlx::query("INSERT INTO webhooks (id, owner_id, url, event_kinds, created_at) VALUES ($1, $2, $3, $4, $5)")
 			.bind(id)
 			.bind(owner_id)
 			.bind(url)
@@ -55,7 +55,7 @@ impl MetadataStore {
 
 	pub async fn webhooks_for_owner(&self, owner_id: &str) -> Result<Vec<WebhookRow>, sqlx::Error> {
 		let rows = sqlx::query(
-			"SELECT id, url, event_kinds, created_at FROM webhooks WHERE owner_id = ?1 AND revoked_at IS NULL ORDER BY created_at",
+			"SELECT id, url, event_kinds, created_at FROM webhooks WHERE owner_id = $1 AND revoked_at IS NULL ORDER BY created_at",
 		)
 		.bind(owner_id)
 		.fetch_all(&self.pool)
@@ -72,7 +72,7 @@ impl MetadataStore {
 
 	pub async fn revoke_webhook(&self, owner_id: &str, id: &str, revoked_at: i64) -> Result<bool, sqlx::Error> {
 		let result =
-			sqlx::query("UPDATE webhooks SET revoked_at = ?1 WHERE id = ?2 AND owner_id = ?3 AND revoked_at IS NULL")
+			sqlx::query("UPDATE webhooks SET revoked_at = $1 WHERE id = $2 AND owner_id = $3 AND revoked_at IS NULL")
 				.bind(revoked_at)
 				.bind(id)
 				.bind(owner_id)
@@ -91,8 +91,8 @@ impl MetadataStore {
 		next_attempt_at: i64,
 	) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT OR IGNORE INTO webhook_deliveries (id, webhook_id, event_id, url, body, status, next_attempt_at, created_at)
-			 VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?6)",
+			"INSERT INTO webhook_deliveries (id, webhook_id, event_id, url, body, status, next_attempt_at, created_at)
+			 VALUES ($1, $2, $3, $4, $5, 'pending', $6, $6) ON CONFLICT DO NOTHING",
 		)
 		.bind(id)
 		.bind(webhook_id)
@@ -107,7 +107,7 @@ impl MetadataStore {
 
 	async fn due_deliveries(&self, now: i64, limit: i64) -> Result<Vec<DeliveryRow>, sqlx::Error> {
 		let rows = sqlx::query(
-			"SELECT id, url, body, attempt FROM webhook_deliveries WHERE status = 'pending' AND next_attempt_at <= ?1 ORDER BY next_attempt_at LIMIT ?2",
+			"SELECT id, url, body, attempt FROM webhook_deliveries WHERE status = 'pending' AND next_attempt_at <= $1 ORDER BY next_attempt_at LIMIT $2",
 		)
 		.bind(now)
 		.bind(limit)
@@ -125,7 +125,7 @@ impl MetadataStore {
 	}
 
 	pub async fn prune_deliveries(&self, before: i64) -> Result<u64, sqlx::Error> {
-		let result = sqlx::query("DELETE FROM webhook_deliveries WHERE created_at < ?1")
+		let result = sqlx::query("DELETE FROM webhook_deliveries WHERE created_at < $1")
 			.bind(before)
 			.execute(&self.pool)
 			.await?;
@@ -141,7 +141,7 @@ impl MetadataStore {
 		delivered_at: Option<i64>,
 	) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"UPDATE webhook_deliveries SET attempt = ?1, status = ?2, next_attempt_at = ?3, delivered_at = ?4 WHERE id = ?5",
+			"UPDATE webhook_deliveries SET attempt = $1, status = $2, next_attempt_at = $3, delivered_at = $4 WHERE id = $5",
 		)
 		.bind(attempt)
 		.bind(status)
@@ -154,7 +154,7 @@ impl MetadataStore {
 	}
 }
 
-fn webhook_from_row(row: sqlx::sqlite::SqliteRow) -> WebhookRow {
+fn webhook_from_row(row: sqlx::any::AnyRow) -> WebhookRow {
 	WebhookRow {
 		id: row.get("id"),
 		url: row.get("url"),
@@ -443,6 +443,7 @@ mod tests {
 			tls_extra_roots: None,
 			max_feed_scan_pages: 50,
 			skip_migrate_on_start: false,
+			database_url: None,
 			allow_insecure_federation_local: true,
 			publishing: crate::config::Publishing::Open,
 			web_dir: None,
