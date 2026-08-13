@@ -83,8 +83,13 @@ impl MetadataStore {
 		let options = SqliteConnectOptions::new()
 			.filename(path)
 			.create_if_missing(true)
-			.foreign_keys(true);
-		let pool = SqlitePoolOptions::new().max_connections(5).connect_with(options).await?;
+			.foreign_keys(true)
+			.busy_timeout(CONNECT_TIMEOUT);
+		let pool = SqlitePoolOptions::new()
+			.max_connections(5)
+			.acquire_timeout(CONNECT_TIMEOUT)
+			.connect_with(options)
+			.await?;
 		run_migrations(&pool).await?;
 		Ok(Self { pool })
 	}
@@ -603,32 +608,59 @@ impl MetadataStore {
 	}
 }
 
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 const MIGRATIONS: &[(&str, &str)] = &[("0001_initial", include_str!("../migrations/sqlite/0001_initial.sql"))];
 
 async fn run_migrations(pool: &SqlitePool) -> Result<usize, sqlx::Error> {
+	let mut connection = pool.acquire().await?;
 	sqlx::query("CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)")
-		.execute(pool)
+		.execute(&mut *connection)
 		.await?;
 	let mut applied = 0;
 	for (name, sql) in MIGRATIONS {
+		sqlx::query("BEGIN IMMEDIATE").execute(&mut *connection).await?;
 		let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schema_migrations WHERE name = ?1")
 			.bind(name)
-			.fetch_one(pool)
+			.fetch_one(&mut *connection)
 			.await?;
 		if exists > 0 {
+			sqlx::query("ROLLBACK").execute(&mut *connection).await?;
 			continue;
 		}
-		let mut transaction = pool.begin().await?;
-		sqlx::raw_sql(sql).execute(&mut *transaction).await?;
-		sqlx::query("INSERT INTO schema_migrations (name, applied_at) VALUES (?1, ?2)")
+		sqlx::raw_sql(sql).execute(&mut *connection).await?;
+		sqlx::query("INSERT INTO schema_migrations (name, applied_at) VALUES (?1, ?2) ON CONFLICT(name) DO NOTHING")
 			.bind(name)
 			.bind(unix_now())
-			.execute(&mut *transaction)
+			.execute(&mut *connection)
 			.await?;
-		transaction.commit().await?;
+		sqlx::query("COMMIT").execute(&mut *connection).await?;
 		applied += 1;
 	}
 	Ok(applied)
+}
+
+pub async fn pending(path: impl AsRef<Path>) -> Result<usize, sqlx::Error> {
+	if !path.as_ref().exists() {
+		return Ok(MIGRATIONS.len());
+	}
+	let options = SqliteConnectOptions::new()
+		.filename(path)
+		.create_if_missing(false)
+		.busy_timeout(CONNECT_TIMEOUT);
+	let pool = SqlitePoolOptions::new().max_connections(1).connect_with(options).await?;
+	let tracked = sqlx::query_scalar::<_, i64>(
+		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'",
+	)
+	.fetch_one(&pool)
+	.await?;
+	if tracked == 0 {
+		return Ok(MIGRATIONS.len());
+	}
+	let applied = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schema_migrations")
+		.fetch_one(&pool)
+		.await?;
+	Ok(MIGRATIONS.len().saturating_sub(applied as usize))
 }
 
 fn unix_now() -> i64 {
@@ -645,7 +677,8 @@ pub async fn migrate(path: impl AsRef<Path>) -> Result<usize, sqlx::Error> {
 	let options = SqliteConnectOptions::new()
 		.filename(path)
 		.create_if_missing(true)
-		.foreign_keys(true);
+		.foreign_keys(true)
+		.busy_timeout(CONNECT_TIMEOUT);
 	let pool = SqlitePoolOptions::new().max_connections(1).connect_with(options).await?;
 	run_migrations(&pool).await
 }
@@ -754,5 +787,34 @@ mod tests {
 			})
 			.await;
 		assert!(hits.is_ok(), "{:?}", hits.err());
+	}
+}
+
+#[cfg(test)]
+mod migration_tests {
+	use super::*;
+
+	#[tokio::test]
+	async fn migrations_are_pending_until_applied() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let path = directory.path().join("metadata.sqlite");
+
+		assert_eq!(pending(&path).await.expect("pending"), MIGRATIONS.len());
+
+		assert_eq!(migrate(&path).await.expect("migrate"), MIGRATIONS.len());
+		assert_eq!(pending(&path).await.expect("pending"), 0);
+		assert_eq!(migrate(&path).await.expect("migrate again"), 0);
+	}
+
+	#[tokio::test]
+	async fn concurrent_openers_apply_migrations_once() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let path = directory.path().join("metadata.sqlite");
+
+		let (first, second) = tokio::join!(MetadataStore::open(&path), MetadataStore::open(&path));
+
+		assert!(first.is_ok(), "{:?}", first.err());
+		assert!(second.is_ok(), "{:?}", second.err());
+		assert_eq!(pending(&path).await.expect("pending"), 0);
 	}
 }

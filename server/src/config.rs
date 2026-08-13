@@ -85,6 +85,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_TLS_EXTRA_ROOTS")]
 	pub tls_extra_roots: Option<PathBuf>,
 
+	#[arg(long, env = "MORAINE_SKIP_MIGRATE_ON_START", default_value_t = false)]
+	pub skip_migrate_on_start: bool,
+
 	#[arg(long, env = "MORAINE_MAX_FEED_SCAN_PAGES", default_value_t = 50)]
 	pub max_feed_scan_pages: u32,
 

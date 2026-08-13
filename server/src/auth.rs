@@ -494,6 +494,7 @@ mod tests {
 			max_concurrent_syncs: 4,
 			tls_extra_roots: None,
 			max_feed_scan_pages: 50,
+			skip_migrate_on_start: false,
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Review,
 			web_dir: None,

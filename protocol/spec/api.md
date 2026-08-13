@@ -62,6 +62,12 @@ numbered SQL files under `migrations/<engine>/`, applied in order and recorded
 in a `schema_migrations` table so re-running is a no-op. It is the explicit
 upgrade step to run before starting a new binary.
 
+The server also migrates on startup, taking an immediate write lock per
+migration so two processes starting together cannot both apply one. Set
+`MORAINE_SKIP_MIGRATE_ON_START` to make the step explicit: the server then
+refuses to start while a migration is pending, rather than serving requests
+against an outdated schema.
+
 `moraine-server bootstrap --email <address>` prepares a fresh data directory:
 it runs the database migrations, creates the operator account with a generated
 password, and writes the server's webhook signing key. The password is printed

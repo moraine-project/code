@@ -43,6 +43,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	let cli = Cli::parse();
 	let config = cli.config;
+	if config.skip_migrate_on_start {
+		let path = config.data_dir.join("metadata.sqlite");
+		match store::pending(&path).await {
+			Ok(0) => {}
+			Ok(pending) => {
+				return Err(format!("{pending} migration(s) pending; run `moraine-server migrate`").into());
+			}
+			Err(error) => return Err(error.into()),
+		}
+	}
 	if let Some(Command::Backup { out }) = cli.command {
 		return match backup::run(&config, &out).await {
 			Ok(summary) => {
