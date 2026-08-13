@@ -10,9 +10,9 @@ use moraine_model::signed::SignedObject;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthenticatedUser;
+use crate::db::{ReviewDecisionRow, SubmissionRow};
 use crate::registry::{ingest_feed, prepare_feed};
 use crate::routes::AppState;
-use crate::store::{ReviewDecisionRow, SubmissionRow};
 
 pub fn routes() -> Router<AppState> {
 	Router::new()

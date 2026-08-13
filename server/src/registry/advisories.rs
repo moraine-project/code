@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth::AuthenticatedUser;
+use crate::db::{MetadataStore, StoredObject};
 use crate::routes::AppState;
-use crate::store::{MetadataStore, StoredObject};
 
 #[derive(Debug, Clone)]
 pub struct AdvisoryRow {

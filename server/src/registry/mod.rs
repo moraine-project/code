@@ -1,3 +1,10 @@
+pub mod advisories;
+pub mod compatibility;
+pub mod definitions;
+pub mod review;
+pub mod search;
+pub mod views;
+
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -12,10 +19,10 @@ use moraine_model::signed::SignedObject;
 use moraine_model::trust::{RootSet, verify_key_delegation, verify_ownership_transfer};
 use serde::{Deserialize, Serialize};
 
+use crate::db::{FeedRow, ProjectRow, StoredObject};
+use crate::registry::views::describe_stored;
 use crate::routes::AppState;
-use crate::store::{FeedRow, ProjectRow, StoredObject};
 use crate::verify::{self, VerifyError};
-use crate::views::describe_stored;
 
 pub(crate) const OBJECT_CONTENT_TYPE: &str = "application/vnd.moraine.object+cbor";
 
@@ -26,7 +33,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/projects/{id}/objects/{kind}", post(store_object))
 		.route("/v1/projects/{id}/feed", get(feed_page).post(append_feed))
 		.route("/v1/projects/{id}/transfer", post(transfer))
-		.merge(crate::views::routes())
+		.merge(crate::registry::views::routes())
 }
 
 #[derive(Serialize)]
@@ -68,7 +75,7 @@ struct FeedEntryView {
 	seq: i64,
 	kind: String,
 	title: Option<String>,
-	release: Option<crate::views::ReleaseSummary>,
+	release: Option<crate::registry::views::ReleaseSummary>,
 	object: String,
 	entry: String,
 	declared_at: i64,
@@ -390,7 +397,7 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 		return Err(Box::new(storage_error(error)));
 	}
 	if row.kind == "profile-updated"
-		&& let Err(error) = crate::search::refresh_search_document(state, &row.object_digest).await
+		&& let Err(error) = crate::registry::search::refresh_search_document(state, &row.object_digest).await
 	{
 		return Err(Box::new(storage_error(error)));
 	}
@@ -401,11 +408,13 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 		apply_withdrawal(state, &row.project_id, &row.object_digest).await?;
 	}
 	if let Err(error) =
-		crate::notifications::notify_followers(state, &row.project_id, &row.kind, &row.object_digest, row.seq).await
+		crate::federation::notifications::notify_followers(state, &row.project_id, &row.kind, &row.object_digest, row.seq)
+			.await
 	{
 		return Err(Box::new(storage_error(error)));
 	}
-	if let Err(error) = crate::webhooks::enqueue_event(state, &row.kind, &row.project_id, &row.object_digest, row.seq).await
+	if let Err(error) =
+		crate::federation::webhooks::enqueue_event(state, &row.kind, &row.project_id, &row.object_digest, row.seq).await
 	{
 		return Err(Box::new(storage_error(error)));
 	}
@@ -455,17 +464,17 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 					let ordering = match scheme {
 						Some(ordering) => ordering,
 						None => {
-							let resolved = crate::compatibility::game_ordering(&state, object).await;
+							let resolved = crate::registry::compatibility::game_ordering(&state, object).await;
 							scheme = Some(resolved);
 							resolved
 						}
 					};
-					if !crate::compatibility::release_matches_game_version(object, version, ordering) {
+					if !crate::registry::compatibility::release_matches_game_version(object, version, ordering) {
 						continue;
 					}
 				}
 				if let Some(loader) = query.loader.as_deref()
-					&& !crate::compatibility::release_declares_loader(object, loader)
+					&& !crate::registry::compatibility::release_declares_loader(object, loader)
 				{
 					continue;
 				}
@@ -473,18 +482,18 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 					let ordering = match loader_scheme {
 						Some(ordering) => ordering,
 						None => {
-							let resolved = crate::compatibility::loader_ordering(&state, loader).await;
+							let resolved = crate::registry::compatibility::loader_ordering(&state, loader).await;
 							loader_scheme = Some(resolved);
 							resolved
 						}
 					};
-					if !crate::compatibility::release_matches_loader_version(object, loader, version, ordering) {
+					if !crate::registry::compatibility::release_matches_loader_version(object, loader, version, ordering) {
 						continue;
 					}
 				}
 			}
 			let (title, release) = match object.as_ref() {
-				Some(object) => (describe_stored(object), crate::views::summarize_release(object)),
+				Some(object) => (describe_stored(object), crate::registry::views::summarize_release(object)),
 				_ => (None, None),
 			};
 			entries.push(FeedEntryView {

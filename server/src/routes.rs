@@ -18,7 +18,7 @@ use tower_http::timeout::TimeoutLayer;
 
 use crate::blob::{BlobError, BlobStore};
 use crate::capability::Capability;
-use crate::store::MetadataStore;
+use crate::db::MetadataStore;
 
 const MAX_REQUEST_BODY_BYTES: usize = 256 * 1024;
 const REQUEST_TIMEOUT_SECONDS: u64 = 30;
@@ -29,8 +29,8 @@ pub struct AppState {
 	pub metadata: Arc<MetadataStore>,
 	pub capability: Arc<Capability>,
 	pub login_limiter: Arc<crate::auth::LoginLimiter>,
-	pub metrics: Arc<crate::metrics::Metrics>,
-	pub rate_limiter: Arc<crate::ratelimit::RateLimiter>,
+	pub metrics: Arc<crate::ops::metrics::Metrics>,
+	pub rate_limiter: Arc<crate::auth::ratelimit::RateLimiter>,
 	pub web_dir: Option<Arc<std::path::PathBuf>>,
 }
 
@@ -44,18 +44,24 @@ pub fn router(state: AppState) -> Router {
 		.route("/v1/blobs/sha256/{digest}", get(blob_get).head(blob_head))
 		.merge(crate::registry::routes())
 		.merge(crate::auth::routes())
-		.merge(crate::review::routes())
+		.merge(crate::registry::review::routes())
 		.merge(crate::federation::routes())
-		.merge(crate::search::routes())
-		.merge(crate::orgs::routes())
-		.merge(crate::advisories::routes())
-		.merge(crate::mirrors::routes())
-		.merge(crate::notifications::routes())
-		.merge(crate::webhooks::routes())
-		.merge(crate::definitions::routes())
-		.merge(crate::metrics::routes())
-		.layer(axum::middleware::from_fn_with_state(state.clone(), crate::metrics::track))
-		.layer(axum::middleware::from_fn_with_state(state.clone(), crate::ratelimit::limit))
+		.merge(crate::registry::search::routes())
+		.merge(crate::auth::orgs::routes())
+		.merge(crate::registry::advisories::routes())
+		.merge(crate::federation::mirrors::routes())
+		.merge(crate::federation::notifications::routes())
+		.merge(crate::federation::webhooks::routes())
+		.merge(crate::registry::definitions::routes())
+		.merge(crate::ops::metrics::routes())
+		.layer(axum::middleware::from_fn_with_state(
+			state.clone(),
+			crate::ops::metrics::track,
+		))
+		.layer(axum::middleware::from_fn_with_state(
+			state.clone(),
+			crate::auth::ratelimit::limit,
+		))
 		.with_state(state)
 		.layer(read_only_cors())
 		.layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
@@ -337,8 +343,8 @@ mod tests {
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
 			login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
-			metrics: std::sync::Arc::new(crate::metrics::Metrics::new()),
-			rate_limiter: std::sync::Arc::new(crate::ratelimit::RateLimiter::new()),
+			metrics: std::sync::Arc::new(crate::ops::metrics::Metrics::new()),
+			rate_limiter: std::sync::Arc::new(crate::auth::ratelimit::RateLimiter::new()),
 			web_dir: web_dir.map(Arc::new),
 		};
 		(router(state), directory)
@@ -386,7 +392,7 @@ mod tests {
 		let response = app.clone().oneshot(draft).await.expect("response");
 		assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
-		let metadata = crate::store::MetadataStore::open(directory.path().join("metadata.sqlite"))
+		let metadata = crate::db::MetadataStore::open(directory.path().join("metadata.sqlite"))
 			.await
 			.expect("metadata");
 		metadata
@@ -407,7 +413,7 @@ mod tests {
 		let store = BlobStore::new(directory.path()).await.expect("store");
 		let staged = store.put_staged(b"0123456789".as_slice(), 1024).await.expect("stage");
 		let digest = store.commit(staged).await.expect("commit");
-		crate::store::MetadataStore::open(directory.path().join("metadata.sqlite"))
+		crate::db::MetadataStore::open(directory.path().join("metadata.sqlite"))
 			.await
 			.expect("metadata")
 			.index_artifact(&digest, "p", &[0u8; 32])

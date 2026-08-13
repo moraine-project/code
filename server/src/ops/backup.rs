@@ -5,7 +5,7 @@ use sqlx::sqlite::SqliteConnectOptions;
 
 use crate::blob::BlobStore;
 use crate::config::Config;
-use crate::store::MetadataStore;
+use crate::db::MetadataStore;
 
 pub struct Summary {
 	pub projects: i64,

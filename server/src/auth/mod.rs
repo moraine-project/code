@@ -1,3 +1,8 @@
+pub mod accounts;
+pub mod orgs;
+pub mod password;
+pub mod ratelimit;
+
 use axum::extract::{FromRequestParts, Path, State};
 use axum::http::request::Parts;
 use axum::http::{Method, StatusCode, header};
@@ -7,8 +12,7 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::accounts::{ApiKeyRow, SessionRow};
-use crate::password;
+use crate::auth::accounts::{ApiKeyRow, SessionRow};
 use crate::routes::AppState;
 
 const SESSION_COOKIE: &str = "moraine_session";
@@ -471,7 +475,7 @@ mod tests {
 	use super::*;
 	use crate::blob::BlobStore;
 	use crate::capability::Capability;
-	use crate::store::MetadataStore;
+	use crate::db::MetadataStore;
 
 	async fn app() -> (Router, tempfile::TempDir) {
 		let directory = tempfile::tempdir().expect("tempdir");
@@ -505,8 +509,8 @@ mod tests {
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
 			login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
-			metrics: Arc::new(crate::metrics::Metrics::new()),
-			rate_limiter: Arc::new(crate::ratelimit::RateLimiter::new()),
+			metrics: Arc::new(crate::ops::metrics::Metrics::new()),
+			rate_limiter: Arc::new(crate::auth::ratelimit::RateLimiter::new()),
 			web_dir: None,
 		};
 		(crate::routes::router(state), directory)

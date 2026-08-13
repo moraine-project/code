@@ -1,6 +1,6 @@
 use sqlx::Row;
 
-use crate::store::MetadataStore;
+use crate::db::MetadataStore;
 
 #[derive(Debug, Clone)]
 pub struct UserRow {

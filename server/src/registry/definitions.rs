@@ -12,9 +12,9 @@ use moraine_model::signed::SignedObject;
 use serde::Serialize;
 use sqlx::Row;
 
+use crate::db::MetadataStore;
 use crate::registry::stored;
 use crate::routes::AppState;
-use crate::store::MetadataStore;
 use crate::verify;
 
 #[derive(Debug, Clone)]
@@ -367,7 +367,7 @@ async fn get_definition(state: &AppState, expected: GenesisKind, id: &str) -> Re
 	}) else {
 		return (StatusCode::INTERNAL_SERVER_ERROR, "definition object is missing").into_response();
 	};
-	let payload = match crate::views::payload_json(&object.payload) {
+	let payload = match crate::registry::views::payload_json(&object.payload) {
 		Ok(payload) => payload,
 		Err(error) => return (StatusCode::INTERNAL_SERVER_ERROR, error).into_response(),
 	};
@@ -455,8 +455,8 @@ mod tests {
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
 			login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
-			metrics: std::sync::Arc::new(crate::metrics::Metrics::new()),
-			rate_limiter: std::sync::Arc::new(crate::ratelimit::RateLimiter::new()),
+			metrics: std::sync::Arc::new(crate::ops::metrics::Metrics::new()),
+			rate_limiter: std::sync::Arc::new(crate::auth::ratelimit::RateLimiter::new()),
 			web_dir: None,
 		}
 	}

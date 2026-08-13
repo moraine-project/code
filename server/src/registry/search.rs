@@ -9,9 +9,9 @@ use moraine_model::search::{Annotation, InstancePopularity, ListingState, Search
 use serde::Deserialize;
 use sqlx::Row;
 
+use crate::db::MetadataStore;
+use crate::db::sql::SqlBuilder;
 use crate::routes::AppState;
-use crate::sql::SqlBuilder;
-use crate::store::MetadataStore;
 
 pub fn routes() -> Router<AppState> {
 	Router::new().route("/v1/search", get(search))

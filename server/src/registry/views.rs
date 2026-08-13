@@ -11,9 +11,9 @@ use moraine_model::delegation::Delegation;
 use moraine_model::profile::ProfileRevision;
 use serde::{Deserialize, Serialize};
 
+use crate::db::StoredObject;
 use crate::registry::{OBJECT_CONTENT_TYPE, id_for, parse_hex_digest, storage_error};
 use crate::routes::AppState;
-use crate::store::StoredObject;
 
 pub fn routes() -> Router<AppState> {
 	Router::new()
@@ -217,7 +217,7 @@ struct ReleaseView {
 	dependencies: Vec<DependencyView>,
 	rights: Option<RightsView>,
 	withdrawal: Option<WithdrawalView>,
-	advisories: Vec<crate::advisories::AdvisoryView>,
+	advisories: Vec<crate::registry::advisories::AdvisoryView>,
 }
 
 #[derive(Serialize)]
@@ -291,7 +291,7 @@ async fn release_view(State(state): State<AppState>, Path((id, hex_digest)): Pat
 		};
 		for row in rows {
 			if seen.insert(row.digest.clone()) {
-				advisories.push(crate::advisories::advisory_view(row));
+				advisories.push(crate::registry::advisories::advisory_view(row));
 			}
 		}
 	}

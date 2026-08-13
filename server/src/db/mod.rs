@@ -1,9 +1,11 @@
+pub mod sql;
+
 use std::path::Path;
 
 use sqlx::any::AnyPoolOptions;
 use sqlx::{AnyPool, Row, Transaction};
 
-use crate::sql::SqlBuilder;
+use crate::db::sql::SqlBuilder;
 
 #[derive(Debug, Clone)]
 pub struct StoredObject {
@@ -660,8 +662,8 @@ impl Migration {
 
 const MIGRATIONS: &[Migration] = &[Migration {
 	name: "0001_initial",
-	sqlite: include_str!("../migrations/sqlite/0001_initial.sql"),
-	postgres: include_str!("../migrations/postgres/0001_initial.sql"),
+	sqlite: include_str!("../../migrations/sqlite/0001_initial.sql"),
+	postgres: include_str!("../../migrations/postgres/0001_initial.sql"),
 }];
 
 async fn connect(url: &str, max_connections: u32) -> Result<AnyPool, sqlx::Error> {
@@ -837,7 +839,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn popularity_sort_queries() {
-		use crate::search::{SearchDocument, SearchFilter, SearchSort};
+		use crate::registry::search::{SearchDocument, SearchFilter, SearchSort};
 
 		let directory = tempfile::tempdir().expect("tempdir");
 		let store = MetadataStore::open(directory.path().join("metadata.sqlite"))
@@ -906,7 +908,7 @@ mod migration_tests {
 #[cfg(test)]
 mod postgres_tests {
 	use super::*;
-	use crate::search::SearchDocument;
+	use crate::registry::search::SearchDocument;
 
 	async fn admin_pool(url: &str) -> AnyPool {
 		sqlx::any::install_default_drivers();

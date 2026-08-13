@@ -49,7 +49,7 @@ mod tests {
 
 	use super::*;
 	use crate::blob::BlobStore;
-	use crate::store::MetadataStore;
+	use crate::db::MetadataStore;
 
 	async fn state(directory: &std::path::Path) -> AppState {
 		let store = Arc::new(BlobStore::new(directory).await.expect("blob store"));
@@ -82,8 +82,8 @@ mod tests {
 			metadata,
 			capability: Arc::new(crate::capability::Capability::discover(&config)),
 			login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
-			metrics: Arc::new(crate::metrics::Metrics::new()),
-			rate_limiter: Arc::new(crate::ratelimit::RateLimiter::new()),
+			metrics: Arc::new(crate::ops::metrics::Metrics::new()),
+			rate_limiter: Arc::new(crate::auth::ratelimit::RateLimiter::new()),
 			web_dir: None,
 		}
 	}

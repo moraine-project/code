@@ -16,8 +16,8 @@ use tower::ServiceExt;
 
 use crate::blob::BlobStore;
 use crate::capability::Capability;
+use crate::db::MetadataStore;
 use crate::routes::AppState;
-use crate::store::MetadataStore;
 
 pub(crate) fn key(byte: u8) -> SigningKey {
 	SigningKey::from_seed(&[byte; 32])
@@ -317,8 +317,8 @@ pub(crate) async fn app_in_with_scan(
 		metadata,
 		capability: Arc::new(Capability::discover(&config)),
 		login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
-		metrics: std::sync::Arc::new(crate::metrics::Metrics::new()),
-		rate_limiter: std::sync::Arc::new(crate::ratelimit::RateLimiter::new()),
+		metrics: std::sync::Arc::new(crate::ops::metrics::Metrics::new()),
+		rate_limiter: std::sync::Arc::new(crate::auth::ratelimit::RateLimiter::new()),
 		web_dir: None,
 	};
 	crate::routes::router(state)

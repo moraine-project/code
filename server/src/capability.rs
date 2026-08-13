@@ -59,7 +59,7 @@ fn extra_roots(config: &Config) -> Vec<reqwest::Certificate> {
 	let Some(path) = config.tls_extra_roots.as_deref() else {
 		return Vec::new();
 	};
-	let (roots, skipped) = crate::egress::load_extra_roots(path);
+	let (roots, skipped) = crate::federation::egress::load_extra_roots(path);
 	if skipped > 0 {
 		tracing::warn!(path = %path.display(), skipped, "some TLS roots were not parsed");
 	}

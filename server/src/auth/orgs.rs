@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth::AuthenticatedUser;
+use crate::db::MetadataStore;
 use crate::routes::AppState;
-use crate::store::MetadataStore;
 
 const ROLES: &[&str] = &["owner", "admin", "member"];
 
@@ -565,8 +565,8 @@ mod tests {
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
 			login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
-			metrics: std::sync::Arc::new(crate::metrics::Metrics::new()),
-			rate_limiter: std::sync::Arc::new(crate::ratelimit::RateLimiter::new()),
+			metrics: std::sync::Arc::new(crate::ops::metrics::Metrics::new()),
+			rate_limiter: std::sync::Arc::new(crate::auth::ratelimit::RateLimiter::new()),
 			web_dir: None,
 		};
 		(crate::routes::router(state), directory)

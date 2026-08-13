@@ -108,7 +108,7 @@ impl Config {
 	pub fn database_url(&self) -> String {
 		self.database_url
 			.clone()
-			.unwrap_or_else(|| crate::store::sqlite_url(&self.data_dir.join("metadata.sqlite")))
+			.unwrap_or_else(|| crate::db::sqlite_url(&self.data_dir.join("metadata.sqlite")))
 	}
 
 	pub fn uses_sqlite(&self) -> bool {

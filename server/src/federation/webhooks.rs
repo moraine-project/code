@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth::AuthenticatedUser;
+use crate::db::MetadataStore;
 use crate::routes::AppState;
-use crate::store::MetadataStore;
 
 const MAX_ATTEMPTS: i64 = 8;
 const BACKOFF_BASE_SECONDS: i64 = 30;
@@ -224,7 +224,7 @@ pub async fn deliver_pending(state: &AppState, limit: i64) -> Result<usize, Stri
 		.due_deliveries(now(), limit)
 		.await
 		.map_err(|error| error.to_string())?;
-	let client = crate::egress::client_builder(&state.capability.tls_extra_roots)
+	let client = crate::federation::egress::client_builder(&state.capability.tls_extra_roots)
 		.timeout(Duration::from_secs(15))
 		.redirect(reqwest::redirect::Policy::none())
 		.build()
@@ -242,7 +242,7 @@ pub async fn deliver_pending(state: &AppState, limit: i64) -> Result<usize, Stri
 				continue;
 			}
 		};
-		if crate::egress::guard(&target, allow_local).await.is_err() {
+		if crate::federation::egress::guard(&target, allow_local).await.is_err() {
 			let _ = state
 				.metadata
 				.finish_delivery(&delivery.id, delivery.attempt + 1, "failed", now(), None)
@@ -453,8 +453,8 @@ mod tests {
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
 			login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
-			metrics: std::sync::Arc::new(crate::metrics::Metrics::new()),
-			rate_limiter: std::sync::Arc::new(crate::ratelimit::RateLimiter::new()),
+			metrics: std::sync::Arc::new(crate::ops::metrics::Metrics::new()),
+			rate_limiter: std::sync::Arc::new(crate::auth::ratelimit::RateLimiter::new()),
 			web_dir: None,
 		};
 		(crate::routes::router(state.clone()), state, directory)

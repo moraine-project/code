@@ -12,7 +12,7 @@ pub async fn run(config: &Config, email: &str) -> Result<Bootstrapped, String> {
 		return Err("the operator email is not a valid address".to_string());
 	}
 	std::fs::create_dir_all(&config.data_dir).map_err(|error| error.to_string())?;
-	let metadata = crate::store::MetadataStore::open_url(&config.database_url())
+	let metadata = crate::db::MetadataStore::open_url(&config.database_url())
 		.await
 		.map_err(|error| error.to_string())?;
 	if metadata
@@ -24,7 +24,7 @@ pub async fn run(config: &Config, email: &str) -> Result<Bootstrapped, String> {
 		return Err(format!("an account for {email} already exists"));
 	}
 	let password = random_password();
-	let hash = crate::password::hash_password(&password).map_err(|_| "could not hash the password".to_string())?;
+	let hash = crate::auth::password::hash_password(&password).map_err(|_| "could not hash the password".to_string())?;
 	let user_id = random_id();
 	metadata
 		.create_user(&user_id, &email, &hash, unix_now())
@@ -62,7 +62,7 @@ mod tests {
 	use std::sync::Arc;
 
 	use super::*;
-	use crate::store::MetadataStore;
+	use crate::db::MetadataStore;
 
 	async fn config(directory: &std::path::Path) -> Config {
 		Config {
@@ -106,7 +106,7 @@ mod tests {
 			.await
 			.expect("lookup")
 			.expect("account");
-		assert!(crate::password::verify_password(&first.password, &user.password_hash));
+		assert!(crate::auth::password::verify_password(&first.password, &user.password_hash));
 
 		let again = run(&config, "ops@example.org").await;
 		assert!(again.is_err());

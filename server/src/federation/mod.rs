@@ -1,3 +1,8 @@
+pub mod egress;
+pub mod mirrors;
+pub mod notifications;
+pub mod webhooks;
+
 use std::fmt;
 use std::net::IpAddr;
 use std::time::Duration;
@@ -15,9 +20,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth::AuthenticatedUser;
+use crate::db::MetadataStore;
 use crate::registry::{self, load_delegations};
 use crate::routes::AppState;
-use crate::store::MetadataStore;
 use crate::verify;
 
 pub fn routes() -> Router<AppState> {
@@ -639,7 +644,7 @@ impl HomeClient {
 		extra_roots: &[reqwest::Certificate],
 	) -> Result<Self, FederationError> {
 		let url = validate_home(base, allow_http_local)?;
-		let client = crate::egress::client_builder(extra_roots)
+		let client = crate::federation::egress::client_builder(extra_roots)
 			.timeout(Duration::from_secs(10))
 			.redirect(reqwest::redirect::Policy::none())
 			.build()
@@ -663,7 +668,7 @@ impl HomeClient {
 
 	async fn get_bytes(&self, path: &str) -> Result<Vec<u8>, FederationError> {
 		let url = self.endpoint(path);
-		crate::egress::guard(&url, self.allow_local)
+		crate::federation::egress::guard(&url, self.allow_local)
 			.await
 			.map_err(FederationError::Http)?;
 		let mut response = self

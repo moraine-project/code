@@ -394,7 +394,7 @@ async fn rejects_a_home_whose_feed_went_backwards() {
 
 	let (directory, directory_dir) = app_mode(crate::config::Publishing::Review, true).await;
 	let home_url = format!("http://127.0.0.1:{}", address.port());
-	let metadata = crate::store::MetadataStore::open(directory_dir.path().join("metadata.sqlite"))
+	let metadata = crate::db::MetadataStore::open(directory_dir.path().join("metadata.sqlite"))
 		.await
 		.expect("metadata");
 	metadata

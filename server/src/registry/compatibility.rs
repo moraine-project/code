@@ -1,5 +1,5 @@
+use crate::db::StoredObject;
 use crate::routes::AppState;
-use crate::store::StoredObject;
 
 pub(crate) fn release_matches_game_version(
 	object: &StoredObject,
@@ -91,7 +91,7 @@ fn loader_ordering_of(loader: &moraine_model::definition::LoaderObject) -> Optio
 
 pub(crate) async fn game_ordering(
 	state: &AppState,
-	object: &crate::store::StoredObject,
+	object: &crate::db::StoredObject,
 ) -> Option<moraine_model::version::OrderingScheme> {
 	use moraine_model::Canonical;
 	use moraine_model::version::OrderingScheme;

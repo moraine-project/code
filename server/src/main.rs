@@ -1,40 +1,27 @@
-mod accounts;
-mod advisories;
 mod auth;
-mod backup;
 mod blob;
-mod bootstrap;
 mod capability;
-mod compatibility;
 mod config;
-mod definitions;
-mod egress;
+mod db;
 mod federation;
-mod gc;
-mod metrics;
-mod mirrors;
-mod notifications;
-mod orgs;
-mod password;
-mod ratelimit;
+mod ops;
 mod registry;
-mod review;
 mod routes;
-mod search;
-mod sql;
-mod store;
 #[cfg(test)]
 mod test_support;
 mod verify;
-mod views;
-mod webhooks;
 
 use std::sync::Arc;
 
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
+use crate::auth::ratelimit;
 use crate::config::{Cli, Command};
+use crate::db as store;
+use crate::federation::webhooks;
+use crate::ops::{backup, bootstrap, gc, metrics};
+use crate::registry::definitions;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
