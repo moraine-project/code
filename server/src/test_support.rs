@@ -19,6 +19,58 @@ use crate::capability::Capability;
 use crate::db::MetadataStore;
 use crate::routes::AppState;
 
+static DATABASES: std::sync::Mutex<Vec<(std::path::PathBuf, String)>> = std::sync::Mutex::new(Vec::new());
+
+pub(crate) async fn store_for(directory: &std::path::Path) -> MetadataStore {
+	let url = DATABASES
+		.lock()
+		.expect("databases")
+		.iter()
+		.find(|(path, _)| path == directory)
+		.map(|(_, url)| url.clone())
+		.unwrap_or_else(|| crate::db::sqlite_url(&directory.join("metadata.sqlite")));
+	MetadataStore::open_url(&url).await.expect("store")
+}
+
+async fn test_database(directory: &std::path::Path) -> String {
+	let Ok(base) = std::env::var("MORAINE_TEST_POSTGRES") else {
+		return crate::db::sqlite_url(&directory.join("metadata.sqlite"));
+	};
+	let schema = unique_schema();
+	create_schema(&base, &schema).await;
+	let separator = if base.contains('?') { '&' } else { '?' };
+	let url = format!("{base}{separator}options=-csearch_path%3D{schema}");
+	DATABASES
+		.lock()
+		.expect("databases")
+		.push((directory.to_path_buf(), url.clone()));
+	url
+}
+
+async fn create_schema(base: &str, schema: &str) {
+	use sqlx::any::{AnyPoolOptions, install_default_drivers};
+	install_default_drivers();
+	let pool = AnyPoolOptions::new()
+		.max_connections(1)
+		.connect(base)
+		.await
+		.expect("admin pool");
+	sqlx::query(sqlx::AssertSqlSafe(format!("CREATE SCHEMA IF NOT EXISTS {schema}")))
+		.execute(&pool)
+		.await
+		.expect("create schema");
+}
+
+fn unique_schema() -> String {
+	static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+	let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+	let nanos = std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|elapsed| elapsed.as_nanos())
+		.unwrap_or(0);
+	format!("t{nanos:x}_{count:x}")
+}
+
 pub(crate) fn key(byte: u8) -> SigningKey {
 	SigningKey::from_seed(&[byte; 32])
 }
@@ -231,8 +283,10 @@ pub(crate) async fn app_with_rate_limit(requests_per_minute: u32) -> (Router, te
 
 pub(crate) async fn app_with_scan_pages(max_feed_scan_pages: u32) -> (Router, tempfile::TempDir) {
 	let directory = tempfile::tempdir().expect("tempdir");
+	let database = test_database(directory.path()).await;
 	let application = app_in_with_scan(
 		directory.path(),
+		&database,
 		crate::config::Publishing::Open,
 		false,
 		100,
@@ -250,12 +304,15 @@ pub(crate) async fn app_with_limits(
 	requests_per_minute: u32,
 ) -> (Router, tempfile::TempDir) {
 	let directory = tempfile::tempdir().expect("tempdir");
-	let application = app_in(
+	let database = test_database(directory.path()).await;
+	let application = app_in_with_scan(
 		directory.path(),
+		&database,
 		publishing,
 		allow_insecure_federation_local,
 		max_feed_page_entries,
 		requests_per_minute,
+		50,
 	)
 	.await;
 	(application, directory)
@@ -270,6 +327,7 @@ pub(crate) async fn app_in(
 ) -> Router {
 	app_in_with_scan(
 		directory,
+		&crate::db::sqlite_url(&directory.join("metadata.sqlite")),
 		publishing,
 		allow_insecure_federation_local,
 		max_feed_page_entries,
@@ -281,6 +339,7 @@ pub(crate) async fn app_in(
 
 pub(crate) async fn app_in_with_scan(
 	directory: &std::path::Path,
+	database: &str,
 	publishing: crate::config::Publishing,
 	allow_insecure_federation_local: bool,
 	max_feed_page_entries: u32,
@@ -288,11 +347,7 @@ pub(crate) async fn app_in_with_scan(
 	max_feed_scan_pages: u32,
 ) -> Router {
 	let store = Arc::new(BlobStore::new(directory).await.expect("blob store"));
-	let metadata = Arc::new(
-		MetadataStore::open(directory.join("metadata.sqlite"))
-			.await
-			.expect("metadata"),
-	);
+	let metadata = Arc::new(MetadataStore::open_url(database).await.expect("metadata"));
 	let config = crate::config::Config {
 		bind: "127.0.0.1:0".parse().expect("addr"),
 		data_dir: directory.to_path_buf(),
@@ -300,7 +355,7 @@ pub(crate) async fn app_in_with_scan(
 		max_feed_page_entries,
 		max_feed_scan_pages,
 		skip_migrate_on_start: false,
-		database_url: None,
+		database_url: Some(database.to_string()),
 		max_response_bytes: 16_777_216,
 		staging_retention_seconds: 3_600,
 		blob_retention_seconds: 604_800,

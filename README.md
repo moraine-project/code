@@ -89,9 +89,9 @@ MORAINE_DATABASE_URL=postgres://user:password@host/moraine \
 Artifact bytes stay on the filesystem in both cases. Backup and restore read
 the SQLite file directly, so use `pg_dump` for a PostgreSQL database.
 
-The Postgres code path is exercised by a test against a real server. It resets
-the schema of the database it is given, so point it only at a throwaway
-database whose name contains `test`:
+With this set, the whole server test suite runs against PostgreSQL: each test
+gets its own schema, migrates it, and is dropped with the database afterwards.
+Point it only at a throwaway database whose name contains `test`:
 
 ```sh
 MORAINE_TEST_POSTGRES=postgres://postgres:postgres@127.0.0.1:5432/moraine_test \
