@@ -8,6 +8,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
+use crate::db::MetadataStore;
 use crate::routes::AppState;
 
 pub struct Metrics {
@@ -219,5 +220,79 @@ mod tests {
 		] {
 			assert!(text.contains(name), "missing {name}");
 		}
+	}
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MetricsSnapshot {
+	pub projects: i64,
+	pub objects: i64,
+	pub submissions: i64,
+	pub submissions_pending: i64,
+	pub review_decisions: i64,
+	pub subscriptions: i64,
+	pub deliveries_pending: i64,
+	pub definitions: i64,
+	pub advisories: i64,
+	pub mirrors: i64,
+	pub artifacts: i64,
+	pub subscription_lag: i64,
+	pub subscription_resets: i64,
+	pub oldest_pending_submission: Option<i64>,
+	pub oldest_pending_delivery: Option<i64>,
+}
+impl MetricsSnapshot {
+	pub fn lines(&self) -> Vec<(&'static str, i64)> {
+		vec![
+			("moraine_projects_total", self.projects),
+			("moraine_objects_total", self.objects),
+			("moraine_submissions_total", self.submissions),
+			("moraine_submissions_pending", self.submissions_pending),
+			("moraine_review_decisions_total", self.review_decisions),
+			("moraine_subscriptions_total", self.subscriptions),
+			("moraine_deliveries_pending", self.deliveries_pending),
+			("moraine_definitions_total", self.definitions),
+			("moraine_advisories_total", self.advisories),
+			("moraine_mirrors_total", self.mirrors),
+			("moraine_artifacts_total", self.artifacts),
+			("moraine_subscription_lag_entries", self.subscription_lag),
+			("moraine_subscription_resets", self.subscription_resets),
+		]
+	}
+}
+
+impl MetadataStore {
+	pub async fn metrics_snapshot(&self) -> Result<MetricsSnapshot, sqlx::Error> {
+		Ok(MetricsSnapshot {
+			projects: self.table_count("projects").await?,
+			objects: self.table_count("objects").await?,
+			submissions: self.table_count("submissions").await?,
+			submissions_pending: self
+				.scalar_count("SELECT COUNT(*) FROM submissions WHERE state = 'submitted'")
+				.await?,
+			review_decisions: self.table_count("review_decisions").await?,
+			subscriptions: self.table_count("subscriptions").await?,
+			deliveries_pending: self
+				.scalar_count("SELECT COUNT(*) FROM webhook_deliveries WHERE status = 'pending'")
+				.await?,
+			definitions: self.table_count("definitions").await?,
+			advisories: self.table_count("advisories").await?,
+			mirrors: self.table_count("mirrors").await?,
+			artifacts: self.table_count("artifact_index").await?,
+			subscription_lag: self
+				.scalar_opt("SELECT MAX(remote_head_seq - cursor_seq) FROM subscriptions")
+				.await?
+				.unwrap_or(0),
+			subscription_resets: self
+				.scalar_opt("SELECT CAST(SUM(reset_count) AS BIGINT) FROM subscriptions")
+				.await?
+				.unwrap_or(0),
+			oldest_pending_submission: self
+				.scalar_opt("SELECT MIN(created_at) FROM submissions WHERE state = 'submitted'")
+				.await?,
+			oldest_pending_delivery: self
+				.scalar_opt("SELECT MIN(next_attempt_at) FROM webhook_deliveries WHERE status = 'pending'")
+				.await?,
+		})
 	}
 }

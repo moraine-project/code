@@ -5,8 +5,6 @@ use std::path::Path;
 use sqlx::any::AnyPoolOptions;
 use sqlx::{AnyPool, Row, Transaction};
 
-use crate::db::sql::SqlBuilder;
-
 #[derive(Debug, Clone)]
 pub struct StoredObject {
 	pub digest: Vec<u8>,
@@ -36,39 +34,6 @@ pub struct FeedRow {
 	pub object_digest: Vec<u8>,
 	pub payload: Vec<u8>,
 	pub wire: Vec<u8>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SubmissionRow {
-	pub id: String,
-	pub project_id: String,
-	pub object_digest: Vec<u8>,
-	pub entry_digest: Vec<u8>,
-	pub entry_wire: Vec<u8>,
-	pub state: String,
-	pub assigned_to: Option<String>,
-	pub submitted_by: String,
-	pub created_at: i64,
-	pub updated_at: i64,
-}
-
-#[derive(Debug, Clone)]
-pub struct ArtifactMatchRow {
-	pub project_id: String,
-	pub release_digest: Vec<u8>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ReviewDecisionRow {
-	pub id: String,
-	pub submission_id: String,
-	pub object_digest: Vec<u8>,
-	pub reviewer_id: String,
-	pub decision: String,
-	pub reason_code: Option<String>,
-	pub reason_taxonomy_version: u32,
-	pub decided_at: i64,
-	pub appeal_route: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -275,250 +240,6 @@ impl MetadataStore {
 			declared_time: row.get("declared_time"),
 		}))
 	}
-
-	pub async fn index_artifact(&self, digest: &[u8], project_id: &str, release_digest: &[u8]) -> Result<(), sqlx::Error> {
-		sqlx::query(
-			"INSERT INTO artifact_index (digest, project_id, release_digest) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-		)
-		.bind(digest)
-		.bind(project_id)
-		.bind(release_digest)
-		.execute(&self.pool)
-		.await?;
-		Ok(())
-	}
-
-	pub async fn blob_is_referenced(&self, digest: &[u8]) -> Result<bool, sqlx::Error> {
-		let referenced = sqlx::query_scalar::<_, i64>(
-			"SELECT COUNT(*) FROM (
-				SELECT digest FROM artifact_index WHERE digest = $1
-				UNION SELECT artifact_digest FROM locations WHERE artifact_digest = $1
-				UNION SELECT artifact_digest FROM mirror_commitments WHERE artifact_digest = $1)",
-		)
-		.bind(digest)
-		.fetch_one(&self.pool)
-		.await?;
-		Ok(referenced > 0)
-	}
-
-	pub async fn record_download(&self, digest: &[u8], day: i64) -> Result<(), sqlx::Error> {
-		sqlx::query(
-			"INSERT INTO download_counts (project_id, day, count)
-			 SELECT DISTINCT project_id, $2, 1 FROM artifact_index WHERE digest = $1
-			 ON CONFLICT(project_id, day) DO UPDATE SET count = download_counts.count + 1",
-		)
-		.bind(digest)
-		.bind(day)
-		.execute(&self.pool)
-		.await?;
-		Ok(())
-	}
-
-	pub async fn popularities(
-		&self,
-		project_ids: &[String],
-		since_day: i64,
-	) -> Result<std::collections::HashMap<String, i64>, sqlx::Error> {
-		let mut totals = std::collections::HashMap::new();
-		if project_ids.is_empty() {
-			return Ok(totals);
-		}
-		let mut downloads =
-			SqlBuilder::new("SELECT project_id, CAST(SUM(count) AS BIGINT) AS total FROM download_counts WHERE day >= ");
-		downloads.push_bind(since_day).push(" AND project_id IN (");
-		{
-			let mut separated = downloads.separated(", ");
-			for project_id in project_ids {
-				separated.push_bind(project_id);
-			}
-		}
-		downloads.push(") GROUP BY project_id");
-		for row in downloads.into_query().fetch_all(&self.pool).await? {
-			let project_id: String = row.get("project_id");
-			let total: i64 = row.get("total");
-			*totals.entry(project_id).or_insert(0) += total;
-		}
-		let mut follows = SqlBuilder::new("SELECT project_id, COUNT(*) AS total FROM follows WHERE created_at >= ");
-		follows.push_bind(since_day * 86_400).push(" AND project_id IN (");
-		{
-			let mut separated = follows.separated(", ");
-			for project_id in project_ids {
-				separated.push_bind(project_id);
-			}
-		}
-		follows.push(") GROUP BY project_id");
-		for row in follows.into_query().fetch_all(&self.pool).await? {
-			let project_id: String = row.get("project_id");
-			let total: i64 = row.get("total");
-			*totals.entry(project_id).or_insert(0) += total;
-		}
-		Ok(totals)
-	}
-
-	pub async fn artifacts_for_digest(&self, digest: &[u8]) -> Result<Vec<ArtifactMatchRow>, sqlx::Error> {
-		let rows = sqlx::query("SELECT project_id, release_digest FROM artifact_index WHERE digest = $1")
-			.bind(digest)
-			.fetch_all(&self.pool)
-			.await?;
-		Ok(rows
-			.into_iter()
-			.map(|row| ArtifactMatchRow {
-				project_id: row.get("project_id"),
-				release_digest: row.get("release_digest"),
-			})
-			.collect())
-	}
-
-	pub async fn create_submission(&self, submission: &SubmissionRow) -> Result<(), sqlx::Error> {
-		sqlx::query(
-			"INSERT INTO submissions (id, project_id, object_digest, entry_digest, entry_wire, state, submitted_by, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)",
-		)
-		.bind(&submission.id)
-		.bind(&submission.project_id)
-		.bind(&submission.object_digest)
-		.bind(&submission.entry_digest)
-		.bind(&submission.entry_wire)
-		.bind(&submission.state)
-		.bind(&submission.submitted_by)
-		.bind(submission.created_at)
-		.execute(&self.pool)
-		.await?;
-		Ok(())
-	}
-
-	pub async fn submission(&self, id: &str) -> Result<Option<SubmissionRow>, sqlx::Error> {
-		let row = sqlx::query(
-			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
-			 FROM submissions WHERE id = $1",
-		)
-		.bind(id)
-		.fetch_optional(&self.pool)
-		.await?;
-		Ok(row.map(submission_row))
-	}
-
-	pub async fn open_submissions(
-		&self,
-		limit: i64,
-		cursor: Option<(i64, &str)>,
-	) -> Result<Vec<SubmissionRow>, sqlx::Error> {
-		let rows = sqlx::query(
-			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
-			 FROM submissions WHERE state IN ('submitted', 'under_review')
-			 AND (created_at > $1 OR (created_at = $1 AND ($3 = 0 OR id > $2)))
-			 ORDER BY created_at ASC, id ASC LIMIT $4",
-		)
-		.bind(cursor.map(|(created, _)| created).unwrap_or(i64::MIN))
-		.bind(cursor.map(|(_, id)| id).unwrap_or(""))
-		.bind(i64::from(cursor.is_some()))
-		.bind(limit)
-		.fetch_all(&self.pool)
-		.await?;
-		Ok(rows.into_iter().map(submission_row).collect())
-	}
-
-	pub async fn submissions_by_submitter(
-		&self,
-		user_id: &str,
-		limit: i64,
-		cursor: Option<(i64, &str)>,
-	) -> Result<Vec<SubmissionRow>, sqlx::Error> {
-		let rows = sqlx::query(
-			"SELECT id, project_id, object_digest, entry_digest, entry_wire, state, assigned_to, submitted_by, created_at, updated_at
-			 FROM submissions WHERE submitted_by = $1
-			 AND (created_at < $2 OR (created_at = $2 AND ($4 = 0 OR id < $3)))
-			 ORDER BY created_at DESC, id DESC LIMIT $5",
-		)
-		.bind(user_id)
-		.bind(cursor.map(|(created, _)| created).unwrap_or(i64::MAX))
-		.bind(cursor.map(|(_, id)| id).unwrap_or(""))
-		.bind(i64::from(cursor.is_some()))
-		.bind(limit)
-		.fetch_all(&self.pool)
-		.await?;
-		Ok(rows.into_iter().map(submission_row).collect())
-	}
-
-	pub async fn assign_submission(&self, id: &str, reviewer_id: &str, updated_at: i64) -> Result<bool, sqlx::Error> {
-		let result = sqlx::query(
-			"UPDATE submissions SET state = 'under_review', assigned_to = $1, updated_at = $2 WHERE id = $3 AND state = 'submitted'",
-		)
-		.bind(reviewer_id)
-		.bind(updated_at)
-		.bind(id)
-		.execute(&self.pool)
-		.await?;
-		Ok(result.rows_affected() == 1)
-	}
-
-	pub async fn set_submission_state(&self, id: &str, state: &str, updated_at: i64) -> Result<(), sqlx::Error> {
-		sqlx::query("UPDATE submissions SET state = $1, updated_at = $2 WHERE id = $3")
-			.bind(state)
-			.bind(updated_at)
-			.bind(id)
-			.execute(&self.pool)
-			.await?;
-		Ok(())
-	}
-
-	pub async fn insert_decision(&self, decision: &ReviewDecisionRow) -> Result<(), sqlx::Error> {
-		sqlx::query(
-			"INSERT INTO review_decisions (id, submission_id, object_digest, reviewer_id, decision, reason_code, reason_taxonomy_version, decided_at, appeal_route)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-		)
-		.bind(&decision.id)
-		.bind(&decision.submission_id)
-		.bind(&decision.object_digest)
-		.bind(&decision.reviewer_id)
-		.bind(&decision.decision)
-		.bind(&decision.reason_code)
-		.bind(i64::from(decision.reason_taxonomy_version))
-		.bind(decision.decided_at)
-		.bind(&decision.appeal_route)
-		.execute(&self.pool)
-		.await?;
-		Ok(())
-	}
-
-	pub async fn decisions_for(&self, submission_id: &str) -> Result<Vec<ReviewDecisionRow>, sqlx::Error> {
-		let rows = sqlx::query(
-			"SELECT id, submission_id, object_digest, reviewer_id, decision, reason_code, reason_taxonomy_version, decided_at, appeal_route
-			 FROM review_decisions WHERE submission_id = $1 ORDER BY decided_at ASC",
-		)
-		.bind(submission_id)
-		.fetch_all(&self.pool)
-		.await?;
-		Ok(rows
-			.into_iter()
-			.map(|row| ReviewDecisionRow {
-				id: row.get("id"),
-				submission_id: row.get("submission_id"),
-				object_digest: row.get("object_digest"),
-				reviewer_id: row.get("reviewer_id"),
-				decision: row.get("decision"),
-				reason_code: row.get("reason_code"),
-				reason_taxonomy_version: row.get::<i64, _>("reason_taxonomy_version") as u32,
-				decided_at: row.get("decided_at"),
-				appeal_route: row.get("appeal_route"),
-			})
-			.collect())
-	}
-}
-
-fn submission_row(row: sqlx::any::AnyRow) -> SubmissionRow {
-	SubmissionRow {
-		id: row.get("id"),
-		project_id: row.get("project_id"),
-		object_digest: row.get("object_digest"),
-		entry_digest: row.get("entry_digest"),
-		entry_wire: row.get("entry_wire"),
-		state: row.get("state"),
-		assigned_to: row.get("assigned_to"),
-		submitted_by: row.get("submitted_by"),
-		created_at: row.get("created_at"),
-		updated_at: row.get("updated_at"),
-	}
 }
 
 async fn insert_feed_entry(transaction: &mut Transaction<'_, sqlx::Any>, entry: &FeedRow) -> Result<(), sqlx::Error> {
@@ -539,102 +260,18 @@ async fn insert_feed_entry(transaction: &mut Transaction<'_, sqlx::Any>, entry: 
 	Ok(())
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct MetricsSnapshot {
-	pub projects: i64,
-	pub objects: i64,
-	pub submissions: i64,
-	pub submissions_pending: i64,
-	pub review_decisions: i64,
-	pub subscriptions: i64,
-	pub deliveries_pending: i64,
-	pub definitions: i64,
-	pub advisories: i64,
-	pub mirrors: i64,
-	pub artifacts: i64,
-	pub subscription_lag: i64,
-	pub subscription_resets: i64,
-	pub oldest_pending_submission: Option<i64>,
-	pub oldest_pending_delivery: Option<i64>,
-}
-
-impl MetricsSnapshot {
-	pub fn lines(&self) -> Vec<(&'static str, i64)> {
-		vec![
-			("moraine_projects_total", self.projects),
-			("moraine_objects_total", self.objects),
-			("moraine_submissions_total", self.submissions),
-			("moraine_submissions_pending", self.submissions_pending),
-			("moraine_review_decisions_total", self.review_decisions),
-			("moraine_subscriptions_total", self.subscriptions),
-			("moraine_deliveries_pending", self.deliveries_pending),
-			("moraine_definitions_total", self.definitions),
-			("moraine_advisories_total", self.advisories),
-			("moraine_mirrors_total", self.mirrors),
-			("moraine_artifacts_total", self.artifacts),
-			("moraine_subscription_lag_entries", self.subscription_lag),
-			("moraine_subscription_resets", self.subscription_resets),
-		]
-	}
-}
-
 impl MetadataStore {
-	pub async fn metrics_snapshot(&self) -> Result<MetricsSnapshot, sqlx::Error> {
-		Ok(MetricsSnapshot {
-			projects: self.table_count("projects").await?,
-			objects: self.table_count("objects").await?,
-			submissions: self.table_count("submissions").await?,
-			submissions_pending: self
-				.scalar_count("SELECT COUNT(*) FROM submissions WHERE state = 'submitted'")
-				.await?,
-			review_decisions: self.table_count("review_decisions").await?,
-			subscriptions: self.table_count("subscriptions").await?,
-			deliveries_pending: self
-				.scalar_count("SELECT COUNT(*) FROM webhook_deliveries WHERE status = 'pending'")
-				.await?,
-			definitions: self.table_count("definitions").await?,
-			advisories: self.table_count("advisories").await?,
-			mirrors: self.table_count("mirrors").await?,
-			artifacts: self.table_count("artifact_index").await?,
-			subscription_lag: self
-				.scalar_opt("SELECT MAX(remote_head_seq - cursor_seq) FROM subscriptions")
-				.await?
-				.unwrap_or(0),
-			subscription_resets: self
-				.scalar_opt("SELECT CAST(SUM(reset_count) AS BIGINT) FROM subscriptions")
-				.await?
-				.unwrap_or(0),
-			oldest_pending_submission: self
-				.scalar_opt("SELECT MIN(created_at) FROM submissions WHERE state = 'submitted'")
-				.await?,
-			oldest_pending_delivery: self
-				.scalar_opt("SELECT MIN(next_attempt_at) FROM webhook_deliveries WHERE status = 'pending'")
-				.await?,
-		})
-	}
-
-	pub async fn referenced_blob_digests(&self) -> Result<Vec<Vec<u8>>, sqlx::Error> {
-		let rows = sqlx::query(
-			"SELECT digest FROM artifact_index
-			 UNION SELECT artifact_digest FROM locations
-			 UNION SELECT artifact_digest FROM mirror_commitments",
-		)
-		.fetch_all(&self.pool)
-		.await?;
-		Ok(rows.into_iter().map(|row| row.get::<Vec<u8>, _>(0)).collect())
-	}
-
-	async fn table_count(&self, table: &str) -> Result<i64, sqlx::Error> {
+	pub(crate) async fn table_count(&self, table: &str) -> Result<i64, sqlx::Error> {
 		self.scalar_count(&format!("SELECT COUNT(*) FROM {table}")).await
 	}
 
-	async fn scalar_count(&self, query: &str) -> Result<i64, sqlx::Error> {
+	pub(crate) async fn scalar_count(&self, query: &str) -> Result<i64, sqlx::Error> {
 		sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(query))
 			.fetch_one(&self.pool)
 			.await
 	}
 
-	async fn scalar_opt(&self, query: &str) -> Result<Option<i64>, sqlx::Error> {
+	pub(crate) async fn scalar_opt(&self, query: &str) -> Result<Option<i64>, sqlx::Error> {
 		sqlx::query_scalar::<_, Option<i64>>(sqlx::AssertSqlSafe(query))
 			.fetch_one(&self.pool)
 			.await
@@ -908,6 +545,7 @@ mod migration_tests {
 #[cfg(test)]
 mod postgres_tests {
 	use super::*;
+	use crate::registry::review::{ReviewDecisionRow, SubmissionRow};
 	use crate::registry::search::SearchDocument;
 
 	async fn admin_pool(url: &str) -> AnyPool {

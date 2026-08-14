@@ -1,4 +1,5 @@
 pub mod advisories;
+pub mod artifacts;
 pub mod compatibility;
 pub mod definitions;
 pub mod review;
