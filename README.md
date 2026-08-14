@@ -76,6 +76,28 @@ cargo run -p moraine-server -- --data-dir ./data --web-dir web/build
 `--web-dir` serves files and falls back to `index.html` for client-side routes;
 API paths still get API responses.
 
+The store is SQLite by default. Point it at PostgreSQL instead with a
+connection URL; the schema is migrated for whichever engine the URL names:
+
+```sh
+MORAINE_DATABASE_URL=postgres://user:password@host/moraine \
+  cargo run -p moraine-server -- migrate
+MORAINE_DATABASE_URL=postgres://user:password@host/moraine \
+  cargo run -p moraine-server -- --data-dir ./data
+```
+
+Artifact bytes stay on the filesystem in both cases. Backup and restore read
+the SQLite file directly, so use `pg_dump` for a PostgreSQL database.
+
+The Postgres code path is exercised by a test against a real server. It resets
+the schema of the database it is given, so point it only at a throwaway
+database whose name contains `test`:
+
+```sh
+MORAINE_TEST_POSTGRES=postgres://postgres:postgres@127.0.0.1:5432/moraine_test \
+  cargo test -p moraine-server
+```
+
 Read a mod archive's manifest without running it:
 
 ```sh
