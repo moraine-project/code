@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let cli = Cli::parse();
 	let config = cli.config;
 	if config.skip_migrate_on_start {
-		match store::pending_url(&config.database_url()).await {
+		match store::migrations::pending_url(&config.database_url()).await {
 			Ok(0) => {}
 			Ok(pending) => {
 				return Err(format!("{pending} migration(s) pending; run `moraine-server migrate`").into());
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	}
 	if let Some(Command::Migrate) = cli.command {
 		let url = config.database_url();
-		return match store::migrate_url(&url).await {
+		return match store::migrations::migrate_url(&url).await {
 			Ok(applied) => {
 				println!("{}: {} migration(s) applied", url, applied);
 				Ok(())
