@@ -205,6 +205,7 @@ pub struct SearchDocument<'a> {
 	pub game_id: &'a str,
 	pub display_name: &'a str,
 	pub summary: &'a str,
+	pub description: &'a str,
 	pub categories: &'a [String],
 	pub tags: &'a [String],
 	pub updated_at: i64,
@@ -226,14 +227,16 @@ impl MetadataStore {
 	pub async fn put_search_document(&self, document: SearchDocument<'_>) -> Result<(), sqlx::Error> {
 		let mut transaction = self.pool.begin().await?;
 		sqlx::query(
-			"INSERT INTO search_documents (project_id, game_id, display_name, summary, updated_at, created_at, normalized_name)
-			 VALUES ($1, $2, $3, $4, $5, $5, $6)
-			 ON CONFLICT(project_id) DO UPDATE SET game_id = $2, display_name = $3, summary = $4, updated_at = $5, normalized_name = $6",
+			"INSERT INTO search_documents (project_id, game_id, display_name, summary, description, updated_at, created_at, normalized_name)
+			 VALUES ($1, $2, $3, $4, $5, $6, $6, $7)
+			 ON CONFLICT(project_id) DO UPDATE SET game_id = $2, display_name = $3, summary = $4, description = $5,
+			 updated_at = $6, normalized_name = $7",
 		)
 		.bind(document.project_id)
 		.bind(document.game_id)
 		.bind(document.display_name)
 		.bind(document.summary)
+		.bind(document.description)
 		.bind(document.updated_at)
 		.bind(normalize_name(document.display_name))
 		.execute(&mut *transaction)
@@ -358,6 +361,8 @@ impl MetadataStore {
 				.push(" AND (lower(display_name) LIKE ")
 				.push_bind(pattern.clone())
 				.push(" OR lower(summary) LIKE ")
+				.push_bind(pattern.clone())
+				.push(" OR lower(description) LIKE ")
 				.push_bind(pattern)
 				.push(")");
 		}
@@ -475,6 +480,7 @@ pub(crate) async fn refresh_search_document(state: &AppState, object_digest: &[u
 			game_id: &profile.game_id,
 			display_name: &profile.display_name,
 			summary: &profile.summary,
+			description: &profile.description,
 			categories: &profile.categories,
 			tags: &profile.tags,
 			updated_at: now(),
@@ -510,6 +516,7 @@ mod tests {
 					game_id: game,
 					display_name: name,
 					summary: "",
+					description: "",
 					categories: &[],
 					tags: &[],
 					updated_at: 0,

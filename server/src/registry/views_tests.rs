@@ -88,6 +88,13 @@ async fn serves_json_views_of_profile_and_release() {
 	assert_eq!(page["results"].as_array().expect("results").len(), 1);
 	assert_eq!(page["results"][0]["display_name"], "Example Mod");
 
+	let described = axum::http::Request::get("/v1/search?q=longer")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(described).await.expect("response");
+	let page = body_json(response).await;
+	assert_eq!(page["results"].as_array().expect("results").len(), 1);
+
 	let tagged = axum::http::Request::get("/v1/search?tag=client")
 		.body(Body::empty())
 		.expect("request");

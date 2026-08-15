@@ -21,11 +21,18 @@ impl Migration {
 	}
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-	name: "0001_initial",
-	sqlite: include_str!("../../migrations/sqlite/0001_initial.sql"),
-	postgres: include_str!("../../migrations/postgres/0001_initial.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+	Migration {
+		name: "0001_initial",
+		sqlite: include_str!("../../migrations/sqlite/0001_initial.sql"),
+		postgres: include_str!("../../migrations/postgres/0001_initial.sql"),
+	},
+	Migration {
+		name: "0002_search_description",
+		sqlite: include_str!("../../migrations/sqlite/0002_search_description.sql"),
+		postgres: include_str!("../../migrations/postgres/0002_search_description.sql"),
+	},
+];
 
 pub(super) async fn run_migrations(pool: &AnyPool, engine: Engine) -> Result<usize, sqlx::Error> {
 	let mut connection = pool.acquire().await?;
