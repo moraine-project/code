@@ -415,35 +415,14 @@ mod tests {
 #[cfg(test)]
 mod postgres_tests {
 	use super::*;
-	use crate::db::migrations::pending_url;
 	use crate::registry::review::{ReviewDecisionRow, SubmissionRow};
 	use crate::registry::search::SearchDocument;
 
-	async fn admin_pool(url: &str) -> AnyPool {
-		sqlx::any::install_default_drivers();
-		AnyPoolOptions::new()
-			.max_connections(1)
-			.connect(url)
-			.await
-			.expect("admin pool")
-	}
-
 	#[tokio::test]
 	async fn round_trips_through_postgres() {
-		let Ok(url) = std::env::var("MORAINE_TEST_POSTGRES") else {
+		let Some(store) = crate::test_support::isolated_store().await else {
 			return;
 		};
-		assert!(url.contains("test"), "refusing to reset a non-test database: {url}");
-
-		let pool = admin_pool(&url).await;
-		sqlx::raw_sql("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
-			.execute(&pool)
-			.await
-			.expect("reset schema");
-		drop(pool);
-
-		let store = MetadataStore::open_url(&url).await.expect("open");
-		assert_eq!(pending_url(&url).await.expect("pending"), 0);
 
 		store
 			.put_object(&StoredObject {

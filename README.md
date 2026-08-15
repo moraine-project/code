@@ -90,8 +90,10 @@ Artifact bytes stay on the filesystem in both cases. Backup and restore read
 the SQLite file directly, so use `pg_dump` for a PostgreSQL database.
 
 With this set, the whole server test suite runs against PostgreSQL: each test
-gets its own schema, migrates it, and is dropped with the database afterwards.
-Point it only at a throwaway database whose name contains `test`:
+runs in its own schema and touches nothing outside it, so the database only
+needs to be one you do not mind filling with throwaway schemas. The role must
+be able to create a schema in it, and nothing more; the suite is verified
+against a role that owns its database rather than a superuser.
 
 ```sh
 MORAINE_TEST_POSTGRES=postgres://postgres:postgres@127.0.0.1:5432/moraine_test \

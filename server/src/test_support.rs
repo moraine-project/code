@@ -21,6 +21,15 @@ use crate::routes::AppState;
 
 static DATABASES: std::sync::Mutex<Vec<(std::path::PathBuf, String)>> = std::sync::Mutex::new(Vec::new());
 
+pub(crate) async fn isolated_store() -> Option<MetadataStore> {
+	let base = std::env::var("MORAINE_TEST_POSTGRES").ok()?;
+	let schema = unique_schema();
+	create_schema(&base, &schema).await;
+	let separator = if base.contains('?') { '&' } else { '?' };
+	let url = format!("{base}{separator}options=-csearch_path%3D{schema}");
+	Some(MetadataStore::open_url(&url).await.expect("store"))
+}
+
 pub(crate) async fn store_for(directory: &std::path::Path) -> MetadataStore {
 	let url = DATABASES
 		.lock()
