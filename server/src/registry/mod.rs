@@ -664,5 +664,17 @@ pub(crate) fn storage_error(error: sqlx::Error) -> Response {
 }
 
 #[cfg(test)]
-#[path = "registry_tests.rs"]
-mod tests;
+#[path = "feed_tests.rs"]
+mod feed_tests;
+
+#[cfg(test)]
+#[path = "admission_tests.rs"]
+mod admission_tests;
+
+#[cfg(test)]
+#[path = "ownership_tests.rs"]
+mod ownership_tests;
+
+#[cfg(test)]
+#[path = "views_tests.rs"]
+mod views_tests;
