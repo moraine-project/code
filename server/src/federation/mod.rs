@@ -1,26 +1,24 @@
 pub mod egress;
+pub mod home;
 pub mod mirrors;
 pub mod notifications;
+pub mod subscriptions;
 pub mod webhooks;
 
 use std::fmt;
-use std::net::IpAddr;
-use std::time::Duration;
 
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+pub(crate) use home::HomeClient;
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
 use moraine_model::genesis::{Genesis, GenesisKind};
-use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
 
 use crate::auth::AuthenticatedUser;
-use crate::db::MetadataStore;
 use crate::registry::{self, load_delegations};
 use crate::routes::AppState;
 use crate::verify;
@@ -36,52 +34,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/subscriptions/reset", post(reset_subscription))
 }
 
-#[derive(Debug, Clone)]
-pub struct DefinitionSubscriptionRow {
-	pub home_url: String,
-	pub id: String,
-	pub kind: String,
-	pub updated_at: i64,
-}
-
-impl MetadataStore {
-	pub async fn upsert_definition_subscription(
-		&self,
-		home_url: &str,
-		id: &str,
-		kind: &str,
-		updated_at: i64,
-	) -> Result<(), sqlx::Error> {
-		sqlx::query(
-			"INSERT INTO definition_subscriptions (home_url, id, kind, updated_at) VALUES ($1, $2, $3, $4)
-			 ON CONFLICT(home_url, id) DO UPDATE SET kind = $3, updated_at = $4",
-		)
-		.bind(home_url)
-		.bind(id)
-		.bind(kind)
-		.bind(updated_at)
-		.execute(&self.pool)
-		.await?;
-		Ok(())
-	}
-
-	pub async fn definition_subscriptions(&self) -> Result<Vec<DefinitionSubscriptionRow>, sqlx::Error> {
-		let rows = sqlx::query("SELECT home_url, id, kind, updated_at FROM definition_subscriptions ORDER BY home_url, id")
-			.fetch_all(&self.pool)
-			.await?;
-		Ok(rows
-			.into_iter()
-			.map(|row| DefinitionSubscriptionRow {
-				home_url: row.get("home_url"),
-				id: row.get("id"),
-				kind: row.get("kind"),
-				updated_at: row.get("updated_at"),
-			})
-			.collect())
-	}
-}
-
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct SubscribeDefinitionRequest {
 	home_url: String,
 	id: String,
@@ -629,114 +582,6 @@ fn object_kind_for_event(event: &str) -> Option<ObjectKind> {
 	})
 }
 
-struct HomeClient {
-	client: reqwest::Client,
-	base: Url,
-	allow_local: bool,
-	max_response_bytes: u64,
-}
-
-impl HomeClient {
-	fn new(
-		base: &str,
-		allow_http_local: bool,
-		max_response_bytes: u64,
-		extra_roots: &[reqwest::Certificate],
-	) -> Result<Self, FederationError> {
-		let url = validate_home(base, allow_http_local)?;
-		let client = crate::federation::egress::client_builder(extra_roots)
-			.timeout(Duration::from_secs(10))
-			.redirect(reqwest::redirect::Policy::none())
-			.build()
-			.map_err(|error| FederationError::Http(error.to_string()))?;
-		Ok(Self {
-			client,
-			base: url,
-			allow_local: allow_http_local,
-			max_response_bytes,
-		})
-	}
-
-	fn endpoint(&self, path: &str) -> Url {
-		let mut url = self.base.clone();
-		url.set_path(path.split('?').next().unwrap_or(path));
-		if let Some((_, query)) = path.split_once('?') {
-			url.set_query(Some(query));
-		}
-		url
-	}
-
-	async fn get_bytes(&self, path: &str) -> Result<Vec<u8>, FederationError> {
-		let url = self.endpoint(path);
-		crate::federation::egress::guard(&url, self.allow_local)
-			.await
-			.map_err(FederationError::Http)?;
-		let mut response = self
-			.client
-			.get(url)
-			.send()
-			.await
-			.map_err(|error| FederationError::Http(error.to_string()))?;
-		if !response.status().is_success() {
-			return Err(FederationError::Http(format!("{} returned {}", path, response.status())));
-		}
-		if let Some(length) = response.content_length()
-			&& length > self.max_response_bytes
-		{
-			return Err(FederationError::Http(format!("{path} exceeds the response size limit")));
-		}
-		let mut body = Vec::new();
-		while let Some(chunk) = response
-			.chunk()
-			.await
-			.map_err(|error| FederationError::Http(error.to_string()))?
-		{
-			if body.len() as u64 + chunk.len() as u64 > self.max_response_bytes {
-				return Err(FederationError::Http(format!("{path} exceeds the response size limit")));
-			}
-			body.extend_from_slice(&chunk);
-		}
-		Ok(body)
-	}
-
-	async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, FederationError> {
-		let bytes = self.get_bytes(path).await?;
-		serde_json::from_slice(&bytes).map_err(|error| FederationError::Decode(error.to_string()))
-	}
-}
-
-fn validate_home(base: &str, allow_http_local: bool) -> Result<Url, FederationError> {
-	let url = Url::parse(base).map_err(|error| FederationError::InvalidUrl(error.to_string()))?;
-	match url.scheme() {
-		"https" => {}
-		"http" => {
-			let host = url.host_str().unwrap_or_default().to_string();
-			let loopback =
-				host == "localhost" || host.parse::<IpAddr>().map(|address| address.is_loopback()).unwrap_or(false);
-			if !(allow_http_local && loopback) {
-				return Err(FederationError::InvalidUrl(
-					"http is only allowed for loopback when explicitly enabled".to_string(),
-				));
-			}
-		}
-		_ => return Err(FederationError::InvalidUrl("home url must use https".to_string())),
-	}
-	if url.host_str().is_none() {
-		return Err(FederationError::InvalidUrl("home url has no host".to_string()));
-	}
-	Ok(url)
-}
-
-fn hex_of(id: &str) -> Result<String, FederationError> {
-	let hex = id
-		.strip_prefix("gd:sha256:")
-		.ok_or_else(|| FederationError::Decode(format!("`{id}` is not an object id")))?;
-	if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-		return Err(FederationError::Decode(format!("`{id}` is not an object id")));
-	}
-	Ok(hex.to_string())
-}
-
 fn storage(error: sqlx::Error) -> FederationError {
 	FederationError::Storage(error.to_string())
 }
@@ -753,154 +598,21 @@ fn now() -> i64 {
 		.unwrap_or(0)
 }
 
+fn hex_of(id: &str) -> Result<String, FederationError> {
+	let hex = id
+		.strip_prefix("gd:sha256:")
+		.ok_or_else(|| FederationError::Decode(format!("`{id}` is not an object id")))?;
+	if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+		return Err(FederationError::Decode(format!("`{id}` is not an object id")));
+	}
+	Ok(hex.to_string())
+}
+
 fn storage_error(error: sqlx::Error) -> Response {
 	tracing::error!(%error, "subscription store failed");
 	(StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response()
 }
 
-impl MetadataStore {
-	pub async fn upsert_subscription(
-		&self,
-		home_url: &str,
-		project_id: &str,
-		status: &str,
-		updated_at: i64,
-	) -> Result<(), sqlx::Error> {
-		sqlx::query(
-			"INSERT INTO subscriptions (home_url, project_id, cursor_seq, status, updated_at) VALUES ($1, $2, 0, $3, $4)
-			 ON CONFLICT(home_url, project_id) DO UPDATE SET status = $3, updated_at = $4",
-		)
-		.bind(home_url)
-		.bind(project_id)
-		.bind(status)
-		.bind(updated_at)
-		.execute(&self.pool)
-		.await?;
-		Ok(())
-	}
-
-	pub async fn subscription(&self, home_url: &str, project_id: &str) -> Result<Option<SubscriptionRow>, sqlx::Error> {
-		let row = sqlx::query(
-			"SELECT home_url, project_id, cursor_seq, remote_head_seq, reset_count, status, updated_at FROM subscriptions WHERE home_url = $1 AND project_id = $2",
-		)
-		.bind(home_url)
-		.bind(project_id)
-		.fetch_optional(&self.pool)
-		.await?;
-		Ok(row.map(subscription_from_row))
-	}
-
-	pub async fn reset_subscription(
-		&self,
-		home_url: &str,
-		project_id: &str,
-		cursor_seq: i64,
-		updated_at: i64,
-	) -> Result<bool, sqlx::Error> {
-		let result = sqlx::query(
-			"UPDATE subscriptions SET cursor_seq = $1, remote_head_seq = $1, reset_count = reset_count + 1, updated_at = $2
-			 WHERE home_url = $3 AND project_id = $4",
-		)
-		.bind(cursor_seq)
-		.bind(updated_at)
-		.bind(home_url)
-		.bind(project_id)
-		.execute(&self.pool)
-		.await?;
-		Ok(result.rows_affected() == 1)
-	}
-
-	pub async fn set_subscription_cursor(
-		&self,
-		home_url: &str,
-		project_id: &str,
-		cursor_seq: i64,
-		remote_head_seq: i64,
-		status: &str,
-		updated_at: i64,
-	) -> Result<(), sqlx::Error> {
-		sqlx::query(
-			"UPDATE subscriptions SET cursor_seq = $1, remote_head_seq = $2, status = $3, updated_at = $4
-			 WHERE home_url = $5 AND project_id = $6",
-		)
-		.bind(cursor_seq)
-		.bind(remote_head_seq)
-		.bind(status)
-		.bind(updated_at)
-		.bind(home_url)
-		.bind(project_id)
-		.execute(&self.pool)
-		.await?;
-		Ok(())
-	}
-
-	pub async fn remove_subscription(&self, home_url: &str, project_id: &str) -> Result<bool, sqlx::Error> {
-		let result = sqlx::query("DELETE FROM subscriptions WHERE home_url = $1 AND project_id = $2")
-			.bind(home_url)
-			.bind(project_id)
-			.execute(&self.pool)
-			.await?;
-		Ok(result.rows_affected() == 1)
-	}
-
-	pub async fn subscriptions(&self) -> Result<Vec<SubscriptionRow>, sqlx::Error> {
-		let rows = sqlx::query(
-			"SELECT home_url, project_id, cursor_seq, remote_head_seq, reset_count, status, updated_at FROM subscriptions ORDER BY home_url, project_id",
-		)
-		.fetch_all(&self.pool)
-		.await?;
-		Ok(rows.into_iter().map(subscription_from_row).collect())
-	}
-}
-
-#[derive(Debug, Clone)]
-pub struct SubscriptionRow {
-	pub home_url: String,
-	pub project_id: String,
-	pub cursor_seq: i64,
-	pub remote_head_seq: i64,
-	pub reset_count: i64,
-	pub status: String,
-	pub updated_at: i64,
-}
-
-fn subscription_from_row(row: sqlx::any::AnyRow) -> SubscriptionRow {
-	SubscriptionRow {
-		home_url: row.get("home_url"),
-		project_id: row.get("project_id"),
-		cursor_seq: row.get("cursor_seq"),
-		remote_head_seq: row.get("remote_head_seq"),
-		reset_count: row.get("reset_count"),
-		status: row.get("status"),
-		updated_at: row.get("updated_at"),
-	}
-}
-
 #[cfg(test)]
 #[path = "federation_tests.rs"]
 mod tests;
-
-#[cfg(test)]
-mod subscription_tests {
-	use super::*;
-
-	#[tokio::test]
-	async fn reports_the_furthest_unapplied_entry() {
-		let directory = tempfile::tempdir().expect("tempdir");
-		let store = MetadataStore::open(directory.path().join("metadata.sqlite"))
-			.await
-			.expect("store");
-		store
-			.upsert_subscription("https://home", "p", "active", 1)
-			.await
-			.expect("subscribe");
-		store
-			.set_subscription_cursor("https://home", "p", 3, 5, "active", 2)
-			.await
-			.expect("cursor");
-
-		let snapshot = store.metrics_snapshot().await.expect("snapshot");
-
-		assert_eq!(snapshot.subscription_lag, 2);
-	}
-}
