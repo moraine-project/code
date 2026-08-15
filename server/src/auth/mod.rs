@@ -2,6 +2,7 @@ pub mod accounts;
 pub mod orgs;
 pub mod password;
 pub mod ratelimit;
+pub mod teams;
 
 use axum::extract::{FromRequestParts, Path, State};
 use axum::http::request::Parts;

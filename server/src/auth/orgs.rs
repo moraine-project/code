@@ -7,6 +7,7 @@ use moraine_model::moderation::valid_handle;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
+use super::teams::TeamView;
 use crate::auth::AuthenticatedUser;
 use crate::db::MetadataStore;
 use crate::routes::AppState;
@@ -35,14 +36,6 @@ pub struct OrgMemberRow {
 	pub email: String,
 	pub role: String,
 	pub added_at: i64,
-}
-
-#[derive(Debug, Clone)]
-pub struct TeamRow {
-	pub id: String,
-	pub org_id: String,
-	pub parent_team_id: Option<String>,
-	pub display_name: String,
 }
 
 impl MetadataStore {
@@ -147,56 +140,6 @@ impl MetadataStore {
 			.await?;
 		Ok(row.get("owners"))
 	}
-
-	pub async fn create_team(
-		&self,
-		id: &str,
-		org_id: &str,
-		parent_team_id: Option<&str>,
-		display_name: &str,
-		created_at: i64,
-	) -> Result<(), sqlx::Error> {
-		sqlx::query("INSERT INTO teams (id, org_id, parent_team_id, display_name, created_at) VALUES ($1, $2, $3, $4, $5)")
-			.bind(id)
-			.bind(org_id)
-			.bind(parent_team_id)
-			.bind(display_name)
-			.bind(created_at)
-			.execute(&self.pool)
-			.await?;
-		Ok(())
-	}
-
-	pub async fn org_teams(&self, org_id: &str) -> Result<Vec<TeamRow>, sqlx::Error> {
-		let rows = sqlx::query(
-			"SELECT id, org_id, parent_team_id, display_name FROM teams WHERE org_id = $1 ORDER BY created_at, id",
-		)
-		.bind(org_id)
-		.fetch_all(&self.pool)
-		.await?;
-		Ok(rows
-			.into_iter()
-			.map(|row| TeamRow {
-				id: row.get("id"),
-				org_id: row.get("org_id"),
-				parent_team_id: row.get("parent_team_id"),
-				display_name: row.get("display_name"),
-			})
-			.collect())
-	}
-
-	pub async fn team(&self, id: &str) -> Result<Option<TeamRow>, sqlx::Error> {
-		let row = sqlx::query("SELECT id, org_id, parent_team_id, display_name FROM teams WHERE id = $1")
-			.bind(id)
-			.fetch_optional(&self.pool)
-			.await?;
-		Ok(row.map(|row| TeamRow {
-			id: row.get("id"),
-			org_id: row.get("org_id"),
-			parent_team_id: row.get("parent_team_id"),
-			display_name: row.get("display_name"),
-		}))
-	}
 }
 
 pub fn routes() -> Router<AppState> {
@@ -205,7 +148,10 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/orgs/{handle}", get(org_detail))
 		.route("/v1/orgs/{handle}/members", get(list_members).post(add_member))
 		.route("/v1/orgs/{handle}/members/{user_id}", axum::routing::delete(remove_member))
-		.route("/v1/orgs/{handle}/teams", get(list_teams).post(create_team))
+		.route(
+			"/v1/orgs/{handle}/teams",
+			get(super::teams::list_teams).post(super::teams::create_team),
+		)
 }
 
 #[derive(Deserialize)]
@@ -227,13 +173,6 @@ struct OrgView {
 	display_name: String,
 	created_at: i64,
 	teams: Vec<TeamView>,
-}
-
-#[derive(Serialize)]
-struct TeamView {
-	id: String,
-	parent_team_id: Option<String>,
-	display_name: String,
 }
 
 #[derive(Serialize)]
@@ -395,75 +334,6 @@ async fn remove_member(
 	}
 }
 
-async fn list_teams(State(state): State<AppState>, Path(handle): Path<String>, user: AuthenticatedUser) -> Response {
-	let org = match require_role(&state, &handle, &user, &["owner", "admin", "member"]).await {
-		Ok(org) => org,
-		Err(response) => return *response,
-	};
-	match state.metadata.org_teams(&org.id).await {
-		Ok(teams) => Json(
-			teams
-				.into_iter()
-				.map(|team| TeamView {
-					id: team.id,
-					parent_team_id: team.parent_team_id,
-					display_name: team.display_name,
-				})
-				.collect::<Vec<_>>(),
-		)
-		.into_response(),
-		Err(error) => storage_error(error),
-	}
-}
-
-#[derive(Deserialize)]
-struct CreateTeam {
-	display_name: String,
-	parent_team_id: Option<String>,
-}
-
-async fn create_team(
-	State(state): State<AppState>,
-	Path(handle): Path<String>,
-	user: AuthenticatedUser,
-	Json(request): Json<CreateTeam>,
-) -> Response {
-	let org = match require_role(&state, &handle, &user, &["owner", "admin"]).await {
-		Ok(org) => org,
-		Err(response) => return *response,
-	};
-	if request.display_name.trim().is_empty() {
-		return (StatusCode::BAD_REQUEST, "display_name is required").into_response();
-	}
-	if let Some(parent_id) = &request.parent_team_id {
-		match state.metadata.team(parent_id).await {
-			Ok(Some(parent)) if parent.org_id == org.id => {}
-			Ok(_) => return (StatusCode::BAD_REQUEST, "parent team is not in this org").into_response(),
-			Err(error) => return storage_error(error),
-		}
-	}
-	let id = new_id();
-	if let Err(error) = state
-		.metadata
-		.create_team(
-			&id,
-			&org.id,
-			request.parent_team_id.as_deref(),
-			request.display_name.trim(),
-			now(),
-		)
-		.await
-	{
-		return storage_error(error);
-	}
-	let view = TeamView {
-		id,
-		parent_team_id: request.parent_team_id,
-		display_name: request.display_name.trim().to_string(),
-	};
-	(StatusCode::CREATED, Json(view)).into_response()
-}
-
 async fn load_org(state: &AppState, handle: &str) -> Result<OrgRow, Box<Response>> {
 	match state.metadata.org_by_handle(handle).await {
 		Ok(Some(org)) => Ok(org),
@@ -472,7 +342,7 @@ async fn load_org(state: &AppState, handle: &str) -> Result<OrgRow, Box<Response
 	}
 }
 
-async fn require_role(
+pub(super) async fn require_role(
 	state: &AppState,
 	handle: &str,
 	user: &AuthenticatedUser,
@@ -501,7 +371,7 @@ fn member_view(member: OrgMemberRow) -> MemberView {
 	}
 }
 
-fn new_id() -> String {
+pub(super) fn new_id() -> String {
 	let mut bytes = [0u8; 16];
 	if getrandom::fill(&mut bytes).is_err() {
 		panic!("operating system randomness is unavailable");
@@ -509,14 +379,14 @@ fn new_id() -> String {
 	hex::encode(bytes)
 }
 
-fn now() -> i64 {
+pub(super) fn now() -> i64 {
 	std::time::SystemTime::now()
 		.duration_since(std::time::UNIX_EPOCH)
 		.map(|duration| duration.as_secs() as i64)
 		.unwrap_or(0)
 }
 
-fn storage_error(error: sqlx::Error) -> Response {
+pub(super) fn storage_error(error: sqlx::Error) -> Response {
 	tracing::error!(%error, "org store failed");
 	(StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response()
 }
