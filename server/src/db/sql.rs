@@ -73,6 +73,11 @@ impl SqlBuilder {
 		self
 	}
 
+	pub fn reserve_bind(&mut self, value: impl Into<Value>) -> usize {
+		self.values.push(value.into());
+		self.values.len()
+	}
+
 	pub fn separated(&mut self, separator: &str) -> Separated<'_> {
 		Separated {
 			builder: self,

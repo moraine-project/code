@@ -328,3 +328,73 @@ async fn object_documents_support_range_and_head() {
 	let response = application.oneshot(beyond).await.expect("response");
 	assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
 }
+
+#[tokio::test]
+async fn ranks_a_name_match_above_a_description_match() {
+	use moraine_model::profile::ProfileRevision;
+
+	let (application, _directory) = app().await;
+	for (signer_byte, name, description, nonce) in [
+		(8u8, "Widget", "An unrelated description", 0x31u8),
+		(9u8, "Gadget", "A widget in the description", 0x32u8),
+	] {
+		let signer = key(signer_byte);
+		let (project_id, release_digest) = publish_project(&application, &signer).await;
+		let profile = ProfileRevision {
+			protocol: 1,
+			project_id: project_id.clone(),
+			game_id: sample_id("minecraft"),
+			revision_nonce: vec![nonce; 16],
+			display_name: name.to_string(),
+			summary: "Summary".to_string(),
+			description: description.to_string(),
+			icon: None,
+			gallery: Vec::new(),
+			links: Vec::new(),
+			communities: Vec::new(),
+			categories: Vec::new(),
+			tags: Vec::new(),
+			rights: None,
+			declared_time: 1_760_000_000,
+		};
+		let signed = sign_payload(Kind::Profile, &profile, &[&signer]);
+		let digest = object_id(Kind::Profile, &signed.payload_bytes);
+		let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/profile"))
+			.body(Body::from(signed.wire_bytes()))
+			.expect("request");
+		assert_eq!(
+			application.clone().oneshot(request).await.expect("response").status(),
+			StatusCode::CREATED
+		);
+		let entry = FeedEntry {
+			protocol: 1,
+			project_id: project_id.clone(),
+			sequence: 1,
+			previous: None,
+			kind: "profile-updated".to_string(),
+			object_digest: digest.to_vec(),
+			declared_at: 1_760_000_000,
+		};
+		let feed = sign_payload(Kind::FeedEntry, &entry, &[&signer]).wire_bytes();
+		let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+			.body(Body::from(feed))
+			.expect("request");
+		assert_eq!(
+			application.clone().oneshot(request).await.expect("response").status(),
+			StatusCode::CREATED
+		);
+		let _ = release_digest;
+	}
+
+	let request = axum::http::Request::get("/v1/search?q=widget")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	let status = response.status();
+	let bytes = axum::body::to_bytes(response.into_body(), 65536).await.expect("body");
+	assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&bytes));
+	let page: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+	let results = page["results"].as_array().expect("results");
+	assert_eq!(results.len(), 2);
+	assert_eq!(results[0]["display_name"], "Widget");
+}

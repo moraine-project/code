@@ -39,8 +39,11 @@ struct SearchParams {
 
 async fn search(State(state): State<AppState>, Query(params): Query<SearchParams>, headers: HeaderMap) -> Response {
 	let limit = params.limit.unwrap_or(20).clamp(1, moraine_model::search::MAX_LIMIT) as i64;
+	let has_text = params.q.as_deref().is_some_and(|text| !text.trim().is_empty());
 	let sort = match params.sort.as_deref() {
-		None | Some("relevance") | Some("updated") => SearchSort::Updated,
+		Some("updated") => SearchSort::Updated,
+		None | Some("relevance") if has_text => SearchSort::Relevance,
+		None | Some("relevance") => SearchSort::Updated,
 		Some("name") => SearchSort::Name,
 		Some("created") => SearchSort::Created,
 		Some("popularity") => SearchSort::Popularity,
@@ -148,6 +151,7 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 			SearchSort::Updated => format!("{}:{}", hit.updated_at, hit.project_id),
 			SearchSort::Created => format!("{}:{}", hit.created_at, hit.project_id),
 			SearchSort::Popularity => format!("{}:{}", hit.popularity, hit.project_id),
+			SearchSort::Relevance => format!("{}:{}", hit.score, hit.project_id),
 			SearchSort::Name => format!("{}:{}", hit.display_name, hit.project_id),
 		})
 	} else {
@@ -190,14 +194,22 @@ pub struct SearchHit {
 	pub updated_at: i64,
 	pub created_at: i64,
 	pub popularity: i64,
+	pub score: i64,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum SearchSort {
+	Relevance,
 	Updated,
 	Created,
 	Name,
 	Popularity,
+}
+
+fn score_expression(parameter: usize) -> String {
+	format!(
+		"(CASE WHEN lower(display_name) LIKE ${parameter} THEN 3 ELSE 0 END + CASE WHEN lower(summary) LIKE ${parameter} THEN 2 ELSE 0 END + CASE WHEN lower(description) LIKE ${parameter} THEN 1 ELSE 0 END)"
+	)
 }
 
 pub struct SearchDocument<'a> {
@@ -330,126 +342,130 @@ impl MetadataStore {
 	}
 
 	pub async fn search_documents(&self, filter: SearchFilter<'_>) -> Result<Vec<SearchHit>, sqlx::Error> {
-		let mut query = match filter.popularity_since {
-			Some((day, seconds)) => {
-				let mut query = SqlBuilder::new(
-					"WITH pop AS (SELECT project_id, CAST(SUM(count) AS BIGINT) AS total FROM download_counts WHERE day >= ",
-				);
-				query
-					.push_bind(day)
-					.push(
-						" GROUP BY project_id), fol AS (SELECT project_id, COUNT(*) AS total FROM follows WHERE created_at >= ",
-					)
-					.push_bind(seconds)
-					.push(
-						" GROUP BY project_id) SELECT search_documents.project_id, search_documents.game_id,
-						 search_documents.display_name, search_documents.summary, search_documents.updated_at,
-						 search_documents.created_at, (COALESCE(pop.total, 0) + COALESCE(fol.total, 0)) AS popularity
-						 FROM search_documents
-						 LEFT JOIN pop ON pop.project_id = search_documents.project_id
-						 LEFT JOIN fol ON fol.project_id = search_documents.project_id WHERE 1 = 1",
-					);
-				query
-			}
-			None => SqlBuilder::new(
-				"SELECT project_id, game_id, display_name, summary, updated_at, created_at, 0 AS popularity FROM search_documents WHERE 1 = 1",
-			),
+		let pattern = filter.text.map(|text| format!("%{}%", text.to_lowercase()));
+		let relevance = matches!(filter.sort, SearchSort::Relevance) && pattern.is_some();
+		let mut query = SqlBuilder::new("");
+		let pattern_parameter = pattern.as_deref().map(|pattern| query.reserve_bind(pattern));
+		let score = match (pattern_parameter, relevance) {
+			(Some(parameter), true) => Some(score_expression(parameter)),
+			_ => None,
 		};
-		if let Some(text) = filter.text {
-			let pattern = format!("%{}%", text.to_lowercase());
-			query
-				.push(" AND (lower(display_name) LIKE ")
-				.push_bind(pattern.clone())
-				.push(" OR lower(summary) LIKE ")
-				.push_bind(pattern.clone())
-				.push(" OR lower(description) LIKE ")
-				.push_bind(pattern)
-				.push(")");
+		let mut select =
+			String::from("SELECT project_id, game_id, display_name, summary, updated_at, created_at, 0 AS popularity, ");
+		match filter.popularity_since {
+			Some((day, seconds)) => {
+				let day_parameter = query.reserve_bind(day);
+				let seconds_parameter = query.reserve_bind(seconds);
+				select = format!(
+					"WITH pop AS (SELECT project_id, CAST(SUM(count) AS BIGINT) AS total FROM download_counts WHERE day >= ${day_parameter} GROUP BY project_id),
+					 fol AS (SELECT project_id, COUNT(*) AS total FROM follows WHERE created_at >= ${seconds_parameter} GROUP BY project_id)
+					 SELECT search_documents.project_id, search_documents.game_id, search_documents.display_name,
+					 search_documents.summary, search_documents.updated_at, search_documents.created_at,
+					 (COALESCE(pop.total, 0) + COALESCE(fol.total, 0)) AS popularity, {score} AS score
+					 FROM search_documents
+					 LEFT JOIN pop ON pop.project_id = search_documents.project_id
+					 LEFT JOIN fol ON fol.project_id = search_documents.project_id WHERE 1 = 1",
+					score = score.clone().unwrap_or_else(|| "0".to_string())
+				);
+			}
+			None => {
+				select.push_str(&score.clone().unwrap_or_else(|| "0".to_string()));
+				select.push_str(" AS score FROM search_documents WHERE 1 = 1");
+			}
+		}
+		query.push(&select);
+		match (&score, pattern_parameter) {
+			(Some(expression), _) => {
+				query.push(&format!(" AND {expression} > 0"));
+			}
+			(None, Some(parameter)) => {
+				query.push(&format!(
+					" AND (lower(display_name) LIKE ${parameter} OR lower(summary) LIKE ${parameter} OR lower(description) LIKE ${parameter})"
+				));
+			}
+			(None, None) => {}
 		}
 		if let Some(game) = filter.game_id {
-			query.push(" AND game_id = ").push_bind(game);
+			let parameter = query.reserve_bind(game);
+			query.push(&format!(" AND game_id = ${parameter}"));
 		}
 		if let Some(tag) = filter.tag {
-			query
-				.push(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'tag' AND l.label_id = ")
-				.push_bind(tag)
-				.push(")");
+			let parameter = query.reserve_bind(tag);
+			query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'tag' AND l.label_id = ${parameter})"));
 		}
 		if let Some(loader) = filter.loader {
-			query
-				.push(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'loader' AND l.label_id = ")
-				.push_bind(loader)
-				.push(")");
+			let parameter = query.reserve_bind(loader);
+			query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'loader' AND l.label_id = ${parameter})"));
 		}
 		if let Some(category) = filter.category {
-			query
-				.push(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'category' AND l.label_id = ")
-				.push_bind(category)
-				.push(")");
+			let parameter = query.reserve_bind(category);
+			query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'category' AND l.label_id = ${parameter})"));
 		}
 		match filter.sort {
 			SearchSort::Updated => {
 				if let Some((value, id)) = filter.cursor {
 					let updated = value.parse::<i64>().unwrap_or(i64::MAX);
-					query
-						.push(" AND (updated_at < ")
-						.push_bind(updated)
-						.push(" OR (updated_at = ")
-						.push_bind(updated)
-						.push(" AND project_id < ")
-						.push_bind(id)
-						.push("))");
+					let first = query.reserve_bind(updated);
+					let second = query.reserve_bind(updated);
+					let third = query.reserve_bind(id);
+					query.push(&format!(
+						" AND (updated_at < ${first} OR (updated_at = ${second} AND project_id < ${third}))"
+					));
 				}
 				query.push(" ORDER BY updated_at DESC, project_id DESC");
 			}
 			SearchSort::Created => {
 				if let Some((value, id)) = filter.cursor {
 					let created = value.parse::<i64>().unwrap_or(i64::MAX);
-					query
-						.push(" AND (created_at < ")
-						.push_bind(created)
-						.push(" OR (created_at = ")
-						.push_bind(created)
-						.push(" AND project_id < ")
-						.push_bind(id)
-						.push("))");
+					let first = query.reserve_bind(created);
+					let second = query.reserve_bind(created);
+					let third = query.reserve_bind(id);
+					query.push(&format!(
+						" AND (created_at < ${first} OR (created_at = ${second} AND project_id < ${third}))"
+					));
 				}
 				query.push(" ORDER BY created_at DESC, project_id DESC");
 			}
 			SearchSort::Name => {
 				if let Some((value, id)) = filter.cursor {
-					query
-						.push(" AND (lower(display_name) > lower(")
-						.push_bind(value.to_string())
-						.push(") OR (lower(display_name) = lower(")
-						.push_bind(value.to_string())
-						.push(") AND project_id > ")
-						.push_bind(id)
-						.push("))");
+					let first = query.reserve_bind(value);
+					let second = query.reserve_bind(value);
+					let third = query.reserve_bind(id);
+					query.push(&format!(
+						" AND (lower(display_name) > lower(${first}) OR (lower(display_name) = lower(${second}) AND project_id > ${third}))"
+					));
 				}
 				query.push(" ORDER BY lower(display_name) ASC, project_id ASC");
 			}
+			SearchSort::Relevance => {
+				let expression = score.clone().expect("relevance carries a score");
+				if let Some((value, id)) = filter.cursor {
+					let value = value.parse::<i64>().unwrap_or(i64::MAX);
+					let first = query.reserve_bind(value);
+					let second = query.reserve_bind(value);
+					let third = query.reserve_bind(id);
+					query.push(&format!(
+						" AND ({expression} < ${first} OR ({expression} = ${second} AND project_id > ${third}))"
+					));
+				}
+				query.push(" ORDER BY score DESC, project_id ASC");
+			}
 			SearchSort::Popularity => {
-				const POPULARITY: &str = "(COALESCE(pop.total, 0) + COALESCE(fol.total, 0))";
 				if let Some((value, id)) = filter.cursor {
 					let popularity = value.parse::<i64>().unwrap_or(i64::MAX);
-					query
-						.push(" AND (")
-						.push(POPULARITY)
-						.push(" < ")
-						.push_bind(popularity)
-						.push(" OR (")
-						.push(POPULARITY)
-						.push(" = ")
-						.push_bind(popularity)
-						.push(" AND search_documents.project_id > ")
-						.push_bind(id)
-						.push("))");
+					let first = query.reserve_bind(popularity);
+					let second = query.reserve_bind(popularity);
+					let third = query.reserve_bind(id);
+					query.push(&format!(
+						" AND ((COALESCE(pop.total, 0) + COALESCE(fol.total, 0)) < ${first}
+						 OR ((COALESCE(pop.total, 0) + COALESCE(fol.total, 0)) = ${second} AND search_documents.project_id > ${third}))"
+					));
 				}
 				query.push(" ORDER BY popularity DESC, search_documents.project_id ASC");
 			}
 		}
-		query.push(" LIMIT ").push_bind(filter.limit);
+		let limit = query.reserve_bind(filter.limit);
+		query.push(&format!(" LIMIT ${limit}"));
 		let rows = query.into_query().fetch_all(&self.pool).await?;
 		Ok(rows
 			.into_iter()
@@ -461,6 +477,7 @@ impl MetadataStore {
 				updated_at: row.get("updated_at"),
 				created_at: row.get("created_at"),
 				popularity: row.get("popularity"),
+				score: row.get("score"),
 			})
 			.collect())
 	}
