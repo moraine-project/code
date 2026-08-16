@@ -89,11 +89,22 @@ MORAINE_DATABASE_URL=postgres://user:password@host/moraine \
 Artifact bytes stay on the filesystem in both cases. Backup and restore read
 the SQLite file directly, so use `pg_dump` for a PostgreSQL database.
 
+The role does not need to own the database or be a superuser. It needs
+`CONNECT` on the database and `USAGE` and `CREATE` on the schema the connection
+sets as `search_path`, since that is where the tables live; migrations take an
+advisory lock, which every role may do. To run inside a schema it does not own:
+
+```sh
+MORAINE_DATABASE_URL='postgres://app:secret@host/moraine?options=-csearch_path%3Dapp' \
+  cargo run -p moraine-server -- migrate
+```
+
 With this set, the whole server test suite runs against PostgreSQL: each test
 runs in its own schema and touches nothing outside it, so the database only
 needs to be one you do not mind filling with throwaway schemas. The role must
 be able to create a schema in it, and nothing more; the suite is verified
-against a role that owns its database rather than a superuser.
+against a role that owns its database rather than a superuser, and the server
+against one that owns neither the database nor the schema it writes to.
 
 ```sh
 MORAINE_TEST_POSTGRES=postgres://postgres:postgres@127.0.0.1:5432/moraine_test \

@@ -114,4 +114,60 @@ impl Config {
 	pub fn uses_sqlite(&self) -> bool {
 		self.database_url().starts_with("sqlite:")
 	}
+
+	pub fn database_label(&self) -> String {
+		let url = self.database_url();
+		if let (Some(scheme), Some(at)) = (url.find("://"), url.find('@'))
+			&& at > scheme + 3
+			&& let Some((user, _)) = url[scheme + 3..at].split_once(':')
+		{
+			return format!("{}://{user}:***@{}", &url[..scheme], &url[at + 1..]);
+		}
+		url
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn config(database_url: Option<String>) -> Config {
+		Config {
+			bind: "127.0.0.1:0".parse().expect("addr"),
+			data_dir: std::path::PathBuf::from("/tmp/moraine"),
+			max_artifact_bytes: 1024,
+			max_feed_page_entries: 100,
+			max_feed_scan_pages: 50,
+			skip_migrate_on_start: false,
+			database_url,
+			max_response_bytes: 16_777_216,
+			staging_retention_seconds: 3_600,
+			blob_retention_seconds: 604_800,
+			max_sync_pages: 200,
+			requests_per_minute: 600,
+			max_concurrent_syncs: 4,
+			tls_extra_roots: None,
+			allow_insecure_federation_local: false,
+			publishing: Publishing::Review,
+			web_dir: None,
+		}
+	}
+
+	#[test]
+	fn hides_a_password_in_the_database_label() {
+		let labelled = config(Some("postgres://app:secret@host:5432/moraine".to_string())).database_label();
+		assert_eq!(labelled, "postgres://app:***@host:5432/moraine");
+	}
+
+	#[test]
+	fn leaves_a_credential_free_url_alone() {
+		let labelled = config(Some("postgres://host/moraine".to_string())).database_label();
+		assert_eq!(labelled, "postgres://host/moraine");
+	}
+
+	#[test]
+	fn labels_the_default_sqlite_store() {
+		let labelled = config(None).database_label();
+		assert!(labelled.starts_with("sqlite:"), "{labelled}");
+	}
 }

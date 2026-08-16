@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let url = config.database_url();
 		return match store::migrations::migrate_url(&url).await {
 			Ok(applied) => {
-				println!("{}: {} migration(s) applied", url, applied);
+				println!("{}: {} migration(s) applied", config.database_label(), applied);
 				Ok(())
 			}
 			Err(error) => Err(error.into()),
