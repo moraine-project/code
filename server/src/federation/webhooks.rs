@@ -224,11 +224,6 @@ pub async fn deliver_pending(state: &AppState, limit: i64) -> Result<usize, Stri
 		.due_deliveries(now(), limit)
 		.await
 		.map_err(|error| error.to_string())?;
-	let client = crate::federation::egress::client_builder(&state.capability.tls_extra_roots)
-		.timeout(Duration::from_secs(15))
-		.redirect(reqwest::redirect::Policy::none())
-		.build()
-		.map_err(|error| error.to_string())?;
 	let mut delivered = 0;
 	for delivery in due {
 		let allow_local = state.capability.allow_insecure_federation_local;
@@ -242,13 +237,46 @@ pub async fn deliver_pending(state: &AppState, limit: i64) -> Result<usize, Stri
 				continue;
 			}
 		};
-		if crate::federation::egress::guard(&target, allow_local).await.is_err() {
-			let _ = state
-				.metadata
-				.finish_delivery(&delivery.id, delivery.attempt + 1, "failed", now(), None)
-				.await;
-			continue;
-		}
+		let (host, port) = match target.host_str().zip(target.port_or_known_default()) {
+			Some(pair) => pair,
+			None => {
+				let _ = state
+					.metadata
+					.finish_delivery(&delivery.id, delivery.attempt + 1, "failed", now(), None)
+					.await;
+				continue;
+			}
+		};
+		let addresses = match crate::federation::egress::resolve_public(host, port, allow_local).await {
+			Ok(addresses) => addresses,
+			Err(_) => {
+				let _ = state
+					.metadata
+					.finish_delivery(&delivery.id, delivery.attempt + 1, "failed", now(), None)
+					.await;
+				continue;
+			}
+		};
+		let client = match crate::federation::egress::pinned(
+			crate::federation::egress::client_builder(&state.capability.tls_extra_roots),
+			host,
+			port,
+			&addresses,
+		)
+		.timeout(Duration::from_secs(15))
+		.redirect(reqwest::redirect::Policy::none())
+		.build()
+		{
+			Ok(client) => client,
+			Err(error) => {
+				let _ = state
+					.metadata
+					.finish_delivery(&delivery.id, delivery.attempt + 1, "failed", now(), None)
+					.await;
+				tracing::warn!(%error, "webhook client was not built");
+				continue;
+			}
+		};
 		let result = client
 			.post(target)
 			.header(reqwest::header::CONTENT_TYPE, "application/json")

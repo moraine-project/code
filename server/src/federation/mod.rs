@@ -246,7 +246,8 @@ pub(crate) async fn sync_definition(
 		state.capability.allow_insecure_federation_local,
 		state.capability.max_response_bytes,
 		&state.capability.tls_extra_roots,
-	)?;
+	)
+	.await?;
 	let summary = client.get_json::<DefinitionSummary>(&format!("/v1/{kind}s/{id}")).await?;
 	if summary.id != id {
 		return Err(FederationError::Verify("home returned a different definition id".to_string()));
@@ -465,7 +466,8 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 		state.capability.allow_insecure_federation_local,
 		state.capability.max_response_bytes,
 		&state.capability.tls_extra_roots,
-	)?;
+	)
+	.await?;
 	let summary = client
 		.get_json::<ProjectSummary>(&format!("/v1/projects/{project_id}"))
 		.await?;

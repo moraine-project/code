@@ -28,8 +28,11 @@ host and refuses the request if any resolved address is loopback, private,
 link-local, shared (carrier-grade NAT), unspecified, or multicast. This keeps a
 publisher-supplied URL from reaching internal services or cloud instance
 metadata. Loopback is permitted only when the operator explicitly enables
-insecure local federation. Redirects are never followed, so a target cannot
-bounce a request to an address that the initial check allowed. Outbound TLS
+insecure local federation. The resolution happens once and the connection is
+pinned to the addresses that were checked, so a host whose name changes between
+the check and the connection cannot swap a public address for an internal one.
+Redirects are never followed, so a target cannot bounce a request to an address
+that the initial check allowed. Outbound TLS
 anchors are the bundled public roots; `MORAINE_TLS_EXTRA_ROOTS` names a PEM
 bundle whose certificates are added as additional roots, which is how a
 deployment reaches a home behind a private certificate authority. Both the
@@ -405,9 +408,12 @@ A game, loader, or runtime identity is pulled the same way with
 
 A home URL must use HTTPS. Plain HTTP is rejected unless it points at loopback
 and the operator explicitly enabled it, which exists for development. The
-client does not follow redirects, and every fetch has a timeout. Response size
-bounds, DNS revalidation, and background polling are not implemented yet; a
-sync is a synchronous request today.
+client does not follow redirects, and every fetch has a timeout. A response
+that runs past the size bound is refused partway through, before its bytes are
+buffered. The host is resolved once, every resolved address is checked against
+the public ranges, and the connection is then pinned to those addresses, so a
+name that would resolve inward on a second lookup never reaches one. A sync is
+a synchronous request rather than a background poll.
 
 ## Cross-origin reads
 

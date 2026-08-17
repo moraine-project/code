@@ -9,27 +9,37 @@ use super::FederationError;
 pub(crate) struct HomeClient {
 	client: reqwest::Client,
 	base: Url,
-	allow_local: bool,
 	max_response_bytes: u64,
 }
 
 impl HomeClient {
-	pub(crate) fn new(
+	pub(crate) async fn new(
 		base: &str,
 		allow_http_local: bool,
 		max_response_bytes: u64,
 		extra_roots: &[reqwest::Certificate],
 	) -> Result<Self, FederationError> {
 		let url = validate_home(base, allow_http_local)?;
-		let client = crate::federation::egress::client_builder(extra_roots)
-			.timeout(Duration::from_secs(10))
-			.redirect(reqwest::redirect::Policy::none())
-			.build()
-			.map_err(|error| FederationError::Http(error.to_string()))?;
+		let host = url.host_str().expect("validated home has a host");
+		let port = url
+			.port_or_known_default()
+			.ok_or_else(|| FederationError::InvalidUrl("home url has no port".to_string()))?;
+		let addresses = crate::federation::egress::resolve_public(host, port, allow_http_local)
+			.await
+			.map_err(FederationError::Http)?;
+		let client = crate::federation::egress::pinned(
+			crate::federation::egress::client_builder(extra_roots),
+			host,
+			port,
+			&addresses,
+		)
+		.timeout(Duration::from_secs(10))
+		.redirect(reqwest::redirect::Policy::none())
+		.build()
+		.map_err(|error| FederationError::Http(error.to_string()))?;
 		Ok(Self {
 			client,
 			base: url,
-			allow_local: allow_http_local,
 			max_response_bytes,
 		})
 	}
@@ -45,9 +55,6 @@ impl HomeClient {
 
 	pub(crate) async fn get_bytes(&self, path: &str) -> Result<Vec<u8>, FederationError> {
 		let url = self.endpoint(path);
-		crate::federation::egress::guard(&url, self.allow_local)
-			.await
-			.map_err(FederationError::Http)?;
 		let mut response = self
 			.client
 			.get(url)

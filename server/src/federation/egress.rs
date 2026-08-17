@@ -1,6 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
-use reqwest::Url;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 pub fn client_builder(extra_roots: &[reqwest::Certificate]) -> reqwest::ClientBuilder {
 	let mut builder = reqwest::Client::builder();
@@ -83,28 +81,36 @@ fn is_unique_local(address: Ipv6Addr) -> bool {
 	address.segments()[0] & 0xfe00 == 0xfc00
 }
 
-pub async fn guard(url: &Url, allow_local: bool) -> Result<(), String> {
-	let host = url.host_str().ok_or_else(|| "url has no host".to_string())?;
-	let literal_loopback =
-		host == "localhost" || host.parse::<IpAddr>().map(|address| address.is_loopback()).unwrap_or(false);
-	if allow_local && literal_loopback {
-		return Ok(());
+pub async fn resolve_public(host: &str, port: u16, allow_local: bool) -> Result<Vec<IpAddr>, String> {
+	if let Ok(literal) = host.parse::<IpAddr>() {
+		if !is_public_address(literal) && !(allow_local && literal.is_loopback()) {
+			return Err(format!("{host} is not a public address"));
+		}
+		return Ok(vec![literal]);
 	}
-	let port = url.port_or_known_default().ok_or_else(|| "url has no port".to_string())?;
 	let addresses = tokio::net::lookup_host((host, port))
 		.await
 		.map_err(|error| format!("could not resolve {host}: {error}"))?;
-	let mut resolved = false;
+	let mut resolved = Vec::new();
 	for address in addresses {
-		resolved = true;
-		if !is_public_address(address.ip()) {
-			return Err(format!("{host} resolves to the non-public address {}", address.ip()));
+		let ip = address.ip();
+		if !is_public_address(ip) && !(allow_local && ip.is_loopback()) {
+			return Err(format!("{host} resolves to the non-public address {ip}"));
 		}
+		resolved.push(ip);
 	}
-	if !resolved {
+	if resolved.is_empty() {
 		return Err(format!("{host} did not resolve to any address"));
 	}
-	Ok(())
+	Ok(resolved)
+}
+
+pub fn pinned(builder: reqwest::ClientBuilder, host: &str, port: u16, addresses: &[IpAddr]) -> reqwest::ClientBuilder {
+	if host.parse::<IpAddr>().is_ok() {
+		return builder;
+	}
+	let addresses: Vec<SocketAddr> = addresses.iter().map(|ip| SocketAddr::new(*ip, port)).collect();
+	builder.resolve_to_addrs(host, &addresses)
 }
 
 #[cfg(test)]
@@ -154,14 +160,20 @@ mod tests {
 
 	#[tokio::test]
 	async fn allows_literal_loopback_only_when_permitted() {
-		let url = Url::parse("http://127.0.0.1:8098/feed").expect("url");
-		assert!(guard(&url, true).await.is_ok());
-		assert!(guard(&url, false).await.is_err());
+		assert!(resolve_public("127.0.0.1", 8098, true).await.is_ok());
+		assert!(resolve_public("127.0.0.1", 8098, false).await.is_err());
+	}
+
+	#[tokio::test]
+	async fn resolves_and_pins_a_name_to_its_validated_address() {
+		let addresses = resolve_public("localhost", 8098, true).await.expect("loopback");
+		assert!(addresses.iter().all(|address| address.is_loopback()));
+		let builder = pinned(client_builder(&[]), "localhost", 8098, &addresses);
+		builder.build().expect("pinned client");
 	}
 
 	#[tokio::test]
 	async fn rejects_a_private_literal_host() {
-		let url = Url::parse("https://169.254.169.254/latest/meta-data").expect("url");
-		assert!(guard(&url, false).await.is_err());
+		assert!(resolve_public("169.254.169.254", 443, false).await.is_err());
 	}
 }

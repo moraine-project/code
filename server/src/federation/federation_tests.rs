@@ -210,9 +210,22 @@ async fn bounds_the_home_response_body() {
 		let _ = axum::serve(listener, mock).await;
 	});
 	let base = format!("http://127.0.0.1:{}", address.port());
-	let client = super::HomeClient::new(&base, true, 1024, &[]).expect("client");
+	let client = super::HomeClient::new(&base, true, 1024, &[]).await.expect("client");
 	assert_eq!(client.get_bytes("small").await.expect("small"), b"ok");
 	assert!(client.get_bytes("huge").await.is_err());
+}
+
+#[tokio::test]
+async fn reaches_a_local_home_by_name_not_only_by_literal() {
+	let mock = axum::Router::new().route("/small", axum::routing::get(|| async { b"ok".to_vec() }));
+	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+	let address = listener.local_addr().expect("addr");
+	tokio::spawn(async move {
+		let _ = axum::serve(listener, mock).await;
+	});
+	let base = format!("http://localhost:{}", address.port());
+	let client = super::HomeClient::new(&base, true, 1024, &[]).await.expect("client");
+	assert_eq!(client.get_bytes("small").await.expect("small"), b"ok");
 }
 
 #[tokio::test]
