@@ -411,6 +411,22 @@ pub(crate) async fn login(application: &Router, email: &str) -> (String, String)
 	(session, csrf)
 }
 
+pub(crate) async fn upload_token(application: &Router, email: &str) -> String {
+	let (session, csrf) = login(application, email).await;
+	let cookie = format!("moraine_session={session}; moraine_csrf={csrf}");
+	let request = axum::http::Request::post("/v1/auth/keys")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, &cookie)
+		.header("x-csrf-token", &csrf)
+		.body(Body::from(
+			serde_json::json!({ "name": "uploader", "scopes": ["artifacts:write"] }).to_string(),
+		))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+	body_json(response).await["key"].as_str().expect("key").to_string()
+}
+
 pub(crate) fn id_bytes(id: &str) -> [u8; 32] {
 	let hex = id.strip_prefix("gd:sha256:").expect("object id");
 	<[u8; 32]>::try_from(hex::decode(hex).expect("hex").as_slice()).expect("digest")

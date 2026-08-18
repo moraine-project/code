@@ -133,7 +133,8 @@ blob addresses.
 
 `POST /v1/blobs` streams the request body into private staging, computes the
 digest as it goes, and refuses anything over the advertised artifact limit with
-`413`. On success it commits the object and returns `201`, a `Location` header
+`413`. It requires the `artifacts:write` scope, so an unauthenticated caller
+cannot fill the store; a session grants it, and an API key needs it explicitly. On success it commits the object and returns `201`, a `Location` header
 of `/v1/blobs/sha256/<hex>`, and a receipt `{ "digest": "sha256:<hex>", "size":
 N }`. Committing the same bytes again is a no-op because the address is the
 digest.
@@ -352,9 +353,9 @@ with a session or an API key.
 key is returned exactly once; only its SHA-256 hash is stored. Keys are
 scoped, expire by default after 90 days, and are revocable independently. The
 known scopes are `account:read`, `keys:manage`, `projects:write`,
-`submissions:write`, `submissions:review`, `federation:manage`, `orgs:manage`,
-and `notifications:read`. There is no wildcard, and no scope can sign a
-release.
+`artifacts:write`, `submissions:write`, `submissions:review`,
+`federation:manage`, `orgs:manage`, and `notifications:read`. There is no
+wildcard, and no scope can sign a release.
 
 A request authenticates either with the session cookie or an
 `Authorization: Bearer` API key. A cookie-authenticated request that changes

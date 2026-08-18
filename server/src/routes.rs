@@ -16,6 +16,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 
+use crate::auth::AuthenticatedUser;
 use crate::blob::{BlobError, BlobStore};
 use crate::capability::Capability;
 use crate::db::MetadataStore;
@@ -119,7 +120,10 @@ struct UploadReceipt {
 	size: u64,
 }
 
-async fn blob_upload(State(state): State<AppState>, body: Body) -> Response {
+async fn blob_upload(State(state): State<AppState>, user: AuthenticatedUser, body: Body) -> Response {
+	if !user.allows("artifacts:write") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
 	let stream = body
 		.into_data_stream()
 		.map_err(|error| std::io::Error::other(error.to_string()));
@@ -378,7 +382,15 @@ mod tests {
 	#[tokio::test]
 	async fn uploads_then_serves_round_trip() {
 		let (app, directory) = test_app().await;
+		let token = crate::test_support::upload_token(&app, "uploader@example.org").await;
+		let anonymous = axum::http::Request::post("/v1/blobs")
+			.body(Body::from("artifact"))
+			.expect("request");
+		let response = app.clone().oneshot(anonymous).await.expect("response");
+		assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
 		let upload = axum::http::Request::post("/v1/blobs")
+			.header(header::AUTHORIZATION, format!("Bearer {token}"))
 			.body(Body::from("artifact"))
 			.expect("request");
 		let response = app.clone().oneshot(upload).await.expect("response");

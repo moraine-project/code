@@ -71,6 +71,7 @@ pub const KNOWN_SCOPES: &[&str] = &[
 	"account:read",
 	"keys:manage",
 	"projects:write",
+	"artifacts:write",
 	"submissions:write",
 	"submissions:review",
 	"federation:manage",
