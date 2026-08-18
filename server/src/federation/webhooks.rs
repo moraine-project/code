@@ -468,6 +468,7 @@ mod tests {
 			max_sync_pages: 200,
 			requests_per_minute: 600,
 			max_concurrent_syncs: 4,
+			maintenance_interval_seconds: 3_600,
 			tls_extra_roots: None,
 			max_feed_scan_pages: 50,
 			skip_migrate_on_start: false,

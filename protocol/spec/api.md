@@ -159,10 +159,14 @@ committed but still unreferenced draft is not served. A committed
 blob that no release location, artifact index entry, or mirror commitment
 references is removed after a seven-day window, which leaves a fresh upload
 time to be published. Both windows are operator settings
-(`MORAINE_STAGING_RETENTION_SECONDS`, `MORAINE_BLOB_RETENTION_SECONDS`). A
-release whose bytes were collected still resolves; its artifact is simply
-unavailable at this host, and byte serving answers `404` rather than a
-substitute.
+(`MORAINE_STAGING_RETENTION_SECONDS`, `MORAINE_BLOB_RETENTION_SECONDS`). The
+collection, the retention prune of notifications and webhook deliveries, and
+the periodic definition and subscription resync all run on one maintenance
+tick, an hour by default and set with `MORAINE_MAINTENANCE_INTERVAL_SECONDS`; a
+value of zero turns the background loop off, which leaves those jobs to be
+triggered externally. A release whose bytes were collected still resolves; its
+artifact is simply unavailable at this host, and byte serving answers `404`
+rather than a substitute.
 
 ## Projects, objects, and feeds
 
@@ -413,7 +417,7 @@ that runs past the size bound is refused partway through, before its bytes are
 buffered. The host is resolved once, every resolved address is checked against
 the public ranges, and the connection is then pinned to those addresses, so a
 name that would resolve inward on a second lookup never reaches one. A sync is
-a synchronous request rather than a background poll.
+a synchronous request; the same syncs also run on the maintenance tick.
 
 ## Cross-origin reads
 

@@ -141,8 +141,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		}
 	});
 
+	let maintenance_interval = config.maintenance_interval_seconds;
 	tokio::spawn(async move {
-		let mut ticker = tokio::time::interval(std::time::Duration::from_secs(3600));
+		if maintenance_interval == 0 {
+			return;
+		}
+		let mut ticker = tokio::time::interval(std::time::Duration::from_secs(maintenance_interval));
 		loop {
 			ticker.tick().await;
 			let now = unix_now();

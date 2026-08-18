@@ -109,8 +109,6 @@ pub(crate) async fn game_ordering(
 		.and_then(|definition| OrderingScheme::parse(&definition.version_ordering))
 }
 
-/// Unit tests for version filtering live in the server crate because the
-/// predicate evaluation they exercise is shared with the feed projection.
 #[cfg(test)]
 mod version_tests {
 	use moraine_crypto::{ObjectKind, SigningKey};

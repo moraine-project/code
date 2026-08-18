@@ -82,6 +82,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_MAX_CONCURRENT_SYNCS", default_value_t = 4)]
 	pub max_concurrent_syncs: u32,
 
+	#[arg(long, env = "MORAINE_MAINTENANCE_INTERVAL_SECONDS", default_value_t = 3_600)]
+	pub maintenance_interval_seconds: u64,
+
 	#[arg(long, env = "MORAINE_TLS_EXTRA_ROOTS")]
 	pub tls_extra_roots: Option<PathBuf>,
 
@@ -146,6 +149,7 @@ mod tests {
 			max_sync_pages: 200,
 			requests_per_minute: 600,
 			max_concurrent_syncs: 4,
+			maintenance_interval_seconds: 3_600,
 			tls_extra_roots: None,
 			allow_insecure_federation_local: false,
 			publishing: Publishing::Review,
