@@ -529,6 +529,15 @@ them, so the endpoint reports evidence, not a promise. A consumer may fetch
 from any hint because it checks the digest, but the decision to distribute
 still belongs to the operator and the publisher.
 
+Because a commitment is a claim, the maintenance tick re-checks each one
+against its endpoint: it fetches `/v1/blobs/sha256/{digest}`, hashes the stream,
+and records whether the length and digest matched. Each commitment carries
+`last_checked_at` and `reachable` when a check has run, and `null` before the
+first one. A failed check is evidence that the bytes are unreachable now, not a
+deletion; the commitment stands until the mirror or the operator withdraws it.
+Endpoints must be HTTPS, or loopback HTTP when insecure local federation is
+enabled, and the same public-address rule as other outbound requests applies.
+
 ## Follows and notifications
 
 A signed-in user can follow a project with `POST /v1/follows/{project_id}`

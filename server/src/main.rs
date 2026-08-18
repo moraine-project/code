@@ -174,6 +174,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				Ok(_) => {}
 				Err(error) => tracing::warn!(%error, "subscription resync failed"),
 			}
+			match federation::probe_mirrors(&prune_state, 20).await {
+				Ok(confirmed) if confirmed > 0 => {
+					tracing::info!(confirmed, "confirmed mirror holdings");
+				}
+				Ok(_) => {}
+				Err(error) => tracing::warn!(%error, "mirror probe failed"),
+			}
 			match gc::collect(&prune_state, staging_retention, blob_retention).await {
 				Ok(collected) if collected.staging > 0 || collected.blobs > 0 => {
 					tracing::info!(staging = collected.staging, blobs = collected.blobs, "collected storage");

@@ -8,6 +8,7 @@ use moraine_crypto::{ObjectKind, object_id};
 use moraine_model::attestation::AttestationObject;
 use moraine_model::signed::{SignedObject, TrustedKey, verify_envelope};
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use sqlx::Row;
 
 use crate::auth::AuthenticatedUser;
@@ -19,6 +20,20 @@ pub struct LocationRow {
 	pub url: String,
 	pub kind: String,
 	pub operator_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DueCommitmentRow {
+	pub artifact_digest: Vec<u8>,
+	pub mirror_id: String,
+	pub endpoint: String,
+	pub size: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ConfirmationRow {
+	pub checked_at: i64,
+	pub reachable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +133,70 @@ impl MetadataStore {
 		.execute(&self.pool)
 		.await?;
 		Ok(())
+	}
+
+	pub async fn record_confirmation(
+		&self,
+		artifact_digest: &[u8],
+		mirror_id: &str,
+		checked_at: i64,
+		reachable: bool,
+	) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"INSERT INTO mirror_confirmations (artifact_digest, mirror_id, checked_at, reachable)
+			 VALUES ($1, $2, $3, $4)
+			 ON CONFLICT (artifact_digest, mirror_id) DO UPDATE SET checked_at = $3, reachable = $4",
+		)
+		.bind(artifact_digest)
+		.bind(mirror_id)
+		.bind(checked_at)
+		.bind(reachable)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
+	pub async fn confirmation_for(
+		&self,
+		artifact_digest: &[u8],
+		mirror_id: &str,
+	) -> Result<Option<ConfirmationRow>, sqlx::Error> {
+		let row = sqlx::query(
+			"SELECT checked_at, reachable FROM mirror_confirmations WHERE artifact_digest = $1 AND mirror_id = $2",
+		)
+		.bind(artifact_digest)
+		.bind(mirror_id)
+		.fetch_optional(&self.pool)
+		.await?;
+		Ok(row.map(|row| ConfirmationRow {
+			checked_at: row.get("checked_at"),
+			reachable: row.get::<i64, _>("reachable") != 0,
+		}))
+	}
+
+	pub async fn commitments_due(&self, before: i64, limit: i64) -> Result<Vec<DueCommitmentRow>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT c.artifact_digest, c.mirror_id, c.endpoint, c.size
+			 FROM mirror_commitments c
+			 LEFT JOIN mirror_confirmations f
+			   ON f.artifact_digest = c.artifact_digest AND f.mirror_id = c.mirror_id
+			 WHERE f.checked_at IS NULL OR f.checked_at < $1
+			 ORDER BY COALESCE(f.checked_at, 0) ASC, c.artifact_digest ASC
+			 LIMIT $2",
+		)
+		.bind(before)
+		.bind(limit)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows
+			.into_iter()
+			.map(|row| DueCommitmentRow {
+				artifact_digest: row.get("artifact_digest"),
+				mirror_id: row.get("mirror_id"),
+				endpoint: row.get("endpoint"),
+				size: row.get("size"),
+			})
+			.collect())
 	}
 
 	pub async fn commitments_for(&self, artifact_digest: &[u8]) -> Result<Vec<CommitmentRow>, sqlx::Error> {
@@ -264,6 +343,8 @@ struct CommitmentView {
 	accepted_at: i64,
 	retention_until: Option<i64>,
 	endpoint: String,
+	last_checked_at: Option<i64>,
+	reachable: Option<bool>,
 }
 
 async fn mirrors_for(State(state): State<AppState>, Path(digest): Path<String>) -> Response {
@@ -279,6 +360,13 @@ async fn mirrors_for(State(state): State<AppState>, Path(digest): Path<String>) 
 		Ok(commitments) => commitments,
 		Err(error) => return storage_error(error),
 	};
+	let mut confirmations = Vec::with_capacity(commitments.len());
+	for commitment in &commitments {
+		match state.metadata.confirmation_for(&bytes, &commitment.mirror_id).await {
+			Ok(confirmation) => confirmations.push(confirmation),
+			Err(error) => return storage_error(error),
+		}
+	}
 	let view = MirrorView {
 		digest: format!("sha256:{}", hex::encode(&bytes)),
 		locations: locations
@@ -291,16 +379,111 @@ async fn mirrors_for(State(state): State<AppState>, Path(digest): Path<String>) 
 			.collect(),
 		commitments: commitments
 			.into_iter()
-			.map(|commitment| CommitmentView {
+			.zip(confirmations)
+			.map(|(commitment, confirmation)| CommitmentView {
 				mirror_id: commitment.mirror_id,
 				size: commitment.size,
 				accepted_at: commitment.accepted_at,
 				retention_until: commitment.retention_until,
 				endpoint: commitment.endpoint,
+				last_checked_at: confirmation.map(|confirmation| confirmation.checked_at),
+				reachable: confirmation.map(|confirmation| confirmation.reachable),
 			})
 			.collect(),
 	};
 	Json(view).into_response()
+}
+
+pub async fn probe_mirrors(state: &AppState, limit: i64) -> Result<usize, String> {
+	let checked_before = now() - PROBE_INTERVAL_SECONDS;
+	let due = state
+		.metadata
+		.commitments_due(checked_before, limit)
+		.await
+		.map_err(|error| error.to_string())?;
+	let mut confirmed = 0;
+	for commitment in due {
+		let reachable = confirm(&state.capability, &commitment).await;
+		if reachable {
+			confirmed += 1;
+		}
+		state
+			.metadata
+			.record_confirmation(&commitment.artifact_digest, &commitment.mirror_id, now(), reachable)
+			.await
+			.map_err(|error| error.to_string())?;
+	}
+	Ok(confirmed)
+}
+
+const PROBE_INTERVAL_SECONDS: i64 = 86_400;
+const PROBE_TIMEOUT_SECONDS: u64 = 30;
+
+async fn confirm(capability: &crate::capability::Capability, commitment: &DueCommitmentRow) -> bool {
+	let Ok(mut base) = reqwest::Url::parse(&commitment.endpoint) else {
+		return false;
+	};
+	if !matches!(base.scheme(), "https" | "http") {
+		return false;
+	}
+	let insecure_http = base.scheme() == "http";
+	if insecure_http && !capability.allow_insecure_federation_local {
+		return false;
+	}
+	let Some(host) = base.host_str().map(str::to_string) else {
+		return false;
+	};
+	let Some(port) = base.port_or_known_default() else {
+		return false;
+	};
+	let Ok(addresses) =
+		crate::federation::egress::resolve_public(&host, port, capability.allow_insecure_federation_local).await
+	else {
+		return false;
+	};
+	if insecure_http && !addresses.iter().all(std::net::IpAddr::is_loopback) {
+		return false;
+	}
+	let Ok(client) = crate::federation::egress::pinned(
+		crate::federation::egress::client_builder(&capability.tls_extra_roots),
+		&host,
+		port,
+		&addresses,
+	)
+	.timeout(std::time::Duration::from_secs(PROBE_TIMEOUT_SECONDS))
+	.redirect(reqwest::redirect::Policy::none())
+	.build() else {
+		return false;
+	};
+	let path = format!("/v1/blobs/sha256/{}", hex::encode(&commitment.artifact_digest));
+	base.set_path(&path);
+	let Ok(mut response) = client.get(base).send().await else {
+		return false;
+	};
+	if !response.status().is_success() {
+		return false;
+	}
+	if let Some(length) = response.content_length()
+		&& length != commitment.size as u64
+	{
+		return false;
+	}
+	let mut hasher = sha2::Sha256::new();
+	let mut received = 0u64;
+	loop {
+		match response.chunk().await {
+			Ok(Some(chunk)) => {
+				received += chunk.len() as u64;
+				if received > commitment.size as u64 {
+					return false;
+				}
+				hasher.update(&chunk);
+			}
+			Ok(None) => break,
+			Err(_) => return false,
+		}
+	}
+	received == commitment.size as u64 && hasher.finalize().as_slice() == commitment.artifact_digest.as_slice()
 }
 
 fn id_for(digest: &[u8]) -> String {
@@ -335,6 +518,11 @@ mod tests {
 	use crate::capability::Capability;
 
 	async fn app() -> (Router, tempfile::TempDir) {
+		let (state, directory) = state().await;
+		(crate::routes::router(state), directory)
+	}
+
+	async fn state() -> (AppState, tempfile::TempDir) {
 		let directory = tempfile::tempdir().expect("tempdir");
 		let store = Arc::new(BlobStore::new(directory.path()).await.expect("blob store"));
 		let metadata = Arc::new(
@@ -371,7 +559,7 @@ mod tests {
 			rate_limiter: std::sync::Arc::new(crate::auth::ratelimit::RateLimiter::new()),
 			web_dir: None,
 		};
-		(crate::routes::router(state), directory)
+		(state, directory)
 	}
 
 	async fn login(app: &Router, email: &str) -> (String, String) {
@@ -472,6 +660,56 @@ mod tests {
 			.expect("request");
 		let response = application.oneshot(request).await.expect("response");
 		assert_eq!(response.status(), StatusCode::CONFLICT);
+	}
+
+	#[tokio::test]
+	async fn confirms_a_holding_only_when_the_bytes_hash_correctly() {
+		let (mut state, _directory) = state().await;
+		let capability = crate::capability::Capability {
+			allow_insecure_federation_local: true,
+			..state.capability.as_ref().clone()
+		};
+		state.capability = Arc::new(capability);
+		let good = b"the real artifact bytes";
+		let digest: [u8; 32] = sha2::Sha256::digest(good).into();
+		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+		let port = listener.local_addr().expect("addr").port();
+		let served = good.to_vec();
+		let mock = Router::new().route(
+			"/v1/blobs/sha256/{digest}",
+			get(move || {
+				let served = served.clone();
+				async move { served }
+			}),
+		);
+		tokio::spawn(async move {
+			let _ = axum::serve(listener, mock).await;
+		});
+
+		state
+			.metadata
+			.insert_commitment(
+				&CommitmentRow {
+					mirror_id: "archive-one".to_string(),
+					size: good.len() as i64,
+					accepted_at: now(),
+					retention_until: None,
+					endpoint: format!("http://127.0.0.1:{port}"),
+				},
+				&digest,
+				&[0x99; 32],
+			)
+			.await
+			.expect("commitment");
+
+		assert_eq!(probe_mirrors(&state, 10).await.expect("probe"), 1);
+		let confirmation = state
+			.metadata
+			.confirmation_for(&digest, "archive-one")
+			.await
+			.expect("confirmation")
+			.expect("recorded");
+		assert!(confirmation.reachable);
 	}
 
 	#[tokio::test]

@@ -13,6 +13,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 pub(crate) use home::HomeClient;
+pub use mirrors::probe_mirrors;
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
 use moraine_model::genesis::{Genesis, GenesisKind};
