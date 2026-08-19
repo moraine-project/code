@@ -157,13 +157,18 @@ Publish a release with the CLI:
 ```sh
 cargo run -p moraine-publish -- keygen --key publisher.key
 cargo run -p moraine-publish -- init --key publisher.key --home http://127.0.0.1:8080
-cargo run -p moraine-publish -- upload --home http://127.0.0.1:8080 --file mod.jar
+cargo run -p moraine-publish -- upload --home http://127.0.0.1:8080 --file mod.jar \
+  --api-key $MORAINE_API_KEY
 cargo run -p moraine-publish -- release --key publisher.key --home http://127.0.0.1:8080 \
   --project <project-id> --game <game-id> --game-version 1.20.1 \
   --version 1.2.3 --file mod.jar
 cargo run -p moraine-publish -- publish --key publisher.key --home http://127.0.0.1:8080 \
   --project <project-id> --object <release-id>
 ```
+
+`upload` needs a key that carries `artifacts:write`, and `MORAINE_API_KEY` can
+supply it instead of the flag; without it the home refuses the upload before
+reading the body.
 
 A project has a display name once you publish a profile:
 
