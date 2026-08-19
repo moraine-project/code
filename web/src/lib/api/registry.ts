@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { authorizedFetch } from './session';
+
 export const projectSummarySchema = z.object({
 	project_id: z.string(),
 	genesis: z.string(),
@@ -334,8 +336,8 @@ export const uploadReceiptSchema = z.object({
 
 export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
 
-export async function uploadBlob(file: File, fetchFn: Fetcher = fetch): Promise<UploadReceipt> {
-	const response = await fetchFn('/v1/blobs', {
+export async function uploadBlob(file: File): Promise<UploadReceipt> {
+	const response = await authorizedFetch('/v1/blobs', {
 		method: 'POST',
 		headers: { 'content-type': 'application/octet-stream' },
 		body: file,
