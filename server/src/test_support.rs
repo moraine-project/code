@@ -450,8 +450,16 @@ pub(crate) fn set_cookie(response: &Response, name: &str) -> String {
 }
 
 pub(crate) async fn publish_project(application: &Router, signer: &SigningKey) -> (String, [u8; 32]) {
+	publish_project_with_kinds(application, signer, PROJECT_KINDS).await
+}
+
+pub(crate) async fn publish_project_with_kinds(
+	application: &Router,
+	signer: &SigningKey,
+	kinds: &[&str],
+) -> (String, [u8; 32]) {
 	let request = axum::http::Request::post("/v1/projects")
-		.body(Body::from(genesis_wire(signer, PROJECT_KINDS)))
+		.body(Body::from(genesis_wire(signer, kinds)))
 		.expect("request");
 	let response = application.clone().oneshot(request).await.expect("response");
 	let receipt = body_json(response).await;

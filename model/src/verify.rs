@@ -5,6 +5,7 @@ use moraine_crypto::{ObjectKind, object_id};
 use crate::advisory::Advisory;
 use crate::attestation::AttestationObject;
 use crate::canonical::Canonical;
+use crate::changelog::Changelog;
 use crate::definition::{GameDef, LoaderObject, RuntimeDef};
 use crate::delegation::{Delegation, KeyDelegation};
 use crate::error::ModelError;
@@ -29,6 +30,7 @@ pub enum VerifyError {
 	Decode(ModelError),
 	Signature(ModelError),
 	UnsupportedKind(ObjectKind),
+	UnauthorizedKind(ObjectKind),
 }
 
 impl fmt::Display for VerifyError {
@@ -37,6 +39,7 @@ impl fmt::Display for VerifyError {
 			Self::Decode(error) => write!(f, "invalid object: {error}"),
 			Self::Signature(error) => write!(f, "signature rejected: {error}"),
 			Self::UnsupportedKind(kind) => write!(f, "object kind `{}` is not accepted yet", kind.as_str()),
+			Self::UnauthorizedKind(kind) => write!(f, "the genesis does not authorize object kind `{}`", kind.as_str()),
 		}
 	}
 }
@@ -68,6 +71,7 @@ pub fn verify_object(kind: ObjectKind, wire: &[u8], root: &RootSet) -> Result<Ve
 		ObjectKind::LoaderDef => verify_typed::<LoaderObject>(kind, wire, root),
 		ObjectKind::RuntimeDef => verify_typed::<RuntimeDef>(kind, wire, root),
 		ObjectKind::Modpack => verify_typed::<ModpackManifest>(kind, wire, root),
+		ObjectKind::Changelog => verify_typed::<Changelog>(kind, wire, root),
 		other => Err(VerifyError::UnsupportedKind(other)),
 	}
 }
@@ -92,6 +96,7 @@ pub fn verify_object_authorized(
 			ObjectKind::LoaderDef => verify_delegated::<LoaderObject>(kind, wire, delegations, now, error),
 			ObjectKind::RuntimeDef => verify_delegated::<RuntimeDef>(kind, wire, delegations, now, error),
 			ObjectKind::Modpack => verify_delegated::<ModpackManifest>(kind, wire, delegations, now, error),
+			ObjectKind::Changelog => verify_delegated::<Changelog>(kind, wire, delegations, now, error),
 			other => Err(VerifyError::UnsupportedKind(other)),
 		},
 		Err(other) => Err(other),
@@ -132,6 +137,9 @@ fn verify_delegated<T: Canonical>(
 }
 
 fn verify_typed<T: Canonical>(kind: ObjectKind, wire: &[u8], root: &RootSet) -> Result<VerifiedObject, VerifyError> {
+	if kind != ObjectKind::FeedEntry && !root.authorizes_kind(kind.as_str()) {
+		return Err(VerifyError::UnauthorizedKind(kind));
+	}
 	let signed = SignedObject::<T>::from_bytes(wire).map_err(VerifyError::Decode)?;
 	signed
 		.verify_threshold(kind, root.keys(), root.threshold())

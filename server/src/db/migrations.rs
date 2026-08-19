@@ -42,6 +42,11 @@ const MIGRATIONS: &[Migration] = &[
 		sqlite: include_str!("../../migrations/sqlite/0004_blob_uploads.sql"),
 		postgres: include_str!("../../migrations/postgres/0004_blob_uploads.sql"),
 	},
+	Migration {
+		name: "0005_search_changelog",
+		sqlite: include_str!("../../migrations/sqlite/0005_search_changelog.sql"),
+		postgres: include_str!("../../migrations/postgres/0005_search_changelog.sql"),
+	},
 ];
 
 pub(super) async fn run_migrations(pool: &AnyPool, engine: Engine) -> Result<usize, sqlx::Error> {

@@ -2,6 +2,7 @@ pub mod advisory;
 pub mod artifact;
 pub mod attestation;
 pub mod canonical;
+pub mod changelog;
 pub mod compatibility;
 pub mod definition;
 pub mod delegation;

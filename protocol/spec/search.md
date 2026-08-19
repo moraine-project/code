@@ -48,14 +48,19 @@ signal. The published input list must not be silently contradicted by the
 implementation.
 
 The sorts this implementation offers are `relevance`, `updated`, `created`,
-`name`, and `popularity`. Its relevance input is recency, so `relevance` and `updated` order
-identically today; `created` is when this instance first indexed the project,
-which is not the same as when the publisher declared it; and `name` is
-case-insensitive, and `popularity` orders by the instance-local count below,
+`name`, and `popularity`. Its relevance input is the text-match score below,
+weighting the display name above the summary above the description, with a
+changelog match scoring alongside the description; when a query carries no
+text, `relevance` falls back to recency, and `sort=updated`
+always means recency. `created` is when this instance first indexed the
+project, which is not the same as when the publisher declared it; `name` is
+case-insensitive; and `popularity` orders by the instance-local count below,
 highest first. Any other value is rejected with `400` rather than silently
 treated as a different order, because an echoed sort that the server did not
 honour would contradict the published inputs. Text matching covers the display
-name and summary.
+name, summary, description, and the text of any changelog this instance holds.
+A changelog is a signed object referenced by a release's `changelog_digest`, so
+its text is indexed only where the object itself was published here.
 
 The facets this implementation serves are `game`, `loader`, `category`, and
 `tag`. A project's loader labels come from the loaders its signed releases

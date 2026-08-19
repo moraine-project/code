@@ -8,6 +8,33 @@ use super::*;
 use crate::test_support::*;
 
 #[tokio::test]
+async fn rejects_an_object_kind_the_genesis_does_not_authorize() {
+	let (application, _directory) = app().await;
+	let signer = key(19);
+	let (project_id, _release) = publish_project(&application, &signer).await;
+	let changelog = moraine_model::changelog::Changelog {
+		protocol: 1,
+		project_id: project_id.clone(),
+		release_id: None,
+		locale_sections: vec![moraine_model::changelog::LocaleSection {
+			locale: "en".to_string(),
+			sections: vec![moraine_model::changelog::ChangelogSection {
+				heading: "Notes".to_string(),
+				body: "First release".to_string(),
+				severity: None,
+			}],
+		}],
+		declared_time: 1_760_000_000,
+	};
+	let signed = sign_payload(Kind::Changelog, &changelog, &[&signer]);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/changelog"))
+		.body(Body::from(signed.wire_bytes()))
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn publishes_project_object_and_feed_end_to_end() {
 	let (application, _directory) = app().await;
 	let signer = key(1);

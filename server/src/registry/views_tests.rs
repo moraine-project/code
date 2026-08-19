@@ -250,7 +250,8 @@ async fn release_view_lists_pinned_provider_advisories() {
 async fn serves_a_modpack_manifest_and_rejects_an_escaping_override() {
 	let (application, _directory) = app().await;
 	let signer = key(17);
-	let (project_id, release_digest) = publish_project(&application, &signer).await;
+	let (project_id, release_digest) =
+		publish_project_with_kinds(&application, &signer, &["delegation", "release", "profile", "modpack"]).await;
 
 	let manifest = ModpackManifest {
 		protocol: 1,
@@ -397,4 +398,93 @@ async fn ranks_a_name_match_above_a_description_match() {
 	let results = page["results"].as_array().expect("results");
 	assert_eq!(results.len(), 2);
 	assert_eq!(results[0]["display_name"], "Widget");
+}
+
+#[tokio::test]
+async fn finds_a_project_by_a_phrase_from_its_changelog() {
+	use moraine_model::changelog::{Changelog, ChangelogSection, LocaleSection};
+	use moraine_model::profile::ProfileRevision;
+
+	let (application, _directory) = app().await;
+	let signer = key(10);
+	let (project_id, _release) =
+		publish_project_with_kinds(&application, &signer, &["delegation", "release", "profile", "changelog"]).await;
+	let profile = ProfileRevision {
+		protocol: 1,
+		project_id: project_id.clone(),
+		game_id: sample_id("minecraft"),
+		revision_nonce: vec![0x24; 16],
+		display_name: "Example Mod".to_string(),
+		summary: "A worked example".to_string(),
+		description: "Longer description".to_string(),
+		icon: None,
+		gallery: Vec::new(),
+		links: Vec::new(),
+		communities: Vec::new(),
+		categories: Vec::new(),
+		tags: Vec::new(),
+		rights: None,
+		declared_time: 1_760_000_000,
+	};
+	let signed_profile = sign_payload(Kind::Profile, &profile, &[&signer]);
+	let profile_digest = object_id(Kind::Profile, &signed_profile.payload_bytes);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/profile"))
+		.body(Body::from(signed_profile.wire_bytes()))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+	let entry = FeedEntry {
+		protocol: 1,
+		project_id: project_id.clone(),
+		sequence: 1,
+		previous: None,
+		kind: "profile-updated".to_string(),
+		object_digest: profile_digest.to_vec(),
+		declared_at: 1_760_000_000,
+	};
+	let feed = sign_payload(Kind::FeedEntry, &entry, &[&signer]).wire_bytes();
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(feed))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let changelog = Changelog {
+		protocol: 1,
+		project_id: project_id.clone(),
+		release_id: None,
+		locale_sections: vec![LocaleSection {
+			locale: "en".to_string(),
+			sections: vec![ChangelogSection {
+				heading: "Fixes".to_string(),
+				body: "Removed the kraken crash on launch".to_string(),
+				severity: None,
+			}],
+		}],
+		declared_time: 1_760_000_000,
+	};
+	let signed = sign_payload(Kind::Changelog, &changelog, &[&signer]);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/changelog"))
+		.body(Body::from(signed.wire_bytes()))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let request = axum::http::Request::get("/v1/search?q=kraken")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	let status = response.status();
+	let bytes = axum::body::to_bytes(response.into_body(), 65536).await.expect("body");
+	assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&bytes));
+	let page: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+	let results = page["results"].as_array().expect("results");
+	assert_eq!(results.len(), 1);
+	assert_eq!(results[0]["project_id"], project_id);
 }

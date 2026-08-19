@@ -648,6 +648,14 @@ pub(crate) async fn store_object_record(state: &AppState, object: &verify::Verif
 			moraine_model::release::ReleaseObject::Withdrawal(_) => {}
 		}
 	}
+	if object.kind == ObjectKind::Changelog
+		&& let Ok(changelog) = moraine_model::changelog::Changelog::from_canonical_bytes(&object.payload_bytes)
+	{
+		state
+			.metadata
+			.put_changelog_text(&object.digest, &changelog.project_id, &changelog.text())
+			.await?;
+	}
 	Ok(())
 }
 

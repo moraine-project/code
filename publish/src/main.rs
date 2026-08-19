@@ -50,6 +50,23 @@ enum Command {
 		file: PathBuf,
 		#[arg(long)]
 		loader: Option<String>,
+		#[arg(long)]
+		changelog: Option<String>,
+	},
+
+	Changelog {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		home: String,
+		#[arg(long)]
+		project: String,
+		#[arg(long)]
+		release: Option<String>,
+		#[arg(long, default_value = "en")]
+		locale: String,
+		#[arg(long)]
+		file: PathBuf,
 	},
 
 	Provider {
@@ -209,6 +226,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			channel,
 			file,
 			loader,
+			changelog,
 		} => {
 			commands::release(
 				&key,
@@ -220,9 +238,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				&channel,
 				&file,
 				loader,
+				changelog,
 			)
 			.await
 		}
+		Command::Changelog {
+			key,
+			home,
+			project,
+			release,
+			locale,
+			file,
+		} => commands::changelog(&key, &home, &project, release, &locale, &file).await,
 		Command::Provider { key, home, id, api_key } => commands::provider(&key, &home, &id, api_key).await,
 		Command::Advisory {
 			key,

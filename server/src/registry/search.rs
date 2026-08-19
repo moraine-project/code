@@ -208,7 +208,7 @@ pub enum SearchSort {
 
 fn score_expression(parameter: usize) -> String {
 	format!(
-		"(CASE WHEN lower(display_name) LIKE ${parameter} THEN 3 ELSE 0 END + CASE WHEN lower(summary) LIKE ${parameter} THEN 2 ELSE 0 END + CASE WHEN lower(description) LIKE ${parameter} THEN 1 ELSE 0 END)"
+		"(CASE WHEN lower(display_name) LIKE ${parameter} THEN 3 ELSE 0 END + CASE WHEN lower(summary) LIKE ${parameter} THEN 2 ELSE 0 END + CASE WHEN lower(description) LIKE ${parameter} THEN 1 ELSE 0 END + CASE WHEN EXISTS (SELECT 1 FROM search_changelog_text c WHERE c.project_id = search_documents.project_id AND lower(c.text) LIKE ${parameter}) THEN 1 ELSE 0 END)"
 	)
 }
 
@@ -327,6 +327,19 @@ impl MetadataStore {
 		Ok(counts)
 	}
 
+	pub async fn put_changelog_text(&self, object_digest: &[u8], project_id: &str, text: &str) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"INSERT INTO search_changelog_text (object_digest, project_id, text) VALUES ($1, $2, $3)
+			 ON CONFLICT(object_digest) DO UPDATE SET project_id = $2, text = $3",
+		)
+		.bind(object_digest)
+		.bind(project_id)
+		.bind(text)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
 	pub async fn add_search_labels(&self, project_id: &str, label_kind: &str, labels: &[String]) -> Result<(), sqlx::Error> {
 		for label in labels {
 			sqlx::query(
@@ -380,7 +393,7 @@ impl MetadataStore {
 			}
 			(None, Some(parameter)) => {
 				query.push(&format!(
-					" AND (lower(display_name) LIKE ${parameter} OR lower(summary) LIKE ${parameter} OR lower(description) LIKE ${parameter})"
+					" AND (lower(display_name) LIKE ${parameter} OR lower(summary) LIKE ${parameter} OR lower(description) LIKE ${parameter} OR EXISTS (SELECT 1 FROM search_changelog_text c WHERE c.project_id = search_documents.project_id AND lower(c.text) LIKE ${parameter}))"
 				));
 			}
 			(None, None) => {}
@@ -554,6 +567,51 @@ mod tests {
 		assert_eq!(counts.get(&("game".to_string(), "examplemod".to_string())), Some(&2));
 		assert_eq!(counts.get(&("other".to_string(), "examplemod".to_string())), Some(&1));
 		assert_eq!(counts.get(&("game".to_string(), "unrelated".to_string())), None);
+	}
+
+	#[tokio::test]
+	async fn matches_text_that_only_appears_in_a_changelog() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = MetadataStore::open(directory.path().join("metadata.sqlite"))
+			.await
+			.expect("store");
+		for (id, name) in [("a", "Widget"), ("b", "Gadget")] {
+			store
+				.put_search_document(SearchDocument {
+					project_id: id,
+					game_id: "game",
+					display_name: name,
+					summary: "Summary",
+					description: "Description",
+					categories: &[],
+					tags: &[],
+					updated_at: 0,
+				})
+				.await
+				.expect("document");
+		}
+		store
+			.put_changelog_text(&[0x77; 32], "b", "Fixes\nRemoved the kraken crash")
+			.await
+			.expect("changelog");
+
+		let hits = store
+			.search_documents(SearchFilter {
+				text: Some("kraken"),
+				game_id: None,
+				tag: None,
+				category: None,
+				loader: None,
+				popularity_since: None,
+				sort: SearchSort::Relevance,
+				cursor: None,
+				limit: 10,
+			})
+			.await
+			.expect("search");
+
+		assert_eq!(hits.len(), 1);
+		assert_eq!(hits[0].project_id, "b");
 	}
 }
 

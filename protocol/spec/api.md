@@ -188,9 +188,16 @@ for everything else. Importing the same ID with different genesis bytes is a
 
 `POST /v1/projects/{id}/objects/{kind}` imports any signed object except a
 genesis or a feed entry. The server loads the project genesis, verifies the
-object against the root keys and threshold, and stores it. `{kind}` is one of
+object against the root keys and threshold, and stores it. A genesis fixes a
+closed set of authorized kinds, and an object whose kind is not in that set is
+rejected with `400` even when its signature is valid; a kind that is not listed
+cannot be published without a new project identity. `{kind}` is one of
 `delegation`, `release`, `profile`, `advisory`, `attestation`, `game-def`,
-`loader-def`, or `runtime-def`.
+`loader-def`, `runtime-def`, `modpack`, or `changelog`. A changelog is a signed
+object referenced by a release's `changelog_digest`; it carries locale-tagged
+sections with an optional severity each, and its text is indexed for search
+under the project the release names, so a phrase that only appears in release
+notes still finds the project.
 
 `POST /v1/projects/{id}/feed` appends a signed feed entry. The entry must be
 the next sequence, its `previous` must equal the current head digest, and the

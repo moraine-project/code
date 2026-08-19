@@ -189,6 +189,20 @@ cargo run -p moraine-publish -- advisory --key scanner.key --home http://127.0.0
   --digest sha256:<hex> --severity high --category malware --block
 ```
 
+A changelog is a signed object, not a string on the release. Write release
+notes in Markdown, sign them, then bind the digest from the release:
+
+```sh
+cargo run -p moraine-publish -- changelog --key publisher.key --home http://127.0.0.1:8080 \
+  --project <project-id> --file CHANGELOG.md
+cargo run -p moraine-publish -- release --key publisher.key --home http://127.0.0.1:8080 \
+  --project <project-id> --game <game-id> --game-version 1.20.1 --version 1.2.3 \
+  --file mod.jar --changelog sha256:<changelog-digest>
+```
+
+Each Markdown heading becomes a section with its body, and the whole text is
+indexed for search under the project.
+
 An advisory is attributed evidence, not a takedown: it is shown on the release
 page and in the advisories API, and it never changes the signed record. Only
 `malware` at `high` or `critical` may block promotion.
@@ -217,10 +231,13 @@ it reaches directories through sync like any other feed fact.
 
 `publish` and `submit` take `--kind` and default to `release-published`. The
 key is your project's root. Keep it safe: losing it means losing the project
-identity. `init` signs a fresh project, `upload` stores the artifact bytes at
-the home, `release` signs and stores a release object, `profile` signs and
-stores display metadata, and `publish` appends the feed entry that makes an
-object visible.
+identity. `init` signs a fresh project and authorizes the object kinds it may
+publish, `upload` stores the artifact bytes at the home, `release` signs and
+stores a release object, `profile` signs and stores display metadata,
+`changelog` signs release notes, and `publish` appends the feed entry that
+makes an object visible. A kind the genesis does not authorize is refused even
+when the signature is valid, so `init` grants `delegation`, `release`,
+`profile`, `changelog`, and `modpack`.
 
 To go through admission review instead of publishing directly, use `submit`
 with an API key that carries `submissions:write`:

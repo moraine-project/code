@@ -3,6 +3,7 @@ use std::path::Path;
 use moraine_crypto::ObjectKind;
 use moraine_model::advisory::{Advisory, Affected, Category, Severity, TAXONOMY_VERSION};
 use moraine_model::artifact::Artifact;
+use moraine_model::changelog::{Changelog, ChangelogSection, LocaleSection};
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
 use moraine_model::delegation::{Delegation, OwnerRef, OwnershipTransfer};
 use moraine_model::feed::FeedEntry;
@@ -30,7 +31,13 @@ pub async fn init(key_path: &Path, home_url: &str, home_hint: Option<String>) ->
 		nonce: random_nonce(),
 		roots: vec![RootKey::from_public_key(key.verifying_key().to_bytes().to_vec()).map_err(|error| error.to_string())?],
 		threshold: 1,
-		authorized_kinds: vec!["delegation".to_string(), "release".to_string(), "profile".to_string()],
+		authorized_kinds: vec![
+			"delegation".to_string(),
+			"release".to_string(),
+			"profile".to_string(),
+			"changelog".to_string(),
+			"modpack".to_string(),
+		],
 		home_hint: home_hint.or_else(|| Some(home_url.to_string())),
 		contacts: None,
 		created_at: now(),
@@ -54,12 +61,16 @@ pub async fn release(
 	channel: &str,
 	file: &Path,
 	loader_id: Option<String>,
+	changelog: Option<String>,
 ) -> Result<(), String> {
 	if game_versions.is_empty() {
 		return Err("at least one --game-version is required".to_string());
 	}
 	let key = keyfile::load(key_path)?;
 	let artifact_file = artifacts::describe(file)?;
+	let changelog_digest = changelog
+		.map(|digest| parse_sha256(&digest).map(|bytes| bytes.to_vec()))
+		.transpose()?;
 	let release = ReleasePayload {
 		protocol: 1,
 		project_id: project_id.to_string(),
@@ -89,7 +100,7 @@ pub async fn release(
 		}],
 		dependencies: Vec::new(),
 		source_reference: None,
-		changelog_digest: None,
+		changelog_digest,
 		license_expression: None,
 		rights: None,
 		sbom_digest: None,
@@ -144,6 +155,77 @@ pub async fn profile(
 	println!("profile: {}", receipt["id"].as_str().unwrap_or("?"));
 	println!("next: publish or submit it with --object <profile-id> --kind profile-updated");
 	Ok(())
+}
+
+pub async fn changelog(
+	key_path: &Path,
+	home_url: &str,
+	project_id: &str,
+	release_id: Option<String>,
+	locale: &str,
+	notes: &Path,
+) -> Result<(), String> {
+	let key = keyfile::load(key_path)?;
+	let body = std::fs::read_to_string(notes).map_err(|error| format!("{}: {error}", notes.display()))?;
+	let changelog = Changelog {
+		protocol: 1,
+		project_id: project_id.to_string(),
+		release_id,
+		locale_sections: vec![LocaleSection {
+			locale: locale.to_string(),
+			sections: markdown_sections(&body),
+		}],
+		declared_time: now(),
+	};
+	let signed = sign_payload(ObjectKind::Changelog, &changelog, &[&key]);
+	let home = Home::new(home_url)?;
+	let receipt = home
+		.post_wire(&format!("/v1/projects/{project_id}/objects/changelog"), signed.wire_bytes())
+		.await?;
+	println!("changelog: {}", receipt["id"].as_str().unwrap_or("?"));
+	println!("reference it from a release with --changelog <digest>");
+	Ok(())
+}
+
+fn markdown_sections(body: &str) -> Vec<ChangelogSection> {
+	let mut sections: Vec<ChangelogSection> = Vec::new();
+	for line in body.lines() {
+		if let Some(heading) = line.trim().strip_prefix('#') {
+			let heading = heading.trim_start_matches('#').trim();
+			if !heading.is_empty() {
+				sections.push(ChangelogSection {
+					heading: heading.to_string(),
+					body: String::new(),
+					severity: None,
+				});
+				continue;
+			}
+		}
+		match sections.last_mut() {
+			Some(section) => {
+				if !section.body.is_empty() {
+					section.body.push('\n');
+				}
+				section.body.push_str(line);
+			}
+			None => sections.push(ChangelogSection {
+				heading: "Notes".to_string(),
+				body: line.to_string(),
+				severity: None,
+			}),
+		}
+	}
+	for section in &mut sections {
+		section.body = section.body.trim().to_string();
+	}
+	if sections.is_empty() {
+		sections.push(ChangelogSection {
+			heading: "Notes".to_string(),
+			body: String::new(),
+			severity: None,
+		});
+	}
+	sections
 }
 
 pub fn plan(adapter: &str, mods: &[String], overrides: &[String]) -> Result<(), String> {
@@ -446,5 +528,23 @@ mod tests {
 		let id = format!("gd:sha256:{}", hex::encode(digest));
 		assert_eq!(parse_object_id(&id).expect("parses"), digest);
 		assert!(parse_object_id("not-an-id").is_err());
+	}
+
+	#[test]
+	fn splits_markdown_into_one_section_per_heading() {
+		let sections = markdown_sections("# Fixes\ncrash on launch\n\n## Changes\nnew map\n");
+		assert_eq!(sections.len(), 2);
+		assert_eq!(sections[0].heading, "Fixes");
+		assert_eq!(sections[0].body, "crash on launch");
+		assert_eq!(sections[1].heading, "Changes");
+		assert_eq!(sections[1].body, "new map");
+	}
+
+	#[test]
+	fn keeps_notes_without_a_heading_under_a_default_section() {
+		let sections = markdown_sections("just prose");
+		assert_eq!(sections.len(), 1);
+		assert_eq!(sections[0].heading, "Notes");
+		assert_eq!(sections[0].body, "just prose");
 	}
 }
