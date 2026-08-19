@@ -134,7 +134,12 @@ blob addresses.
 `POST /v1/blobs` streams the request body into private staging, computes the
 digest as it goes, and refuses anything over the advertised artifact limit with
 `413`. It requires the `artifacts:write` scope, so an unauthenticated caller
-cannot fill the store; a session grants it, and an API key needs it explicitly. On success it commits the object and returns `201`, a `Location` header
+cannot fill the store; a session grants it, and an API key needs it explicitly.
+Each account also has a total stored-bytes quota, five GiB by default and set
+with `MORAINE_MAX_UPLOAD_BYTES_PER_ACCOUNT`, advertised in the capability
+document. An upload that would cross it is refused with `403` before the body
+is read; the quota is charged once the bytes commit and released when an
+unreferenced blob is collected. On success it commits the object and returns `201`, a `Location` header
 of `/v1/blobs/sha256/<hex>`, and a receipt `{ "digest": "sha256:<hex>", "size":
 N }`. Committing the same bytes again is a no-op because the address is the
 digest.

@@ -124,12 +124,30 @@ async fn blob_upload(State(state): State<AppState>, user: AuthenticatedUser, bod
 	if !user.allows("artifacts:write") {
 		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
 	}
+	let used = match state.metadata.upload_bytes_for(&user.user_id).await {
+		Ok(used) => used,
+		Err(error) => {
+			tracing::error!(%error, "upload quota lookup failed");
+			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
+		}
+	};
+	let remaining = state
+		.capability
+		.max_upload_bytes_per_account
+		.saturating_sub(used.max(0) as u64);
+	if remaining == 0 {
+		return (StatusCode::FORBIDDEN, "the account has reached its upload quota").into_response();
+	}
+	let limit = state.capability.max_artifact_bytes.min(remaining);
 	let stream = body
 		.into_data_stream()
 		.map_err(|error| std::io::Error::other(error.to_string()));
 	let reader = StreamReader::new(stream);
-	let staged = match state.store.put_staged(reader, state.capability.max_artifact_bytes).await {
+	let staged = match state.store.put_staged(reader, limit).await {
 		Ok(staged) => staged,
+		Err(BlobError::TooLarge { .. }) if limit < state.capability.max_artifact_bytes => {
+			return (StatusCode::FORBIDDEN, "the account has reached its upload quota").into_response();
+		}
 		Err(BlobError::TooLarge { limit }) => {
 			return (StatusCode::PAYLOAD_TOO_LARGE, format!("artifact exceeds {limit} bytes")).into_response();
 		}
@@ -146,6 +164,14 @@ async fn blob_upload(State(state): State<AppState>, user: AuthenticatedUser, bod
 			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
 		}
 	};
+	if let Err(error) = state
+		.metadata
+		.record_upload(&digest, &user.user_id, size as i64, crate::auth::now())
+		.await
+	{
+		tracing::error!(%error, "upload record failed");
+		return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
+	}
 	let hex_digest = hex::encode(digest);
 	let mut response = (
 		StatusCode::CREATED,
@@ -315,7 +341,17 @@ mod tests {
 		test_app_with(None).await
 	}
 
-	async fn test_app_with(web_dir: Option<std::path::PathBuf>) -> (Router, tempfile::TempDir) {
+	async fn test_app_with_quota(quota: u64) -> (Router, tempfile::TempDir) {
+		let (mut state, directory) = test_state(None).await;
+		let capability = crate::capability::Capability {
+			max_upload_bytes_per_account: quota,
+			..state.capability.as_ref().clone()
+		};
+		state.capability = Arc::new(capability);
+		(router(state), directory)
+	}
+
+	async fn test_state(web_dir: Option<std::path::PathBuf>) -> (AppState, tempfile::TempDir) {
 		let directory = tempfile::tempdir().expect("tempdir");
 		let store = Arc::new(BlobStore::new(directory.path()).await.expect("store"));
 		let metadata = Arc::new(
@@ -327,6 +363,7 @@ mod tests {
 			bind: "127.0.0.1:0".parse().expect("addr"),
 			data_dir: directory.path().to_path_buf(),
 			max_artifact_bytes: 1024,
+			max_upload_bytes_per_account: 5_368_709_120,
 			max_feed_page_entries: 100,
 			max_response_bytes: 16_777_216,
 			staging_retention_seconds: 3_600,
@@ -352,6 +389,11 @@ mod tests {
 			rate_limiter: std::sync::Arc::new(crate::auth::ratelimit::RateLimiter::new()),
 			web_dir: web_dir.map(Arc::new),
 		};
+		(state, directory)
+	}
+
+	async fn test_app_with(web_dir: Option<std::path::PathBuf>) -> (Router, tempfile::TempDir) {
+		let (state, directory) = test_state(web_dir).await;
 		(router(state), directory)
 	}
 
@@ -418,6 +460,24 @@ mod tests {
 		assert_eq!(response.status(), StatusCode::OK);
 		let body = response.into_body().collect().await.expect("collect").to_bytes();
 		assert_eq!(body.as_ref(), b"artifact");
+	}
+
+	#[tokio::test]
+	async fn refuses_an_upload_past_the_account_quota() {
+		let (app, _directory) = test_app_with_quota(10).await;
+		let token = crate::test_support::upload_token(&app, "quota@example.org").await;
+		let upload = |body: &'static str| {
+			axum::http::Request::post("/v1/blobs")
+				.header(header::AUTHORIZATION, format!("Bearer {token}"))
+				.body(Body::from(body))
+				.expect("request")
+		};
+
+		let response = app.clone().oneshot(upload("0123456789")).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+
+		let response = app.oneshot(upload("abcdefghij")).await.expect("response");
+		assert_eq!(response.status(), StatusCode::FORBIDDEN);
 	}
 
 	#[tokio::test]

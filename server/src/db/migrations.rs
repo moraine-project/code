@@ -37,6 +37,11 @@ const MIGRATIONS: &[Migration] = &[
 		sqlite: include_str!("../../migrations/sqlite/0003_mirror_confirmations.sql"),
 		postgres: include_str!("../../migrations/postgres/0003_mirror_confirmations.sql"),
 	},
+	Migration {
+		name: "0004_blob_uploads",
+		sqlite: include_str!("../../migrations/sqlite/0004_blob_uploads.sql"),
+		postgres: include_str!("../../migrations/postgres/0004_blob_uploads.sql"),
+	},
 ];
 
 pub(super) async fn run_migrations(pool: &AnyPool, engine: Engine) -> Result<usize, sqlx::Error> {

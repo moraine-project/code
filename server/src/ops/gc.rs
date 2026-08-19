@@ -38,6 +38,11 @@ pub async fn collect(
 			.remove_committed(&digest)
 			.await
 			.map_err(|error| error.to_string())?;
+		state
+			.metadata
+			.forget_upload(&digest)
+			.await
+			.map_err(|error| error.to_string())?;
 		blobs += 1;
 	}
 	Ok(Collected { staging, blobs })
@@ -62,6 +67,7 @@ mod tests {
 			bind: "127.0.0.1:0".parse().expect("addr"),
 			data_dir: directory.to_path_buf(),
 			max_artifact_bytes: 1024,
+			max_upload_bytes_per_account: 5_368_709_120,
 			max_feed_page_entries: 100,
 			max_response_bytes: 16_777_216,
 			staging_retention_seconds: 3_600,
@@ -112,11 +118,15 @@ mod tests {
 			.await
 			.expect("index");
 
+		state.metadata.record_upload(&orphan, "author", 6, 0).await.expect("upload");
+		assert_eq!(state.metadata.upload_bytes_for("author").await.expect("bytes"), 6);
+
 		let collected = collect(&state, 3_600, 86_400).await.expect("collect");
 
 		assert_eq!(collected.blobs, 1);
 		assert!(state.store.size(&orphan).await.expect("size").is_none());
 		assert!(state.store.size(&referenced).await.expect("size").is_some());
+		assert_eq!(state.metadata.upload_bytes_for("author").await.expect("bytes"), 0);
 	}
 
 	#[tokio::test]

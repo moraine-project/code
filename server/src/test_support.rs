@@ -361,6 +361,7 @@ pub(crate) async fn app_in_with_scan(
 		bind: "127.0.0.1:0".parse().expect("addr"),
 		data_dir: directory.to_path_buf(),
 		max_artifact_bytes: 1024,
+		max_upload_bytes_per_account: 5_368_709_120,
 		max_feed_page_entries,
 		max_feed_scan_pages,
 		skip_migrate_on_start: false,

@@ -61,6 +61,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_MAX_ARTIFACT_BYTES", default_value_t = 536_870_912)]
 	pub max_artifact_bytes: u64,
 
+	#[arg(long, env = "MORAINE_MAX_UPLOAD_BYTES_PER_ACCOUNT", default_value_t = 5_368_709_120)]
+	pub max_upload_bytes_per_account: u64,
+
 	#[arg(long, env = "MORAINE_MAX_FEED_PAGE_ENTRIES", default_value_t = 100)]
 	pub max_feed_page_entries: u32,
 
@@ -139,6 +142,7 @@ mod tests {
 			bind: "127.0.0.1:0".parse().expect("addr"),
 			data_dir: std::path::PathBuf::from("/tmp/moraine"),
 			max_artifact_bytes: 1024,
+			max_upload_bytes_per_account: 5_368_709_120,
 			max_feed_page_entries: 100,
 			max_feed_scan_pages: 50,
 			skip_migrate_on_start: false,

@@ -69,6 +69,7 @@ mod tests {
 			bind: "127.0.0.1:0".parse().expect("addr"),
 			data_dir: directory.to_path_buf(),
 			max_artifact_bytes: 1024,
+			max_upload_bytes_per_account: 5_368_709_120,
 			max_feed_page_entries: 100,
 			max_response_bytes: 16_777_216,
 			staging_retention_seconds: 3_600,

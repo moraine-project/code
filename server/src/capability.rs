@@ -7,6 +7,7 @@ use crate::config::Config;
 pub struct Capability {
 	pub protocol_versions: Vec<u32>,
 	pub max_artifact_bytes: u64,
+	pub max_upload_bytes_per_account: u64,
 	pub max_feed_page_entries: u32,
 	pub max_feed_scan_pages: u32,
 	pub max_response_bytes: u64,
@@ -38,6 +39,7 @@ impl Capability {
 		Self {
 			protocol_versions: vec![1],
 			max_artifact_bytes: config.max_artifact_bytes,
+			max_upload_bytes_per_account: config.max_upload_bytes_per_account,
 			max_feed_page_entries: config.max_feed_page_entries,
 			max_feed_scan_pages: config.max_feed_scan_pages,
 			max_response_bytes: config.max_response_bytes,

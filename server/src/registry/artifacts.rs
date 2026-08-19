@@ -22,6 +22,38 @@ impl MetadataStore {
 		Ok(())
 	}
 
+	pub async fn record_upload(&self, digest: &[u8], user_id: &str, size: i64, created_at: i64) -> Result<(), sqlx::Error> {
+		sqlx::query(
+			"INSERT INTO blob_uploads (artifact_digest, user_id, size, created_at) VALUES ($1, $2, $3, $4)
+			 ON CONFLICT (artifact_digest) DO NOTHING",
+		)
+		.bind(digest)
+		.bind(user_id)
+		.bind(size)
+		.bind(created_at)
+		.execute(&self.pool)
+		.await?;
+		Ok(())
+	}
+
+	pub async fn upload_bytes_for(&self, user_id: &str) -> Result<i64, sqlx::Error> {
+		let total = sqlx::query_scalar::<_, i64>(
+			"SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) FROM blob_uploads WHERE user_id = $1",
+		)
+		.bind(user_id)
+		.fetch_one(&self.pool)
+		.await?;
+		Ok(total)
+	}
+
+	pub async fn forget_upload(&self, digest: &[u8]) -> Result<(), sqlx::Error> {
+		sqlx::query("DELETE FROM blob_uploads WHERE artifact_digest = $1")
+			.bind(digest)
+			.execute(&self.pool)
+			.await?;
+		Ok(())
+	}
+
 	pub async fn blob_is_referenced(&self, digest: &[u8]) -> Result<bool, sqlx::Error> {
 		let referenced = sqlx::query_scalar::<_, i64>(
 			"SELECT COUNT(*) FROM (
