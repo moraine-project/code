@@ -152,6 +152,10 @@ pub fn routes() -> Router<AppState> {
 			"/v1/orgs/{handle}/teams",
 			get(super::teams::list_teams).post(super::teams::create_team),
 		)
+		.route(
+			"/v1/orgs/{handle}/teams/{team_id}",
+			axum::routing::patch(super::teams::reparent_team),
+		)
 }
 
 #[derive(Deserialize)]
@@ -633,7 +637,32 @@ mod tests {
 			&owner_cookie,
 			serde_json::json!({ "display_name": "Reviewers", "parent_team_id": parent_id }),
 		);
-		let response = application.oneshot(child).await.expect("response");
+		let response = application.clone().oneshot(child).await.expect("response");
 		assert_eq!(response.status(), StatusCode::CREATED);
+		let child_id = body_json(response).await["id"].as_str().expect("team id").to_string();
+
+		let reparent = axum::http::Request::builder()
+			.method(Method::PATCH)
+			.uri(format!("/v1/orgs/team-org/teams/{parent_id}"))
+			.header(header::CONTENT_TYPE, "application/json")
+			.header(header::COOKIE, &owner_cookie)
+			.header("x-csrf-token", csrf_of(&owner_cookie))
+			.body(Body::from(serde_json::json!({ "parent_team_id": null }).to_string()))
+			.expect("request");
+		let response = application.clone().oneshot(reparent).await.expect("response");
+		assert_eq!(response.status(), StatusCode::OK);
+		let view = body_json(response).await;
+		assert!(view["parent_team_id"].is_null());
+
+		let cycle = axum::http::Request::builder()
+			.method(Method::PATCH)
+			.uri(format!("/v1/orgs/team-org/teams/{parent_id}"))
+			.header(header::CONTENT_TYPE, "application/json")
+			.header(header::COOKIE, &owner_cookie)
+			.header("x-csrf-token", csrf_of(&owner_cookie))
+			.body(Body::from(serde_json::json!({ "parent_team_id": child_id }).to_string()))
+			.expect("request");
+		let response = application.oneshot(cycle).await.expect("response");
+		assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 	}
 }

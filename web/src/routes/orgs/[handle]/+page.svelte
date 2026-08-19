@@ -7,6 +7,7 @@
 		orgDetail,
 		orgMembers,
 		removeOrgMember,
+		reparentOrgTeam,
 		type OrgDetail,
 		type OrgMember,
 		type OrgTeam,
@@ -24,12 +25,15 @@
 	let memberRole = $state('member');
 	let teamName = $state('');
 	let parentTeamId = $state('');
+	let moving = $state<string | null>(null);
+	let moveTarget = $state('');
 	let busy = $state(false);
 
 	const canManage = $derived(role === 'owner' || role === 'admin');
 	const rootTeams = $derived(detail?.teams.filter((team) => !team.parent_team_id) ?? []);
 	const childrenOf = (parentId: string) =>
 		detail?.teams.filter((team) => team.parent_team_id === parentId) ?? [];
+	const movableTeams = $derived(detail?.teams ?? []);
 
 	onMount(load);
 
@@ -63,6 +67,19 @@
 			error = cause instanceof Error ? cause.message : 'could not add the member';
 		} finally {
 			busy = false;
+		}
+	}
+
+	async function moveTeam(team: OrgTeam) {
+		moving = team.id;
+		try {
+			await reparentOrgTeam(params.handle, team.id, moveTarget || null);
+			moveTarget = '';
+			await load();
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not move the team';
+		} finally {
+			moving = null;
 		}
 	}
 
@@ -190,6 +207,24 @@
 					{#snippet teamNode(team: OrgTeam, depth: number)}
 						<li style={`margin-inline-start: ${depth}rem`}>
 							<span class="badge badge-outline">{team.display_name}</span>
+							{#if canManage}
+								{#if moving === team.id}
+									<select class="select select-bordered select-xs" bind:value={moveTarget}>
+										<option value="">top level</option>
+										{#each movableTeams.filter((candidate) => candidate.id !== team.id) as candidate (candidate.id)}
+											<option value={candidate.id}>{candidate.display_name}</option>
+										{/each}
+									</select>
+									<button class="btn btn-xs" onclick={() => moveTeam(team)}>Move</button>
+									<button class="btn btn-xs btn-ghost" onclick={() => (moving = null)}
+										>Cancel</button
+									>
+								{:else}
+									<button class="btn btn-xs btn-ghost" onclick={() => (moving = team.id)}
+										>Move</button
+									>
+								{/if}
+							{/if}
 							{#if childrenOf(team.id).length > 0}
 								<ul class="mt-2 flex flex-wrap gap-2">
 									{#each childrenOf(team.id) as child (child.id)}

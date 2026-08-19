@@ -114,3 +114,22 @@ export async function createOrgTeam(
 	}
 	return orgTeamSchema.parse(await response.json());
 }
+
+export async function reparentOrgTeam(
+	handle: string,
+	teamId: string,
+	parentTeamId: string | null,
+): Promise<OrgTeam> {
+	const response = await authorizedFetch(
+		`/v1/orgs/${encodeURIComponent(handle)}/teams/${encodeURIComponent(teamId)}`,
+		{
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ parent_team_id: parentTeamId }),
+		},
+	);
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+	return orgTeamSchema.parse(await response.json());
+}

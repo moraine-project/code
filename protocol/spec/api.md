@@ -474,6 +474,9 @@ validated and unique per instance, and the creator becomes its first `owner`.
 - `DELETE /v1/orgs/{handle}/members/{user_id}` removes a member.
 - `GET`/`POST /v1/orgs/{handle}/teams` list and create teams; a team's optional
   parent must belong to the same org, so nesting stays inside one organization.
+- `PATCH /v1/orgs/{handle}/teams/{team_id}` moves a team under a new parent, or
+  to the top level with a null parent. A move that would point a team at itself
+  or at one of its own descendants is refused, so the hierarchy stays a tree.
 
 Roles are `owner`, `admin`, and `member`. Owners and admins manage membership
 and teams, only an owner may grant `owner`, and an org must always keep at
