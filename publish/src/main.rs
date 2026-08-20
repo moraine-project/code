@@ -1,5 +1,6 @@
 mod artifacts;
 mod commands;
+mod definitions;
 mod home;
 mod keyfile;
 
@@ -67,6 +68,45 @@ enum Command {
 		locale: String,
 		#[arg(long)]
 		file: PathBuf,
+	},
+
+	DefineGame {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		name: String,
+		#[arg(long, default_value = "semver")]
+		version_ordering: String,
+		#[arg(long, default_value_t = true)]
+		loaders_allowed: bool,
+		#[arg(long, default_value = "definitions")]
+		out: PathBuf,
+	},
+
+	DefineLoader {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		game: String,
+		#[arg(long)]
+		name: String,
+		#[arg(long, default_value = "semver")]
+		version_ordering: String,
+		#[arg(long, default_value = "definitions")]
+		out: PathBuf,
+	},
+
+	DefineRuntime {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long, default_value = "java")]
+		kind: String,
+		#[arg(long)]
+		name: String,
+		#[arg(long, default_value = "semver")]
+		version_ordering: String,
+		#[arg(long, default_value = "definitions")]
+		out: PathBuf,
 	},
 
 	Provider {
@@ -250,6 +290,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			locale,
 			file,
 		} => commands::changelog(&key, &home, &project, release, &locale, &file).await,
+		Command::DefineGame {
+			key,
+			name,
+			version_ordering,
+			loaders_allowed,
+			out,
+		} => definitions::game(&key, &name, &version_ordering, loaders_allowed, &out),
+		Command::DefineLoader {
+			key,
+			game,
+			name,
+			version_ordering,
+			out,
+		} => definitions::loader(&key, &game, &name, &version_ordering, &out),
+		Command::DefineRuntime {
+			key,
+			kind,
+			name,
+			version_ordering,
+			out,
+		} => definitions::runtime(&key, &kind, &name, &version_ordering, &out),
 		Command::Provider { key, home, id, api_key } => commands::provider(&key, &home, &id, api_key).await,
 		Command::Advisory {
 			key,

@@ -229,6 +229,27 @@ cargo run -p moraine-publish -- publish --key old-owner.key --home http://127.0.
 The transfer object only becomes effective when its feed entry is accepted, so
 it reaches directories through sync like any other feed fact.
 
+A game, loader, or runtime is its own signed identity, and the server reads
+them from a `definitions` directory beside the data directory at startup. Sign
+one with a key of your own; the identity is the genesis, so its ID is derived
+rather than chosen:
+
+```sh
+cargo run -p moraine-publish -- keygen --key game.key
+cargo run -p moraine-publish -- define-game --key game.key --name "Minecraft" \
+  --version-ordering semver --out data/definitions
+cargo run -p moraine-publish -- define-loader --key loader.key --game <game-id> \
+  --name "Fabric" --out data/definitions
+cargo run -p moraine-publish -- define-runtime --key runtime.key --kind java \
+  --name "Java" --out data/definitions
+```
+
+Each command writes a `<id>.genesis` and a `<id>.definition` file, which is
+exactly what the definitions directory loads; drop them in and restart, or
+`POST` the bytes to `/v1/games`, `/v1/loaders`, or `/v1/runtimes` and then to
+the matching `/definitions` route. A loader names the game it targets, so
+publish the game first.
+
 `publish` and `submit` take `--kind` and default to `release-published`. The
 key is your project's root. Keep it safe: losing it means losing the project
 identity. `init` signs a fresh project and authorizes the object kinds it may
