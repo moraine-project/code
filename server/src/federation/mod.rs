@@ -541,6 +541,15 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 				let object = verify::verify_object_authorized(kind, &wire, &root, &delegations, now())
 					.map_err(|error| FederationError::Verify(error.to_string()))?;
 				registry::store_object_record(state, &object).await.map_err(storage)?;
+				if kind == ObjectKind::Release
+					&& let Some(digest) = release_changelog_digest(&object.payload_bytes)
+				{
+					let wire = client.get_bytes(&format!("/v1/objects/{}", hex::encode(digest))).await?;
+					let changelog =
+						verify::verify_object_authorized(ObjectKind::Changelog, &wire, &root, &delegations, now())
+							.map_err(|error| FederationError::Verify(error.to_string()))?;
+					registry::store_object_record(state, &changelog).await.map_err(storage)?;
+				}
 			}
 			let entry_wire = client.get_bytes(&format!("/v1/objects/{}", hex_of(&entry.entry)?)).await?;
 			registry::ingest_feed(state, project_id, &entry_wire)
@@ -573,6 +582,15 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 		applied,
 		head_seq,
 	})
+}
+
+fn release_changelog_digest(payload: &[u8]) -> Option<Vec<u8>> {
+	let moraine_model::release::ReleaseObject::Release(release) =
+		moraine_model::release::ReleaseObject::from_canonical_bytes(payload).ok()?
+	else {
+		return None;
+	};
+	release.changelog_digest
 }
 
 fn object_kind_for_event(event: &str) -> Option<ObjectKind> {

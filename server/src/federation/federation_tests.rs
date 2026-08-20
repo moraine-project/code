@@ -1,5 +1,7 @@
 use axum::body::Body;
 use axum::http::{StatusCode, header};
+use moraine_crypto::{ObjectKind as Kind, object_id};
+use moraine_model::signed::sign_payload;
 use tokio::net::TcpListener;
 use tower::ServiceExt;
 
@@ -86,6 +88,101 @@ fn urlencoding_home(address: &std::net::SocketAddr) -> String {
 	format!("http://127.0.0.1:{}", address.port())
 		.replace(':', "%3A")
 		.replace('/', "%2F")
+}
+
+#[tokio::test]
+async fn federation_follows_a_changelog_referenced_by_a_release() {
+	use moraine_model::changelog::{Changelog, ChangelogSection, LocaleSection};
+
+	let home_signer = key(22);
+	let (home, _home_directory) = app_with_limit(crate::config::Publishing::Open, false, 1).await;
+	let project = axum::http::Request::post("/v1/projects")
+		.body(Body::from(genesis_wire(
+			&home_signer,
+			&["delegation", "release", "profile", "changelog"],
+		)))
+		.expect("request");
+	let response = home.clone().oneshot(project).await.expect("response");
+	let project_id = body_json(response).await["project_id"]
+		.as_str()
+		.expect("project id")
+		.to_string();
+
+	let changelog = Changelog {
+		protocol: 1,
+		project_id: project_id.clone(),
+		release_id: None,
+		locale_sections: vec![LocaleSection {
+			locale: "en".to_string(),
+			sections: vec![ChangelogSection {
+				heading: "Fixes".to_string(),
+				body: "Removed the kraken crash".to_string(),
+				severity: None,
+			}],
+		}],
+		declared_time: 1_760_000_000,
+	};
+	let signed_changelog = sign_payload(Kind::Changelog, &changelog, &[&home_signer]);
+	let changelog_digest = object_id(Kind::Changelog, &signed_changelog.payload_bytes);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/changelog"))
+		.body(Body::from(signed_changelog.wire_bytes()))
+		.expect("request");
+	assert_eq!(
+		home.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let (release, release_digest) = release_wire_with_changelog(&home_signer, &project_id, 0x52, "1.0.0", changelog_digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+		.body(Body::from(release))
+		.expect("request");
+	assert_eq!(
+		home.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+	let feed = feed_wire(&home_signer, &project_id, 1, None, release_digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(feed))
+		.expect("request");
+	assert_eq!(
+		home.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+	let address = listener.local_addr().expect("addr");
+	let serving = home.clone();
+	tokio::spawn(async move {
+		let _ = axum::serve(listener, serving).await;
+	});
+
+	let (directory, _directory_dir) = app_mode(crate::config::Publishing::Review, true).await;
+	let (session, csrf) = login(&directory, "ops@example.org").await;
+	let sync = axum::http::Request::post("/v1/federation/sync")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.header("x-csrf-token", csrf.clone())
+		.body(Body::from(
+			serde_json::json!({
+				"home_url": format!("http://127.0.0.1:{}", address.port()),
+				"project_id": project_id,
+			})
+			.to_string(),
+		))
+		.expect("request");
+	let response = directory.clone().oneshot(sync).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+
+	let changelog_request = axum::http::Request::get(format!(
+		"/v1/projects/{project_id}/changelog/{}",
+		hex::encode(changelog_digest)
+	))
+	.body(Body::empty())
+	.expect("request");
+	let response = directory.oneshot(changelog_request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let view = body_json(response).await;
+	assert_eq!(view["locale_sections"][0]["sections"][0]["heading"], "Fixes");
 }
 
 #[tokio::test]

@@ -210,6 +210,33 @@
 			</section>
 		{/if}
 
+		{#if data.changelog}
+			<section class="card card-border">
+				<div class="card-body">
+					<h2 class="card-title">Release notes</h2>
+					{#each data.changelog.locale_sections as locale (locale.locale)}
+						<div class="flex flex-col gap-3">
+							{#each locale.sections as section, index (index)}
+								<div>
+									<div class="flex flex-wrap items-center gap-2">
+										<h3 class="font-semibold">{section.heading}</h3>
+										{#if section.severity}
+											<span class="badge badge-outline">{section.severity}</span>
+										{/if}
+									</div>
+									<p class="whitespace-pre-wrap text-sm">{section.body}</p>
+								</div>
+							{/each}
+						</div>
+					{/each}
+					<p class="text-base-content/60 text-sm">
+						Signed notes, referenced by digest from the release. A directory renders them; it cannot
+						change them.
+					</p>
+				</div>
+			</section>
+		{/if}
+
 		{#if data.release.rights}
 			<section class="card card-border">
 				<div class="card-body">

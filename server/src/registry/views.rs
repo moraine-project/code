@@ -19,6 +19,7 @@ pub fn routes() -> Router<AppState> {
 	Router::new()
 		.route("/v1/projects/{id}/profile", get(project_profile))
 		.route("/v1/projects/{id}/releases/{hex}", get(release_view))
+		.route("/v1/projects/{id}/changelog/{hex}", get(changelog_view))
 		.route("/v1/lookup", get(lookup))
 		.route("/v1/objects/{hex}", get(object_bytes).head(object_head))
 		.route("/v1/packs/{hex}", get(pack_view))
@@ -218,6 +219,7 @@ struct ReleaseView {
 	rights: Option<RightsView>,
 	withdrawal: Option<WithdrawalView>,
 	advisories: Vec<crate::registry::advisories::AdvisoryView>,
+	changelog: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -344,6 +346,71 @@ async fn release_view(State(state): State<AppState>, Path((id, hex_digest)): Pat
 			declared_time: withdrawal.declared_time,
 		}),
 		advisories,
+		changelog: release.changelog_digest.map(|digest| id_for(&digest)),
+	};
+	Json(view).into_response()
+}
+
+#[derive(Serialize)]
+struct ChangelogView {
+	project_id: String,
+	release: Option<String>,
+	locale_sections: Vec<LocaleSectionsView>,
+	declared_time: i64,
+}
+
+#[derive(Serialize)]
+struct LocaleSectionsView {
+	locale: String,
+	sections: Vec<SectionView>,
+}
+
+#[derive(Serialize)]
+struct SectionView {
+	heading: String,
+	body: String,
+	severity: Option<String>,
+}
+
+async fn changelog_view(State(state): State<AppState>, Path((id, hex_digest)): Path<(String, String)>) -> Response {
+	use moraine_model::changelog::Changelog;
+
+	let Some(digest) = parse_hex_digest(&hex_digest) else {
+		return (StatusCode::BAD_REQUEST, "invalid digest").into_response();
+	};
+	let Some(object) = (match state.metadata.object(&digest).await {
+		Ok(object) => object,
+		Err(error) => return storage_error(error),
+	}) else {
+		return (StatusCode::NOT_FOUND, "no such changelog").into_response();
+	};
+	let changelog = match Changelog::from_canonical_bytes(&object.payload) {
+		Ok(changelog) => changelog,
+		Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "stored changelog does not decode").into_response(),
+	};
+	if changelog.project_id != id {
+		return (StatusCode::NOT_FOUND, "changelog does not belong to this project").into_response();
+	}
+	let view = ChangelogView {
+		project_id: changelog.project_id,
+		release: changelog.release_id,
+		locale_sections: changelog
+			.locale_sections
+			.into_iter()
+			.map(|locale| LocaleSectionsView {
+				locale: locale.locale,
+				sections: locale
+					.sections
+					.into_iter()
+					.map(|section| SectionView {
+						heading: section.heading,
+						body: section.body,
+						severity: section.severity,
+					})
+					.collect(),
+			})
+			.collect(),
+		declared_time: changelog.declared_time,
 	};
 	Json(view).into_response()
 }

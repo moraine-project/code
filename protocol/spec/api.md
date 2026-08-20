@@ -267,6 +267,12 @@ verifies must fetch the object document instead.
   rights. The digest is the release object's identity digest. A `withdrawal`
   field appears once a `release-withdrawn` feed entry accepts a signed
   withdrawal for that release; the release record and its digest never change.
+  When the release binds a changelog, a `changelog` field carries that object's
+  identity digest.
+- `GET /v1/projects/{id}/changelog/{hex}` returns a changelog's locale-tagged
+  sections, each with a heading, body, and optional severity. The digest is the
+  changelog object's identity digest. It is `404` unless the object was stored
+  under this project, so a digest from another project cannot be read here.
 
 A withdrawal is a signed statement published as a stored object and made
 effective by a feed entry, exactly like an ownership transfer. Its reason is
@@ -408,7 +414,10 @@ from a home that quietly rewound.
 The event kind maps to an object kind (`release-published` to a release,
 `profile-updated` to a profile, `key-changed`/`migration`/`recovery` to a
 delegation, `advisory` to an advisory), and an entry whose object kind is
-unknown is skipped rather than guessed.
+unknown is skipped rather than guessed. A release that binds a changelog is
+followed by one extra fetch for that object, so a follower can render release
+notes instead of holding a digest it cannot resolve; a home that omits the
+changelog fails that sync rather than storing a dangling reference.
 
 Sync is idempotent: re-running it re-fetches nothing past the cursor and
 re-verifies everything it does fetch. The cursor advances after each page's

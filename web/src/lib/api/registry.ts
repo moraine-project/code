@@ -123,6 +123,25 @@ export const releaseSchema = z.object({
 	rights: rightsSchema.nullable().optional(),
 	withdrawal: withdrawalSchema.nullable().optional(),
 	advisories: z.array(advisorySchema).optional(),
+	changelog: z.string().nullable().optional(),
+});
+
+export const changelogSchema = z.object({
+	project_id: z.string(),
+	release: z.string().nullable().optional(),
+	locale_sections: z.array(
+		z.object({
+			locale: z.string(),
+			sections: z.array(
+				z.object({
+					heading: z.string(),
+					body: z.string(),
+					severity: z.string().nullable().optional(),
+				}),
+			),
+		}),
+	),
+	declared_time: z.number(),
 });
 
 export const searchResultSchema = z.object({
@@ -158,6 +177,7 @@ export type Profile = z.infer<typeof profileSchema>;
 export type DigestLookup = z.infer<typeof digestLookupSchema>;
 export type SearchResult = z.infer<typeof searchResultSchema>;
 export type Release = z.infer<typeof releaseSchema>;
+export type Changelog = z.infer<typeof changelogSchema>;
 export type Artifact = z.infer<typeof artifactSchema>;
 export type FeedEntry = z.infer<typeof feedEntrySchema>;
 export type FeedPage = z.infer<typeof feedPageSchema>;
@@ -313,6 +333,24 @@ export async function fetchRelease(
 		throw new Error(`home returned ${response.status} for the release`);
 	}
 	return releaseSchema.parse(await response.json());
+}
+
+export async function fetchChangelog(
+	base: string,
+	projectId: string,
+	digest: string,
+	fetchFn: Fetcher = fetch,
+): Promise<Changelog | null> {
+	const response = await fetchFn(
+		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/changelog/${digestHex(digest)}`,
+	);
+	if (response.status === 404) {
+		return null;
+	}
+	if (!response.ok) {
+		throw new Error(`home returned ${response.status} for the changelog`);
+	}
+	return changelogSchema.parse(await response.json());
 }
 
 export function blobUrl(base: string, digest: string): string {

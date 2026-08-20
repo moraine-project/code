@@ -401,6 +401,116 @@ async fn ranks_a_name_match_above_a_description_match() {
 }
 
 #[tokio::test]
+async fn serves_a_changelog_and_names_it_from_the_release() {
+	use moraine_model::changelog::{Changelog, ChangelogSection, LocaleSection};
+	use moraine_model::release::{ReleaseObject, ReleasePayload};
+
+	let (application, _directory) = app().await;
+	let signer = key(21);
+	let (project_id, _release) =
+		publish_project_with_kinds(&application, &signer, &["delegation", "release", "profile", "changelog"]).await;
+	let changelog = Changelog {
+		protocol: 1,
+		project_id: project_id.clone(),
+		release_id: None,
+		locale_sections: vec![LocaleSection {
+			locale: "en".to_string(),
+			sections: vec![ChangelogSection {
+				heading: "Fixes".to_string(),
+				body: "Removed the kraken crash".to_string(),
+				severity: Some("high".to_string()),
+			}],
+		}],
+		declared_time: 1_760_000_000,
+	};
+	let signed_changelog = sign_payload(Kind::Changelog, &changelog, &[&signer]);
+	let changelog_digest = object_id(Kind::Changelog, &signed_changelog.payload_bytes);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/changelog"))
+		.body(Body::from(signed_changelog.wire_bytes()))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let release = ReleasePayload {
+		protocol: 1,
+		project_id: project_id.clone(),
+		game_id: sample_id("minecraft"),
+		release_nonce: vec![0x41; 16],
+		human_version: "1.0.0".to_string(),
+		channel: "release".to_string(),
+		kind: "mod".to_string(),
+		declared_time: 1_760_000_000,
+		compatibility: vec![moraine_model::compatibility::Compatibility {
+			game_version_predicate: moraine_model::compatibility::Predicate::new(
+				moraine_model::compatibility::Scheme::Exact,
+				vec!["1.20.1".to_string()],
+			),
+			loader_id: None,
+			loader_version_predicate: None,
+			side: Side::Both,
+			runtime_predicate: None,
+			os_predicate: None,
+			arch_predicate: None,
+		}],
+		artifacts: vec![moraine_model::artifact::Artifact {
+			digest: vec![0xCD; 32],
+			size: 12,
+			media_type: "application/java-archive".to_string(),
+			filename: "example.jar".to_string(),
+			is_primary: true,
+			os_predicate: None,
+			arch_predicate: None,
+		}],
+		dependencies: Vec::new(),
+		source_reference: None,
+		changelog_digest: Some(changelog_digest.to_vec()),
+		license_expression: None,
+		rights: None,
+		sbom_digest: None,
+		minimum_verifier_version: 1,
+		critical_extensions: Vec::new(),
+	};
+	let signed_release = sign_payload(Kind::Release, &release, &[&signer]);
+	let decoded = ReleaseObject::from_canonical_bytes(&signed_release.payload_bytes).expect("decode");
+	let ReleaseObject::Release(decoded) = decoded else {
+		panic!("expected a release payload");
+	};
+	assert_eq!(decoded.changelog_digest.as_deref(), Some(changelog_digest.as_slice()));
+	let release_digest = object_id(Kind::Release, &signed_release.payload_bytes);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+		.body(Body::from(signed_release.wire_bytes()))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let view_request =
+		axum::http::Request::get(format!("/v1/projects/{project_id}/releases/{}", hex::encode(release_digest)))
+			.body(Body::empty())
+			.expect("request");
+	let response = application.clone().oneshot(view_request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let view = body_json(response).await;
+	assert_eq!(view["changelog"], format!("gd:sha256:{}", hex::encode(changelog_digest)));
+
+	let changelog_request = axum::http::Request::get(format!(
+		"/v1/projects/{project_id}/changelog/{}",
+		hex::encode(changelog_digest)
+	))
+	.body(Body::empty())
+	.expect("request");
+	let response = application.clone().oneshot(changelog_request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let view = body_json(response).await;
+	assert_eq!(view["locale_sections"][0]["locale"], "en");
+	assert_eq!(view["locale_sections"][0]["sections"][0]["heading"], "Fixes");
+	assert_eq!(view["locale_sections"][0]["sections"][0]["severity"], "high");
+}
+
+#[tokio::test]
 async fn finds_a_project_by_a_phrase_from_its_changelog() {
 	use moraine_model::changelog::{Changelog, ChangelogSection, LocaleSection};
 	use moraine_model::profile::ProfileRevision;
