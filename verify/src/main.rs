@@ -11,10 +11,12 @@ use moraine_crypto::{ObjectKind, object_id_string};
 use moraine_model::Canonical;
 use moraine_model::advisory::Advisory;
 use moraine_model::attestation::AttestationObject;
+use moraine_model::changelog::Changelog;
 use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
 use moraine_model::delegation::Delegation;
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::Genesis;
+use moraine_model::modpack::ModpackManifest;
 use moraine_model::profile::ProfileRevision;
 use moraine_model::release::ReleaseObject;
 use moraine_model::signed::{SignedObject, TrustedKey, verify_envelope};
@@ -180,7 +182,8 @@ fn verify_object(kind: &str, file: &PathBuf, roots: &[String], threshold: usize)
 		ObjectKind::GameDef => describe::<GameDef>(kind, &bytes)?,
 		ObjectKind::LoaderDef => describe::<LoaderObject>(kind, &bytes)?,
 		ObjectKind::RuntimeDef => describe::<RuntimeDef>(kind, &bytes)?,
-		other => return Err(format!("object kind `{}` is not implemented yet", other.as_str())),
+		ObjectKind::Modpack => describe::<ModpackManifest>(kind, &bytes)?,
+		ObjectKind::Changelog => describe::<Changelog>(kind, &bytes)?,
 	};
 	println!("id: {id}");
 	if trusted.is_empty() {
@@ -215,6 +218,67 @@ mod tests {
 		for case in &corpus.vectors {
 			crate::vector::check(case).unwrap_or_else(|error| panic!("{}: {error}", case.name));
 		}
+	}
+
+	#[test]
+	fn verifies_changelog_and_modpack_objects() {
+		use moraine_crypto::{ObjectKind, SigningKey};
+		use moraine_model::changelog::{Changelog, ChangelogSection, LocaleSection};
+		use moraine_model::compatibility::Side;
+		use moraine_model::dependency::TargetKind;
+		use moraine_model::modpack::{ModpackEntry, ModpackManifest};
+		use moraine_model::signed::sign_payload;
+
+		let key = SigningKey::from_seed(&[0x5A; 32]);
+		let root = hex::encode(key.verifying_key().to_bytes());
+		let directory = tempfile::tempdir().expect("tempdir");
+
+		let changelog = Changelog {
+			protocol: 1,
+			project_id: "gd:sha256:aa".to_string(),
+			release_id: None,
+			locale_sections: vec![LocaleSection {
+				locale: "en".to_string(),
+				sections: vec![ChangelogSection {
+					heading: "Fixes".to_string(),
+					body: "A fix".to_string(),
+					severity: None,
+				}],
+			}],
+			declared_time: 1_760_000_000,
+		};
+		let changelog_path = directory.path().join("changelog");
+		std::fs::write(
+			&changelog_path,
+			sign_payload(ObjectKind::Changelog, &changelog, &[&key]).wire_bytes(),
+		)
+		.expect("write");
+		super::verify_object("changelog", &changelog_path, std::slice::from_ref(&root), 1).expect("changelog verifies");
+
+		let modpack = ModpackManifest {
+			protocol: 1,
+			project_id: "gd:sha256:aa".to_string(),
+			game_id: "gd:sha256:bb".to_string(),
+			loader_id: None,
+			entries: vec![ModpackEntry {
+				ordinal: 0,
+				target_kind: TargetKind::Project,
+				target_id: "gd:sha256:cc".to_string(),
+				release_id: "gd:sha256:dd".to_string(),
+				digest: vec![0x11; 32],
+				applies_to: Side::Both,
+			}],
+			overrides: Vec::new(),
+			server_manifest_digest: None,
+			declared_time: 1_760_000_000,
+		};
+		let modpack_path = directory.path().join("modpack");
+		std::fs::write(
+			&modpack_path,
+			sign_payload(ObjectKind::Modpack, &modpack, &[&key]).wire_bytes(),
+		)
+		.expect("write");
+		super::verify_object("modpack", &modpack_path, &[root], 1).expect("modpack verifies");
 	}
 
 	#[test]

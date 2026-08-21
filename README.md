@@ -47,6 +47,10 @@ Verify a signed object you already have:
 cargo run -p moraine-verify -- object --kind release --file release.cbor --root <hex> --threshold 1
 ```
 
+`--kind` accepts `genesis`, `delegation`, `release`, `feed-entry`, `profile`,
+`changelog`, `modpack`, `advisory`, `attestation`, `game-def`, `loader-def`,
+and `runtime-def`.
+
 Check a downloaded file against a signed release, offline, with an explicit
 trust root:
 
