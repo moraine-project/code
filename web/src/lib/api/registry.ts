@@ -173,6 +173,30 @@ export const definitionSummarySchema = z.object({
 
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
 export type DefinitionSummary = z.infer<typeof definitionSummarySchema>;
+
+export const definitionDetailSchema = definitionSummarySchema.extend({
+	genesis: z.string(),
+	current: z.string(),
+	payload: z.unknown(),
+});
+
+export type DefinitionDetail = z.infer<typeof definitionDetailSchema>;
+
+export async function fetchDefinition(
+	base: string,
+	kind: 'games' | 'loaders' | 'runtimes',
+	id: string,
+	fetchFn: Fetcher = fetch,
+): Promise<DefinitionDetail | null> {
+	const response = await fetchFn(`${normalizeBase(base)}/v1/${kind}/${encodeURIComponent(id)}`);
+	if (response.status === 404) {
+		return null;
+	}
+	if (!response.ok) {
+		throw new Error(`home returned ${response.status} for the definition`);
+	}
+	return definitionDetailSchema.parse(await response.json());
+}
 export type Profile = z.infer<typeof profileSchema>;
 export type DigestLookup = z.infer<typeof digestLookupSchema>;
 export type SearchResult = z.infer<typeof searchResultSchema>;

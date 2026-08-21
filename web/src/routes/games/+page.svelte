@@ -27,9 +27,41 @@
 				<ul class="flex flex-wrap gap-2">
 					{#each data.games as game (game.id)}
 						<li>
-							<a class="btn btn-outline" href={`/search?game=${encodeURIComponent(game.id)}`}>
-								{game.display_name ?? shortDigest(game.id)}
-								<span class="badge badge-sm">{game.current ? 'defined' : 'no definition'}</span>
+							<span class="flex items-center gap-1">
+								<a
+									class="btn btn-outline"
+									href={`/definitions/games/${encodeURIComponent(game.id)}`}
+								>
+									{game.display_name ?? shortDigest(game.id)}
+									<span class="badge badge-sm">{game.current ? 'defined' : 'no definition'}</span>
+								</a>
+								<a
+									class="btn btn-sm btn-ghost"
+									href={`/search?game=${encodeURIComponent(game.id)}`}
+								>
+									Mods
+								</a>
+							</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+
+		<section class="flex flex-col gap-3">
+			<h2 class="text-xl font-semibold">Runtimes</h2>
+			{#if data.runtimes.length === 0}
+				<p class="text-base-content/60 text-sm">No runtimes are hosted here yet.</p>
+			{:else}
+				<ul class="flex flex-wrap gap-2">
+					{#each data.runtimes as runtime (runtime.id)}
+						<li>
+							<a
+								class="btn btn-outline"
+								href={`/definitions/runtimes/${encodeURIComponent(runtime.id)}`}
+							>
+								{runtime.display_name ?? shortDigest(runtime.id)}
+								<span class="badge badge-sm">{runtime.current ? 'defined' : 'no definition'}</span>
 							</a>
 						</li>
 					{/each}
@@ -45,10 +77,21 @@
 				<ul class="flex flex-wrap gap-2">
 					{#each data.loaders as loader (loader.id)}
 						<li>
-							<a class="btn btn-outline" href={`/search?loader=${encodeURIComponent(loader.id)}`}>
-								{loader.display_name ?? shortDigest(loader.id)}
-								<span class="badge badge-sm">{loader.current ? 'defined' : 'no definition'}</span>
-							</a>
+							<span class="flex items-center gap-1">
+								<a
+									class="btn btn-outline"
+									href={`/definitions/loaders/${encodeURIComponent(loader.id)}`}
+								>
+									{loader.display_name ?? shortDigest(loader.id)}
+									<span class="badge badge-sm">{loader.current ? 'defined' : 'no definition'}</span>
+								</a>
+								<a
+									class="btn btn-sm btn-ghost"
+									href={`/search?loader=${encodeURIComponent(loader.id)}`}
+								>
+									Mods
+								</a>
+							</span>
 						</li>
 					{/each}
 				</ul>
