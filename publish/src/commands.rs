@@ -274,9 +274,13 @@ fn parse_placement(entry: &str) -> Result<(String, [u8; 32]), String> {
 	Ok((name.to_string(), digest))
 }
 
-pub fn inspect(file: &Path) -> Result<(), String> {
+pub fn inspect(file: &Path, extractor: Option<&str>) -> Result<(), String> {
 	let bytes = std::fs::read(file).map_err(|error| format!("{}: {error}", file.display()))?;
-	let metadata = moraine_metadata::extract(&bytes).map_err(|error| error.to_string())?;
+	let metadata = match extractor {
+		Some(extractor) => moraine_metadata::extract_with(extractor, &bytes),
+		None => moraine_metadata::extract(&bytes),
+	}
+	.map_err(|error| error.to_string())?;
 	println!("loader: {}", metadata.loader.as_deref().unwrap_or("unknown"));
 	println!("mod_id: {}", metadata.mod_id.as_deref().unwrap_or("(none)"));
 	println!("name: {}", metadata.name.as_deref().unwrap_or("(none)"));

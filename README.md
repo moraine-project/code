@@ -123,7 +123,11 @@ cargo run -p moraine-publish -- inspect mod.jar
 
 It reads `fabric.mod.json`, `quilt.mod.json`, or `META-INF/mods.toml` and prints
 the mod ID, name, version, and loader. It never executes archive contents and
-refuses any metadata entry over a size limit.
+refuses any metadata entry over a size limit. A game definition names the
+extractor it expects, and `--extractor minecraft/fabric-json` (or
+`minecraft/quilt-json`, `minecraft/forge-toml`) reads only that format instead
+of trying each in turn, so a declared extractor is enough for a client to read a
+manifest without guessing.
 
 Preview where files would be installed for a game:
 

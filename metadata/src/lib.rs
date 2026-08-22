@@ -18,6 +18,7 @@ pub enum MetadataError {
 	NotAnArchive,
 	Archive(String),
 	EntryTooLarge(String),
+	UnknownExtractor(String),
 }
 
 impl std::fmt::Display for MetadataError {
@@ -26,11 +27,16 @@ impl std::fmt::Display for MetadataError {
 			Self::NotAnArchive => f.write_str("file is not a zip archive"),
 			Self::Archive(detail) => write!(f, "archive error: {detail}"),
 			Self::EntryTooLarge(name) => write!(f, "`{name}` is larger than the metadata limit"),
+			Self::UnknownExtractor(name) => write!(f, "unknown metadata extractor `{name}`"),
 		}
 	}
 }
 
 impl std::error::Error for MetadataError {}
+
+pub const FABRIC_EXTRACTOR: &str = "minecraft/fabric-json";
+pub const QUILT_EXTRACTOR: &str = "minecraft/quilt-json";
+pub const FORGE_EXTRACTOR: &str = "minecraft/forge-toml";
 
 pub fn extract(bytes: &[u8]) -> Result<ModMetadata, MetadataError> {
 	let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| MetadataError::NotAnArchive)?;
@@ -45,6 +51,18 @@ pub fn extract(bytes: &[u8]) -> Result<ModMetadata, MetadataError> {
 	}
 	Ok(ModMetadata::default())
 }
+
+pub fn extract_with(extractor: &str, bytes: &[u8]) -> Result<ModMetadata, MetadataError> {
+	let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| MetadataError::NotAnArchive)?;
+	match extractor {
+		FABRIC_EXTRACTOR => Ok(fabric(&mut archive)?.unwrap_or_default()),
+		QUILT_EXTRACTOR => Ok(quilt(&mut archive)?.unwrap_or_default()),
+		FORGE_EXTRACTOR => Ok(forge(&mut archive)?.unwrap_or_default()),
+		other => Err(MetadataError::UnknownExtractor(other.to_string())),
+	}
+}
+
+pub const KNOWN_EXTRACTORS: &[&str] = &[FABRIC_EXTRACTOR, QUILT_EXTRACTOR, FORGE_EXTRACTOR];
 
 fn read_entry(archive: &mut ZipArchive<Cursor<&[u8]>>, name: &str) -> Result<Option<Vec<u8>>, MetadataError> {
 	let Ok(mut file) = archive.by_name(name) else {
@@ -159,6 +177,24 @@ mod tests {
 		assert_eq!(metadata.loader.as_deref(), Some("forge"));
 		assert_eq!(metadata.mod_id.as_deref(), Some("example"));
 		assert_eq!(metadata.version.as_deref(), Some("4.5.6"));
+	}
+
+	#[test]
+	fn a_named_extractor_reads_only_its_own_format() {
+		let manifest = br#"{"id":"example","name":"Example Mod","version":"1.2.3"}"#;
+		let bytes = archive_with(&[("fabric.mod.json", manifest)]);
+		let metadata = extract_with(FABRIC_EXTRACTOR, &bytes).expect("extract");
+		assert_eq!(metadata.mod_id.as_deref(), Some("example"));
+
+		let forge_toml = b"[[mods]]\nmodId=\"other\"\n";
+		let bytes = archive_with(&[("META-INF/mods.toml", forge_toml)]);
+		let metadata = extract_with(FABRIC_EXTRACTOR, &bytes).expect("extract");
+		assert_eq!(metadata.mod_id, None);
+
+		assert!(matches!(
+			extract_with("minecraft/nonsense", &bytes),
+			Err(MetadataError::UnknownExtractor(_))
+		));
 	}
 
 	#[test]

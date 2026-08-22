@@ -178,6 +178,8 @@ enum Command {
 
 	Inspect {
 		file: PathBuf,
+		#[arg(long)]
+		extractor: Option<String>,
 	},
 
 	Plan {
@@ -345,7 +347,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			from,
 			to,
 		} => commands::transfer(&key, &cosign_key, &home, &project, &from, &to).await,
-		Command::Inspect { file } => commands::inspect(&file),
+		Command::Inspect { file, extractor } => commands::inspect(&file, extractor.as_deref()),
 		Command::Plan {
 			adapter,
 			mods,
