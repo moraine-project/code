@@ -6,7 +6,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
-use moraine_model::definition::{GameDef, LoaderDef, RuntimeDef};
+use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
 use moraine_model::genesis::{Genesis, GenesisKind};
 use moraine_model::signed::SignedObject;
 use serde::Serialize;
@@ -165,7 +165,10 @@ async fn definition_display_name(state: &AppState, expected: GenesisKind, digest
 	let object = state.metadata.object(digest).await.ok().flatten()?;
 	Some(match expected {
 		GenesisKind::Game => GameDef::from_canonical_bytes(&object.payload).ok()?.display_name,
-		GenesisKind::Loader => LoaderDef::from_canonical_bytes(&object.payload).ok()?.display_name,
+		GenesisKind::Loader => match LoaderObject::from_canonical_bytes(&object.payload).ok()? {
+			LoaderObject::Definition(definition) => definition.display_name,
+			LoaderObject::Release(_) | LoaderObject::Acceptance(_) => return None,
+		},
 		GenesisKind::Runtime => RuntimeDef::from_canonical_bytes(&object.payload).ok()?.display_name,
 		GenesisKind::Project => return None,
 	})
@@ -240,6 +243,10 @@ async fn import_definition(
 	}
 }
 
+fn is_loader_definition(payload: &[u8]) -> bool {
+	matches!(LoaderObject::from_canonical_bytes(payload), Ok(LoaderObject::Definition(_)))
+}
+
 fn store_failure(error: sqlx::Error) -> (StatusCode, String) {
 	tracing::error!(%error, "definition store failed");
 	(StatusCode::INTERNAL_SERVER_ERROR, "storage error".to_string())
@@ -294,8 +301,13 @@ fn definition_target(bytes: &[u8]) -> Option<(GenesisKind, ObjectKind, String)> 
 	if let Ok(signed) = SignedObject::<GameDef>::from_bytes(bytes) {
 		return Some((GenesisKind::Game, ObjectKind::GameDef, signed.payload.game_id));
 	}
-	if let Ok(signed) = SignedObject::<LoaderDef>::from_bytes(bytes) {
-		return Some((GenesisKind::Loader, ObjectKind::LoaderDef, signed.payload.loader_id));
+	if let Ok(signed) = SignedObject::<LoaderObject>::from_bytes(bytes) {
+		let loader_id = match &signed.payload {
+			LoaderObject::Definition(definition) => definition.loader_id.clone(),
+			LoaderObject::Release(release) => release.loader_id.clone(),
+			LoaderObject::Acceptance(acceptance) => acceptance.accepting_loader_id.clone(),
+		};
+		return Some((GenesisKind::Loader, ObjectKind::LoaderDef, loader_id));
 	}
 	if let Ok(signed) = SignedObject::<RuntimeDef>::from_bytes(bytes) {
 		return Some((GenesisKind::Runtime, ObjectKind::RuntimeDef, signed.payload.runtime_id));
@@ -345,11 +357,13 @@ async fn store_definition_version(
 		verify::verify_genesis(&genesis.wire).map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
 	let object = verify::verify_object(kind, body, &root).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
 	state.metadata.put_object(&stored(&object)).await.map_err(store_failure)?;
-	state
-		.metadata
-		.set_definition_current(id, &object.digest)
-		.await
-		.map_err(store_failure)?;
+	if expected != GenesisKind::Loader || is_loader_definition(&object.payload_bytes) {
+		state
+			.metadata
+			.set_definition_current(id, &object.digest)
+			.await
+			.map_err(store_failure)?;
+	}
 	Ok(object.id)
 }
 
@@ -414,7 +428,7 @@ mod tests {
 
 	use axum::body::{Body, to_bytes};
 	use moraine_crypto::SigningKey;
-	use moraine_model::definition::{GameDef, VersionSyntax};
+	use moraine_model::definition::{GameDef, LoaderDef, VersionSyntax};
 	use moraine_model::genesis::RootKey;
 	use moraine_model::signed::sign_payload;
 	use tower::ServiceExt;
@@ -489,6 +503,51 @@ mod tests {
 		sign_payload(ObjectKind::Genesis, &genesis, &[key]).wire_bytes()
 	}
 
+	async fn publish_loader_definition(application: &Router, loader_id: &str, body: Vec<u8>) -> String {
+		let put = axum::http::Request::post(format!("/v1/loaders/{loader_id}/definitions"))
+			.body(Body::from(body))
+			.expect("request");
+		let response = application.clone().oneshot(put).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+		body_json(response).await["definition"]
+			.as_str()
+			.expect("definition id")
+			.to_string()
+	}
+
+	fn loader_genesis(key: &SigningKey) -> Vec<u8> {
+		let genesis = Genesis {
+			protocol: 1,
+			kind: GenesisKind::Loader,
+			nonce: vec![0x31; 16],
+			roots: vec![RootKey::from_public_key(key.verifying_key().to_bytes().to_vec()).expect("root")],
+			threshold: 1,
+			authorized_kinds: vec!["delegation".to_string(), "loader-def".to_string()],
+			home_hint: None,
+			contacts: None,
+			created_at: 1_760_000_000,
+		};
+		sign_payload(ObjectKind::Genesis, &genesis, &[key]).wire_bytes()
+	}
+
+	fn loader_definition(key: &SigningKey, loader_id: &str) -> Vec<u8> {
+		sign_payload(
+			ObjectKind::LoaderDef,
+			&LoaderObject::Definition(LoaderDef {
+				protocol: 1,
+				loader_id: loader_id.to_string(),
+				game_id: "gd:sha256:00".to_string(),
+				display_name: "Fabric".to_string(),
+				version_ordering: "semver".to_string(),
+				bootstrap: None,
+				accepted_artifacts: None,
+				declared_time: 1_760_000_000,
+			}),
+			&[key],
+		)
+		.wire_bytes()
+	}
+
 	fn game_definition(key: &SigningKey, game_id: &str) -> Vec<u8> {
 		let definition = GameDef {
 			protocol: 1,
@@ -558,6 +617,53 @@ mod tests {
 			.expect("request");
 		let response = application.oneshot(wrong_kind).await.expect("response");
 		assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+	}
+
+	#[tokio::test]
+	async fn keeps_the_loader_definition_current_when_a_release_arrives() {
+		use moraine_model::compatibility::{Predicate, Scheme};
+		use moraine_model::definition::LoaderRelease;
+
+		let key = SigningKey::from_seed(&[0x66; 32]);
+		let (application, directory) = app().await;
+		let genesis = axum::http::Request::post("/v1/loaders")
+			.body(Body::from(loader_genesis(&key)))
+			.expect("request");
+		let response = application.clone().oneshot(genesis).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+		let loader_id = body_json(response).await["id"].as_str().expect("id").to_string();
+
+		let definition_id = publish_loader_definition(&application, &loader_id, loader_definition(&key, &loader_id)).await;
+
+		let release = sign_payload(
+			ObjectKind::LoaderDef,
+			&LoaderObject::Release(LoaderRelease {
+				protocol: 1,
+				loader_id: loader_id.clone(),
+				version_id: "0.15.0".to_string(),
+				game_version_predicate: Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]),
+				runtime_id: None,
+				runtime_predicate: None,
+				bootstrap: None,
+				declared_time: 1_760_000_000,
+			}),
+			&[&key],
+		);
+		publish_loader_definition(&application, &loader_id, release.wire_bytes()).await;
+
+		let list = axum::http::Request::get("/v1/loaders").body(Body::empty()).expect("request");
+		let response = application.clone().oneshot(list).await.expect("response");
+		let loaders = body_json(response).await;
+		assert_eq!(loaders[0]["display_name"], "Fabric");
+		assert_eq!(loaders[0]["current"], definition_id);
+
+		let definitions = directory.path().join("definitions");
+		std::fs::create_dir(&definitions).expect("create");
+		std::fs::write(definitions.join("loader.genesis"), loader_genesis(&key)).expect("write");
+		std::fs::write(definitions.join("loader.release"), release.wire_bytes()).expect("write");
+		let state = state(directory.path()).await;
+		let loaded = load_directory(&state, &definitions).await.expect("load");
+		assert_eq!(loaded, 2);
 	}
 
 	#[tokio::test]

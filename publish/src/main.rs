@@ -109,6 +109,23 @@ enum Command {
 		out: PathBuf,
 	},
 
+	DefineLoaderRelease {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		loader: String,
+		#[arg(long)]
+		version: String,
+		#[arg(long = "game-version")]
+		game_versions: Vec<String>,
+		#[arg(long)]
+		runtime: Option<String>,
+		#[arg(long = "runtime-version")]
+		runtime_versions: Vec<String>,
+		#[arg(long, default_value = "definitions")]
+		out: PathBuf,
+	},
+
 	Provider {
 		#[arg(long)]
 		key: PathBuf,
@@ -313,6 +330,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			version_ordering,
 			out,
 		} => definitions::runtime(&key, &kind, &name, &version_ordering, &out),
+		Command::DefineLoaderRelease {
+			key,
+			loader,
+			version,
+			game_versions,
+			runtime,
+			runtime_versions,
+			out,
+		} => definitions::loader_release(&key, &loader, &version, &game_versions, runtime, &runtime_versions, &out),
 		Command::Provider { key, home, id, api_key } => commands::provider(&key, &home, &id, api_key).await,
 		Command::Advisory {
 			key,

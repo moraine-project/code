@@ -248,15 +248,20 @@ cargo run -p moraine-publish -- define-game --key game.key --name "Minecraft" \
   --version-ordering semver --out data/definitions
 cargo run -p moraine-publish -- define-loader --key loader.key --game <game-id> \
   --name "Fabric" --out data/definitions
+cargo run -p moraine-publish -- define-loader-release --key loader.key \
+  --loader <loader-id> --version 0.15.0 --game-version 1.20.1 --out data/definitions
 cargo run -p moraine-publish -- define-runtime --key runtime.key --kind java \
   --name "Java" --out data/definitions
 ```
 
-Each command writes a `<id>.genesis` and a `<id>.definition` file, which is
-exactly what the definitions directory loads; drop them in and restart, or
-`POST` the bytes to `/v1/games`, `/v1/loaders`, or `/v1/runtimes` and then to
-the matching `/definitions` route. A loader names the game it targets, so
-publish the game first.
+Each command writes the signed bytes the definitions directory loads; drop them
+in and restart, or `POST` them to `/v1/games`, `/v1/loaders`, or `/v1/runtimes`
+and then to the matching `/definitions` route. A loader names the game it
+targets, so publish the game first. `define-loader-release` is a loader object
+of the release shape: it records one loader version and the game versions it
+supports, and it does not replace the loader definition. Loader releases and
+acceptance mappings are the other two shapes under `loader-def`, and the
+directory loader recognizes all three.
 
 `publish` and `submit` take `--kind` and default to `release-published`. The
 key is your project's root. Keep it safe: losing it means losing the project
