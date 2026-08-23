@@ -618,8 +618,22 @@ second request.
 `POST /v1/{games|loaders|runtimes}/{id}/definitions` stores a signed definition
 object, verified against that identity's root. A game takes a `game-def`, a
 loader takes any `loader-def` shape (definition, release, or acceptance
-mapping), and a runtime takes a `runtime-def`. The stored object becomes the
-identity's current definition; earlier revisions remain addressable by digest.
+mapping), and a runtime takes a `runtime-def`. A game or runtime definition
+becomes the identity's current definition; for a loader only the definition
+shape does, because a release or acceptance mapping is an additional object
+rather than a replacement, and letting one become current would lose the
+loader's display name and ordering scheme. Earlier revisions remain
+addressable by digest.
+
+`GET /v1/loaders/{id}/releases` lists a loader's published releases as
+`{ version, release, declared_time, game_version_predicate, runtime_id,
+runtime_predicate }`, newest first. A loader release records one loader
+version, the game versions it supports, and the runtime it needs. The pair
+`(loader_id, version_id)` is bound to exactly one object: re-publishing a
+version that already exists with different bytes is a `409` rather than a
+rewrite, so a loader's version history cannot be silently replaced. The
+release objects are signed and remain the source of truth; the listing is an
+index over them.
 
 At startup the server reads every regular file in a `definitions` directory
 beside the data directory. A file holding a game, loader, or runtime genesis is
@@ -639,7 +653,9 @@ instance serves it, only because it verifies against a pinned identity.
 A definition is not part of a project feed, so it syncs on its own:
 `POST /v1/federation/sync-definition` takes a `home_url`, an `id`, and a `kind`
 (`game`, `loader`, or `runtime`), fetches the identity's genesis and current
-definition, verifies both against the genesis root, and stores them.
+definition, verifies both against the genesis root, and stores them. A loader
+sync also pulls every published loader release, so a follower can resolve
+loader versions rather than holding only the family definition.
 
 `POST /v1/federation/subscribe-definition` syncs once and records the identity,
 so a periodic task refreshes it; `GET /v1/definition-subscriptions` lists the

@@ -261,7 +261,10 @@ targets, so publish the game first. `define-loader-release` is a loader object
 of the release shape: it records one loader version and the game versions it
 supports, and it does not replace the loader definition. Loader releases and
 acceptance mappings are the other two shapes under `loader-def`, and the
-directory loader recognizes all three.
+directory loader recognizes all three. A published release is listed at
+`GET /v1/loaders/{id}/releases`, and `(loader-id, version)` binds to one object:
+re-publishing the same version with different bytes is refused, so a loader's
+version history cannot be silently rewritten.
 
 `publish` and `submit` take `--kind` and default to `release-published`. The
 key is your project's root. Keep it safe: losing it means losing the project

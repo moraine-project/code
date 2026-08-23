@@ -73,6 +73,53 @@ impl MetadataStore {
 			.collect())
 	}
 
+	pub async fn index_loader_release(
+		&self,
+		loader_id: &str,
+		version_id: &str,
+		object_digest: &[u8],
+		declared_time: i64,
+	) -> Result<(), sqlx::Error> {
+		let existing = sqlx::query("SELECT object_digest FROM loader_releases WHERE loader_id = $1 AND version_id = $2")
+			.bind(loader_id)
+			.bind(version_id)
+			.fetch_optional(&self.pool)
+			.await?;
+		match existing {
+			Some(row) => {
+				let recorded: Vec<u8> = row.get("object_digest");
+				if recorded != object_digest {
+					return Err(sqlx::Error::Protocol(
+						"loader release version is already bound to different bytes".to_string(),
+					));
+				}
+				Ok(())
+			}
+			None => {
+				sqlx::query(
+					"INSERT INTO loader_releases (loader_id, version_id, object_digest, declared_time) VALUES ($1, $2, $3, $4)",
+				)
+				.bind(loader_id)
+				.bind(version_id)
+				.bind(object_digest)
+				.bind(declared_time)
+				.execute(&self.pool)
+				.await?;
+				Ok(())
+			}
+		}
+	}
+
+	pub async fn loader_releases_for(&self, loader_id: &str) -> Result<Vec<Vec<u8>>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT object_digest FROM loader_releases WHERE loader_id = $1 ORDER BY declared_time DESC, version_id ASC",
+		)
+		.bind(loader_id)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows.into_iter().map(|row| row.get("object_digest")).collect())
+	}
+
 	pub async fn set_definition_current(&self, id: &str, current_digest: &[u8]) -> Result<(), sqlx::Error> {
 		sqlx::query("UPDATE definitions SET current_digest = $1 WHERE id = $2")
 			.bind(current_digest)
@@ -90,6 +137,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/games/{id}/definitions", post(put_game_definition))
 		.route("/v1/loaders", get(list_loaders).post(import_loader))
 		.route("/v1/loaders/{id}", get(get_loader))
+		.route("/v1/loaders/{id}/releases", get(list_loader_releases))
 		.route("/v1/loaders/{id}/definitions", post(put_loader_definition))
 		.route("/v1/runtimes", get(list_runtimes).post(import_runtime))
 		.route("/v1/runtimes/{id}", get(get_runtime))
@@ -118,6 +166,47 @@ async fn put_loader_definition(State(state): State<AppState>, Path(id): Path<Str
 
 async fn put_runtime_definition(State(state): State<AppState>, Path(id): Path<String>, body: Bytes) -> Response {
 	put_definition(&state, GenesisKind::Runtime, ObjectKind::RuntimeDef, &id, body).await
+}
+
+#[derive(Serialize)]
+struct LoaderReleaseView {
+	version: String,
+	release: String,
+	declared_time: i64,
+	game_version_predicate: serde_json::Value,
+	runtime_id: Option<String>,
+	runtime_predicate: Option<serde_json::Value>,
+}
+
+async fn list_loader_releases(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+	if let Err(response) = load_definition(&state, GenesisKind::Loader, &id).await {
+		return *response;
+	}
+	let rows = match state.metadata.loader_releases_for(&id).await {
+		Ok(rows) => rows,
+		Err(error) => return storage_error(error),
+	};
+	let mut releases = Vec::with_capacity(rows.len());
+	for digest in rows {
+		let Some(object) = (match state.metadata.object(&digest).await {
+			Ok(object) => object,
+			Err(error) => return storage_error(error),
+		}) else {
+			continue;
+		};
+		let Ok(LoaderObject::Release(release)) = LoaderObject::from_canonical_bytes(&object.payload) else {
+			continue;
+		};
+		releases.push(LoaderReleaseView {
+			version: release.version_id,
+			release: id_for(&digest),
+			declared_time: release.declared_time,
+			game_version_predicate: crate::registry::views::predicate_json(&release.game_version_predicate),
+			runtime_id: release.runtime_id,
+			runtime_predicate: release.runtime_predicate.as_ref().map(crate::registry::views::predicate_json),
+		});
+	}
+	Json(releases).into_response()
 }
 
 async fn list_games(State(state): State<AppState>) -> Response {
@@ -357,6 +446,18 @@ async fn store_definition_version(
 		verify::verify_genesis(&genesis.wire).map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
 	let object = verify::verify_object(kind, body, &root).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
 	state.metadata.put_object(&stored(&object)).await.map_err(store_failure)?;
+	if expected == GenesisKind::Loader
+		&& let Ok(LoaderObject::Release(release)) = LoaderObject::from_canonical_bytes(&object.payload_bytes)
+		&& let Err(error) = state
+			.metadata
+			.index_loader_release(&release.loader_id, &release.version_id, &object.digest, release.declared_time)
+			.await
+	{
+		if let sqlx::Error::Protocol(message) = &error {
+			return Err((StatusCode::CONFLICT, message.clone()));
+		}
+		return Err(store_failure(error));
+	}
 	if expected != GenesisKind::Loader || is_loader_definition(&object.payload_bytes) {
 		state
 			.metadata
@@ -428,7 +529,7 @@ mod tests {
 
 	use axum::body::{Body, to_bytes};
 	use moraine_crypto::SigningKey;
-	use moraine_model::definition::{GameDef, LoaderDef, VersionSyntax};
+	use moraine_model::definition::{GameDef, LoaderDef, LoaderRelease, VersionSyntax};
 	use moraine_model::genesis::RootKey;
 	use moraine_model::signed::sign_payload;
 	use tower::ServiceExt;
@@ -622,7 +723,6 @@ mod tests {
 	#[tokio::test]
 	async fn keeps_the_loader_definition_current_when_a_release_arrives() {
 		use moraine_model::compatibility::{Predicate, Scheme};
-		use moraine_model::definition::LoaderRelease;
 
 		let key = SigningKey::from_seed(&[0x66; 32]);
 		let (application, directory) = app().await;
@@ -664,6 +764,73 @@ mod tests {
 		let state = state(directory.path()).await;
 		let loaded = load_directory(&state, &definitions).await.expect("load");
 		assert_eq!(loaded, 2);
+	}
+
+	#[tokio::test]
+	async fn lists_loader_releases_and_refuses_to_rewrite_a_version() {
+		use moraine_model::compatibility::{Predicate, Scheme};
+
+		let key = SigningKey::from_seed(&[0x67; 32]);
+		let (application, _directory) = app().await;
+		let genesis = axum::http::Request::post("/v1/loaders")
+			.body(Body::from(loader_genesis(&key)))
+			.expect("request");
+		let response = application.clone().oneshot(genesis).await.expect("response");
+		let loader_id = body_json(response).await["id"].as_str().expect("id").to_string();
+		publish_loader_definition(&application, &loader_id, loader_definition(&key, &loader_id)).await;
+
+		let release = |version: &str| {
+			sign_payload(
+				ObjectKind::LoaderDef,
+				&LoaderObject::Release(LoaderRelease {
+					protocol: 1,
+					loader_id: loader_id.clone(),
+					version_id: version.to_string(),
+					game_version_predicate: Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]),
+					runtime_id: Some("gd:sha256:cd".to_string()),
+					runtime_predicate: Some(Predicate::new(Scheme::Exact, vec!["17".to_string()])),
+					bootstrap: None,
+					declared_time: 1_760_000_000,
+				}),
+				&[&key],
+			)
+		};
+		let put = axum::http::Request::post(format!("/v1/loaders/{loader_id}/definitions"))
+			.body(Body::from(release("0.15.0").wire_bytes()))
+			.expect("request");
+		let response = application.clone().oneshot(put).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+
+		let list = axum::http::Request::get(format!("/v1/loaders/{loader_id}/releases"))
+			.body(Body::empty())
+			.expect("request");
+		let response = application.clone().oneshot(list).await.expect("response");
+		assert_eq!(response.status(), StatusCode::OK);
+		let releases = body_json(response).await;
+		assert_eq!(releases.as_array().expect("releases").len(), 1);
+		assert_eq!(releases[0]["version"], "0.15.0");
+		assert_eq!(releases[0]["runtime_id"], "gd:sha256:cd");
+		assert_eq!(releases[0]["runtime_predicate"]["values"][0], "17");
+
+		let rewritten = sign_payload(
+			ObjectKind::LoaderDef,
+			&LoaderObject::Release(LoaderRelease {
+				protocol: 1,
+				loader_id: loader_id.clone(),
+				version_id: "0.15.0".to_string(),
+				game_version_predicate: Predicate::new(Scheme::Exact, vec!["1.19.0".to_string()]),
+				runtime_id: None,
+				runtime_predicate: None,
+				bootstrap: None,
+				declared_time: 1_760_000_100,
+			}),
+			&[&key],
+		);
+		let put = axum::http::Request::post(format!("/v1/loaders/{loader_id}/definitions"))
+			.body(Body::from(rewritten.wire_bytes()))
+			.expect("request");
+		let response = application.oneshot(put).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CONFLICT);
 	}
 
 	#[tokio::test]

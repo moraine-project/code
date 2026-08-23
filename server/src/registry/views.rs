@@ -55,6 +55,10 @@ async fn pack_view(State(state): State<AppState>, Path(hex_digest): Path<String>
 	.into_response()
 }
 
+pub(crate) fn predicate_json(predicate: &moraine_model::compatibility::Predicate) -> serde_json::Value {
+	value_to_json(&predicate.to_value())
+}
+
 pub(crate) fn payload_json(bytes: &[u8]) -> Result<serde_json::Value, String> {
 	let value = moraine_codec::decode(bytes).map_err(|error| error.to_string())?;
 	Ok(value_to_json(&value))

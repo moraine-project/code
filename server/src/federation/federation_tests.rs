@@ -238,6 +238,65 @@ async fn federation_syncs_a_game_definition() {
 }
 
 #[tokio::test]
+async fn federation_syncs_a_loader_with_its_releases() {
+	let (home, _home_directory) = app().await;
+	let key = key(23);
+	let request = axum::http::Request::post("/v1/loaders")
+		.body(Body::from(loader_genesis_wire(&key)))
+		.expect("request");
+	let response = home.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+	let loader_id = body_json(response).await["id"].as_str().expect("id").to_string();
+
+	let game_id = sample_id("minecraft");
+	let request = axum::http::Request::post(format!("/v1/loaders/{loader_id}/definitions"))
+		.body(Body::from(loader_definition_wire(&key, &loader_id, &game_id)))
+		.expect("request");
+	let response = home.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let request = axum::http::Request::post(format!("/v1/loaders/{loader_id}/definitions"))
+		.body(Body::from(loader_release_wire(&key, &loader_id, "0.15.0")))
+		.expect("request");
+	let response = home.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+	let address = listener.local_addr().expect("addr");
+	let serving = home.clone();
+	tokio::spawn(async move {
+		let _ = axum::serve(listener, serving).await;
+	});
+
+	let (directory, _directory_dir) = app_mode(crate::config::Publishing::Open, true).await;
+	let (session, csrf) = login(&directory, "ops@example.org").await;
+	let sync = axum::http::Request::post("/v1/federation/sync-definition")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+		.header("x-csrf-token", csrf)
+		.body(Body::from(
+			serde_json::json!({
+				"home_url": format!("http://127.0.0.1:{}", address.port()),
+				"id": loader_id,
+				"kind": "loader",
+			})
+			.to_string(),
+		))
+		.expect("request");
+	let response = directory.clone().oneshot(sync).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+
+	let list = axum::http::Request::get(format!("/v1/loaders/{loader_id}/releases"))
+		.body(Body::empty())
+		.expect("request");
+	let response = directory.oneshot(list).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let releases = body_json(response).await;
+	assert_eq!(releases.as_array().expect("releases").len(), 1);
+	assert_eq!(releases[0]["version"], "0.15.0");
+}
+
+#[tokio::test]
 async fn subscribes_to_and_lists_a_definition() {
 	let (home, _home_directory) = app().await;
 	let signer = key(19);

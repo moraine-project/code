@@ -201,6 +201,11 @@ struct DefinitionSummary {
 	current: String,
 }
 
+#[derive(Deserialize)]
+struct LoaderReleaseSummary {
+	release: String,
+}
+
 #[derive(Serialize)]
 pub(crate) struct DefinitionReport {
 	id: String,
@@ -294,6 +299,9 @@ pub(crate) async fn sync_definition(
 		.set_definition_current(id, &object.digest)
 		.await
 		.map_err(storage)?;
+	if genesis_kind == GenesisKind::Loader {
+		sync_loader_releases(state, &client, id, &root).await?;
+	}
 	Ok(DefinitionReport {
 		id: id.to_string(),
 		kind: kind.to_string(),
@@ -601,6 +609,36 @@ fn object_kind_for_event(event: &str) -> Option<ObjectKind> {
 		"advisory" => ObjectKind::Advisory,
 		_ => return None,
 	})
+}
+
+async fn sync_loader_releases(
+	state: &AppState,
+	client: &HomeClient,
+	loader_id: &str,
+	root: &moraine_model::trust::RootSet,
+) -> Result<(), FederationError> {
+	let releases = client
+		.get_json::<Vec<LoaderReleaseSummary>>(&format!("/v1/loaders/{loader_id}/releases"))
+		.await?;
+	for release in releases {
+		let wire = client
+			.get_bytes(&format!("/v1/objects/{}", hex_of(&release.release)?))
+			.await?;
+		let object = verify::verify_object(ObjectKind::LoaderDef, &wire, root)
+			.map_err(|error| FederationError::Verify(error.to_string()))?;
+		state.metadata.put_object(&registry::stored(&object)).await.map_err(storage)?;
+		let Ok(moraine_model::definition::LoaderObject::Release(payload)) =
+			moraine_model::definition::LoaderObject::from_canonical_bytes(&object.payload_bytes)
+		else {
+			continue;
+		};
+		state
+			.metadata
+			.index_loader_release(&payload.loader_id, &payload.version_id, &object.digest, payload.declared_time)
+			.await
+			.map_err(storage)?;
+	}
+	Ok(())
 }
 
 fn storage(error: sqlx::Error) -> FederationError {

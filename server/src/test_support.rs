@@ -7,7 +7,7 @@ use axum::response::Response;
 use moraine_crypto::{ObjectKind as Kind, SigningKey, object_id};
 use moraine_model::artifact::Artifact;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
-use moraine_model::definition::{GameDef, VersionSyntax};
+use moraine_model::definition::{GameDef, LoaderDef, LoaderObject, LoaderRelease, VersionSyntax};
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::release::ReleasePayload;
@@ -127,6 +127,57 @@ pub(crate) fn game_definition_wire(key: &SigningKey, game_id: &str) -> Vec<u8> {
 		declared_time: 1_760_000_000,
 	};
 	sign_payload(Kind::GameDef, &definition, &[key]).wire_bytes()
+}
+
+pub(crate) fn loader_genesis_wire(key: &SigningKey) -> Vec<u8> {
+	let genesis = Genesis {
+		protocol: 1,
+		kind: GenesisKind::Loader,
+		nonce: vec![0x71; 16],
+		roots: vec![RootKey::from_public_key(key.verifying_key().to_bytes().to_vec()).expect("root")],
+		threshold: 1,
+		authorized_kinds: vec!["delegation".to_string(), "loader-def".to_string()],
+		home_hint: None,
+		contacts: None,
+		created_at: 1_760_000_000,
+	};
+	sign_payload(Kind::Genesis, &genesis, &[key]).wire_bytes()
+}
+
+pub(crate) fn loader_definition_wire(key: &SigningKey, loader_id: &str, game_id: &str) -> Vec<u8> {
+	sign_payload(
+		Kind::LoaderDef,
+		&LoaderObject::Definition(LoaderDef {
+			protocol: 1,
+			loader_id: loader_id.to_string(),
+			game_id: game_id.to_string(),
+			display_name: "Fabric".to_string(),
+			version_ordering: "semver".to_string(),
+			bootstrap: None,
+			accepted_artifacts: None,
+			declared_time: 1_760_000_000,
+		}),
+		&[key],
+	)
+	.wire_bytes()
+}
+
+pub(crate) fn loader_release_wire(key: &SigningKey, loader_id: &str, version: &str) -> Vec<u8> {
+	sign_payload(
+		Kind::LoaderDef,
+		&LoaderObject::Release(LoaderRelease {
+			protocol: 1,
+			loader_id: loader_id.to_string(),
+			version_id: version.to_string(),
+			game_version_predicate: Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]),
+			runtime_id: None,
+			runtime_predicate: None,
+			bootstrap: None,
+			declared_time: 1_760_000_000,
+		}),
+		&[key],
+	)
+	.wire_bytes()
 }
 
 pub(crate) fn genesis_wire(signer: &SigningKey, kinds: &[&str]) -> Vec<u8> {
