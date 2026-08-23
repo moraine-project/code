@@ -598,3 +598,92 @@ async fn finds_a_project_by_a_phrase_from_its_changelog() {
 	assert_eq!(results.len(), 1);
 	assert_eq!(results[0]["project_id"], project_id);
 }
+
+#[tokio::test]
+async fn rejects_a_profile_tag_the_game_does_not_declare() {
+	use moraine_model::definition::{Category as GameCategory, GameDef, Tag as GameTag, VersionSyntax};
+
+	let (application, _directory) = app().await;
+	let game_key = key(24);
+	let request = axum::http::Request::post("/v1/games")
+		.body(Body::from(game_genesis_wire(&game_key)))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+	let game_id = body_json(response).await["id"].as_str().expect("game id").to_string();
+
+	let definition = GameDef {
+		protocol: 1,
+		game_id: game_id.clone(),
+		display_name: "Minecraft".to_string(),
+		version_syntax: VersionSyntax {
+			kind: "semver".to_string(),
+			pattern: None,
+		},
+		version_ordering: "semver".to_string(),
+		loaders_allowed: true,
+		loader_authorities: Vec::new(),
+		categories: vec![GameCategory {
+			id: "utility".to_string(),
+			label: "Utility".to_string(),
+			parent: None,
+		}],
+		tags: vec![GameTag {
+			id: "client".to_string(),
+			label: "Client".to_string(),
+		}],
+		metadata_extractor: None,
+		install_adapter: None,
+		declared_time: 1_760_000_000,
+	};
+	let signed = sign_payload(Kind::GameDef, &definition, &[&game_key]);
+	let request = axum::http::Request::post(format!("/v1/games/{game_id}/definitions"))
+		.body(Body::from(signed.wire_bytes()))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let signer = key(25);
+	let (project_id, _release) = publish_project(&application, &signer).await;
+	let profile = |nonce: u8, category: &str, tag: &str| {
+		use moraine_model::profile::ProfileRevision;
+		let profile = ProfileRevision {
+			protocol: 1,
+			project_id: project_id.clone(),
+			game_id: game_id.clone(),
+			revision_nonce: vec![nonce; 16],
+			display_name: "Example Mod".to_string(),
+			summary: "A worked example".to_string(),
+			description: "Longer description".to_string(),
+			icon: None,
+			gallery: Vec::new(),
+			links: Vec::new(),
+			communities: Vec::new(),
+			categories: vec![category.to_string()],
+			tags: vec![tag.to_string()],
+			rights: None,
+			declared_time: 1_760_000_000,
+		};
+		sign_payload(Kind::Profile, &profile, &[&signer]).wire_bytes()
+	};
+
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/profile"))
+		.body(Body::from(profile(0x31, "utility", "client")))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/profile"))
+		.body(Body::from(profile(0x32, "utility", "server")))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/profile"))
+		.body(Body::from(profile(0x33, "nonsense", "client")))
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}

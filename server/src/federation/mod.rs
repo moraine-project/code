@@ -548,7 +548,7 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 					.map_err(|error| rejected(*error))?;
 				let object = verify::verify_object_authorized(kind, &wire, &root, &delegations, now())
 					.map_err(|error| FederationError::Verify(error.to_string()))?;
-				registry::store_object_record(state, &object).await.map_err(storage)?;
+				store_synced_object(state, &object).await?;
 				if kind == ObjectKind::Release
 					&& let Some(digest) = release_changelog_digest(&object.payload_bytes)
 				{
@@ -556,7 +556,7 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 					let changelog =
 						verify::verify_object_authorized(ObjectKind::Changelog, &wire, &root, &delegations, now())
 							.map_err(|error| FederationError::Verify(error.to_string()))?;
-					registry::store_object_record(state, &changelog).await.map_err(storage)?;
+					store_synced_object(state, &changelog).await?;
 				}
 			}
 			let entry_wire = client.get_bytes(&format!("/v1/objects/{}", hex_of(&entry.entry)?)).await?;
@@ -639,6 +639,15 @@ async fn sync_loader_releases(
 			.map_err(storage)?;
 	}
 	Ok(())
+}
+
+async fn store_synced_object(state: &AppState, object: &verify::VerifiedObject) -> Result<(), FederationError> {
+	registry::store_object_record(state, object)
+		.await
+		.map_err(|error| match error {
+			sqlx::Error::Protocol(message) => FederationError::Verify(message),
+			other => storage(other),
+		})
 }
 
 fn storage(error: sqlx::Error) -> FederationError {

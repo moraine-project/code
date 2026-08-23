@@ -496,6 +496,43 @@ impl MetadataStore {
 	}
 }
 
+pub(crate) fn validate_profile_vocabulary(
+	profile: &ProfileRevision,
+	game: &moraine_model::definition::GameDef,
+) -> Result<(), String> {
+	if !game.categories.is_empty() {
+		for category in &profile.categories {
+			if !game.categories.iter().any(|declared| &declared.id == category) {
+				return Err(format!("`{category}` is not a category of this game"));
+			}
+		}
+	}
+	if !game.tags.is_empty() {
+		for tag in &profile.tags {
+			if !game.tags.iter().any(|declared| &declared.id == tag) {
+				return Err(format!("`{tag}` is not a tag of this game"));
+			}
+		}
+	}
+	Ok(())
+}
+
+pub(crate) async fn game_vocabulary(
+	state: &AppState,
+	game_id: &str,
+) -> Result<Option<moraine_model::definition::GameDef>, sqlx::Error> {
+	let Some(definition) = state.metadata.definition(game_id).await? else {
+		return Ok(None);
+	};
+	let Some(current) = definition.current_digest else {
+		return Ok(None);
+	};
+	let Some(object) = state.metadata.object(&current).await? else {
+		return Ok(None);
+	};
+	Ok(moraine_model::definition::GameDef::from_canonical_bytes(&object.payload).ok())
+}
+
 pub(crate) async fn refresh_search_document(state: &AppState, object_digest: &[u8]) -> Result<(), sqlx::Error> {
 	let Some(object) = state.metadata.object(object_digest).await? else {
 		return Ok(());

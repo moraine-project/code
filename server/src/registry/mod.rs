@@ -303,6 +303,9 @@ async fn store_object(State(state): State<AppState>, Path((id, kind)): Path<(Str
 		Err(error) => return bad_request(&state, error),
 	};
 	if let Err(error) = store_object_record(&state, &object).await {
+		if let sqlx::Error::Protocol(message) = &error {
+			return (StatusCode::BAD_REQUEST, message.clone()).into_response();
+		}
 		return storage_error(error);
 	}
 	let receipt = ObjectReceipt {
@@ -609,6 +612,13 @@ pub(crate) fn parse_hex_digest(value: &str) -> Option<[u8; 32]> {
 
 pub(crate) async fn store_object_record(state: &AppState, object: &verify::VerifiedObject) -> Result<(), sqlx::Error> {
 	state.metadata.put_object(&stored(object)).await?;
+	if object.kind == ObjectKind::Profile
+		&& let Ok(profile) = moraine_model::profile::ProfileRevision::from_canonical_bytes(&object.payload_bytes)
+		&& let Some(game) = crate::registry::search::game_vocabulary(state, &profile.game_id).await?
+		&& let Err(message) = crate::registry::search::validate_profile_vocabulary(&profile, &game)
+	{
+		return Err(sqlx::Error::Protocol(message));
+	}
 	if object.kind == ObjectKind::Release
 		&& let Ok(release_object) = moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload_bytes)
 	{

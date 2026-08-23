@@ -244,6 +244,44 @@ async fn import_definition(
 	}
 }
 
+fn loader_game_id(payload: &[u8]) -> Option<String> {
+	match LoaderObject::from_canonical_bytes(payload).ok()? {
+		LoaderObject::Definition(definition) => Some(definition.game_id),
+		LoaderObject::Acceptance(acceptance) => Some(acceptance.game_id),
+		LoaderObject::Release(_) => None,
+	}
+}
+
+async fn ensure_game_permits_loader(state: &AppState, loader_id: &str, game_id: &str) -> Result<(), (StatusCode, String)> {
+	let game = match load_definition(state, GenesisKind::Game, game_id).await {
+		Ok(definition) => definition,
+		Err(response) if response.status() == StatusCode::NOT_FOUND => return Ok(()),
+		Err(response) if response.status() == StatusCode::BAD_REQUEST => return Ok(()),
+		Err(response) => return Err((response.status(), "the game definition could not be read".to_string())),
+	};
+	let Some(current) = game.current_digest else {
+		return Ok(());
+	};
+	let Some(object) = state.metadata.object(&current).await.map_err(store_failure)? else {
+		return Ok(());
+	};
+	let Ok(definition) = GameDef::from_canonical_bytes(&object.payload) else {
+		return Ok(());
+	};
+	if !definition.loaders_allowed {
+		return Err((StatusCode::BAD_REQUEST, format!("game `{game_id}` does not permit loaders")));
+	}
+	if !definition.loader_authorities.is_empty()
+		&& !definition.loader_authorities.iter().any(|authority| authority == loader_id)
+	{
+		return Err((
+			StatusCode::BAD_REQUEST,
+			format!("`{loader_id}` is not a loader authority for `{game_id}`"),
+		));
+	}
+	Ok(())
+}
+
 fn is_loader_definition(payload: &[u8]) -> bool {
 	matches!(LoaderObject::from_canonical_bytes(payload), Ok(LoaderObject::Definition(_)))
 }
@@ -357,6 +395,11 @@ async fn store_definition_version(
 	let (root, _) =
 		verify::verify_genesis(&genesis.wire).map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
 	let object = verify::verify_object(kind, body, &root).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+	if expected == GenesisKind::Loader
+		&& let Some(game_id) = loader_game_id(&object.payload_bytes)
+	{
+		ensure_game_permits_loader(state, id, &game_id).await?;
+	}
 	state.metadata.put_object(&stored(&object)).await.map_err(store_failure)?;
 	if expected == GenesisKind::Loader
 		&& let Ok(LoaderObject::Release(release)) = LoaderObject::from_canonical_bytes(&object.payload_bytes)
@@ -548,12 +591,16 @@ mod tests {
 	}
 
 	fn loader_definition(key: &SigningKey, loader_id: &str) -> Vec<u8> {
+		loader_definition_for(key, loader_id, "gd:sha256:00")
+	}
+
+	fn loader_definition_for(key: &SigningKey, loader_id: &str, game_id: &str) -> Vec<u8> {
 		sign_payload(
 			ObjectKind::LoaderDef,
 			&LoaderObject::Definition(LoaderDef {
 				protocol: 1,
 				loader_id: loader_id.to_string(),
-				game_id: "gd:sha256:00".to_string(),
+				game_id: game_id.to_string(),
 				display_name: "Fabric".to_string(),
 				version_ordering: "semver".to_string(),
 				bootstrap: None,
@@ -566,6 +613,15 @@ mod tests {
 	}
 
 	fn game_definition(key: &SigningKey, game_id: &str) -> Vec<u8> {
+		game_definition_with(key, game_id, true, Vec::new())
+	}
+
+	fn game_definition_with(
+		key: &SigningKey,
+		game_id: &str,
+		loaders_allowed: bool,
+		loader_authorities: Vec<String>,
+	) -> Vec<u8> {
 		let definition = GameDef {
 			protocol: 1,
 			game_id: game_id.to_string(),
@@ -575,8 +631,8 @@ mod tests {
 				pattern: None,
 			},
 			version_ordering: "semver".to_string(),
-			loaders_allowed: true,
-			loader_authorities: Vec::new(),
+			loaders_allowed,
+			loader_authorities,
 			categories: Vec::new(),
 			tags: Vec::new(),
 			metadata_extractor: None,
@@ -584,6 +640,68 @@ mod tests {
 			declared_time: 1_760_000_000,
 		};
 		sign_payload(ObjectKind::GameDef, &definition, &[key]).wire_bytes()
+	}
+
+	#[tokio::test]
+	async fn refuses_a_loader_the_game_does_not_permit() {
+		let (application, _directory) = app().await;
+		let loader_key = SigningKey::from_seed(&[0x81; 32]);
+		let game_key = SigningKey::from_seed(&[0x82; 32]);
+
+		let loader_genesis = axum::http::Request::post("/v1/loaders")
+			.body(Body::from(loader_genesis(&loader_key)))
+			.expect("request");
+		let response = application.clone().oneshot(loader_genesis).await.expect("response");
+		let loader_id = body_json(response).await["id"].as_str().expect("loader id").to_string();
+
+		let game_genesis = axum::http::Request::post("/v1/games")
+			.body(Body::from(game_genesis(&game_key)))
+			.expect("request");
+		let response = application.clone().oneshot(game_genesis).await.expect("response");
+		let game_id = body_json(response).await["id"].as_str().expect("game id").to_string();
+
+		let closed = axum::http::Request::post(format!("/v1/games/{game_id}/definitions"))
+			.body(Body::from(game_definition_with(&game_key, &game_id, false, Vec::new())))
+			.expect("request");
+		let response = application.clone().oneshot(closed).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+		let put = axum::http::Request::post(format!("/v1/loaders/{loader_id}/definitions"))
+			.body(Body::from(loader_definition_for(&loader_key, &loader_id, &game_id)))
+			.expect("request");
+		let response = application.clone().oneshot(put).await.expect("response");
+		assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+		let curated = axum::http::Request::post(format!("/v1/games/{game_id}/definitions"))
+			.body(Body::from(game_definition_with(
+				&game_key,
+				&game_id,
+				true,
+				vec!["gd:sha256:99".to_string()],
+			)))
+			.expect("request");
+		let response = application.clone().oneshot(curated).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+		let put = axum::http::Request::post(format!("/v1/loaders/{loader_id}/definitions"))
+			.body(Body::from(loader_definition_for(&loader_key, &loader_id, &game_id)))
+			.expect("request");
+		let response = application.clone().oneshot(put).await.expect("response");
+		assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+		let permitted = axum::http::Request::post(format!("/v1/games/{game_id}/definitions"))
+			.body(Body::from(game_definition_with(
+				&game_key,
+				&game_id,
+				true,
+				vec![loader_id.clone()],
+			)))
+			.expect("request");
+		let response = application.clone().oneshot(permitted).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+		let put = axum::http::Request::post(format!("/v1/loaders/{loader_id}/definitions"))
+			.body(Body::from(loader_definition_for(&loader_key, &loader_id, &game_id)))
+			.expect("request");
+		let response = application.oneshot(put).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
 	}
 
 	#[tokio::test]

@@ -22,6 +22,20 @@ set live in the corresponding genesis, which is a separate object of kind
 `genesis`. Editing a definition is a new signed revision, never a mutation of
 the old one.
 
+A game definition's `loader_authorities` and `loaders_allowed` are enforced when
+a loader definition, release, or acceptance mapping is stored, not merely
+declared: a mapping that names a game whose definition this instance holds is
+refused if that game forbids loaders or if its authority list is non-empty and
+does not name the loader. A game definition this instance does not hold cannot
+be checked, so the loader is stored and compatibility with it stays unknown
+rather than assumed.
+
+Category and tag identifiers are declared by the game and referenced by ID.
+When a game definition with a non-empty category or tag vocabulary is held, a
+profile revision naming an identifier outside it is refused, so a facet cannot
+be populated by an identifier the game never declared. A game with no declared
+vocabulary constrains nothing.
+
 ## Loader objects carry a `type` discriminant
 
 A loader publishes three different shapes under the one object kind
