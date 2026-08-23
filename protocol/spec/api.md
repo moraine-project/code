@@ -372,8 +372,8 @@ key is returned exactly once; only its SHA-256 hash is stored. Keys are
 scoped, expire by default after 90 days, and are revocable independently. The
 known scopes are `account:read`, `keys:manage`, `projects:write`,
 `artifacts:write`, `submissions:write`, `submissions:review`,
-`federation:manage`, `orgs:manage`, and `notifications:read`. There is no
-wildcard, and no scope can sign a release.
+`federation:manage`, `orgs:manage`, `directory:manage`, and
+`notifications:read`. There is no wildcard, and no scope can sign a release.
 
 A request authenticates either with the session cookie or an
 `Authorization: Bearer` API key. A cookie-authenticated request that changes
@@ -464,17 +464,40 @@ is accepted, so the name and summary come from the publisher's signed profile,
 never from a directory edit. The index is disposable and can be rebuilt from
 stored objects.
 
-`q` matches the display name and summary case-insensitively. `game`, `tag`, and
-`category` are exact facet filters. `sort` is `updated` (default) or `name`.
-`limit` is bounded to 100. Pagination uses an opaque `next_cursor` and keyset
-ordering, not an offset, so it does not skip or repeat rows under concurrent
-writes.
+`q` matches the display name, summary, description, and any changelog text this
+instance holds, case-insensitively. `game`, `tag`, `category`, and `loader` are
+exact facet filters. `sort` is one of `relevance`, `updated`, `created`,
+`name`, and `popularity`, and any other value is a `400` rather than silently
+treated as a different order. `limit` is bounded to 100. Pagination uses an
+opaque `next_cursor` and keyset ordering, not an offset, so it does not skip or
+repeat rows under concurrent writes.
 
 Ranking is the instance's own policy and never a safety signal. The response's
 `source_instance` names the host that answered, and merging several instances'
 responses is by `project_id`, keeping each source's attribution. Results are
 not signed objects; a client that needs to trust a result fetches and verifies
 the underlying records.
+
+## Directory policy
+
+An instance decides what it lists. `PUT /v1/directory/policy/{project_id}`
+records a local `directory_policy` for one project and requires the
+`directory:manage` scope; `GET /v1/directory/policy/{project_id}` reads it back
+to anyone. A project with no recorded policy is `listed`.
+
+`listing_state` is one of `listed`, `unlisted`, `quarantined`, `blocked`,
+`withdrawn`, or `unavailable`, and an optional `reason_code` from the published
+taxonomy and a short note explain it. Setting `listed` clears the record.
+
+The policy is applied where it matters, and it is local policy rather than a
+statement about the release: `unlisted` and `blocked` projects are left out of
+search results, `quarantined` ones appear with a `quarantined` annotation
+telling a client not to fetch them automatically, and `withdrawn` and
+`unavailable` ones appear with that state. The project summary reports the
+state and reason, and a `blocked` project answers `404` to its summary so this
+instance does not serve it. Listing policy never touches signed bytes; it
+records what one operator decided, which another operator is free to disagree
+with.
 
 ## Organizations
 

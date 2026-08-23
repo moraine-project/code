@@ -512,6 +512,10 @@ pub(crate) async fn login(application: &Router, email: &str) -> (String, String)
 }
 
 pub(crate) async fn upload_token(application: &Router, email: &str) -> String {
+	scope_token(application, email, "artifacts:write").await
+}
+
+pub(crate) async fn scope_token(application: &Router, email: &str, scope: &str) -> String {
 	let (session, csrf) = login(application, email).await;
 	let cookie = format!("moraine_session={session}; moraine_csrf={csrf}");
 	let request = axum::http::Request::post("/v1/auth/keys")
@@ -519,12 +523,53 @@ pub(crate) async fn upload_token(application: &Router, email: &str) -> String {
 		.header(header::COOKIE, &cookie)
 		.header("x-csrf-token", &csrf)
 		.body(Body::from(
-			serde_json::json!({ "name": "uploader", "scopes": ["artifacts:write"] }).to_string(),
+			serde_json::json!({ "name": "scoped", "scopes": [scope] }).to_string(),
 		))
 		.expect("request");
 	let response = application.clone().oneshot(request).await.expect("response");
 	assert_eq!(response.status(), axum::http::StatusCode::CREATED);
 	body_json(response).await["key"].as_str().expect("key").to_string()
+}
+
+pub(crate) async fn publish_profile(
+	application: &Router,
+	signer: &SigningKey,
+	project_id: &str,
+	display_name: &str,
+) -> String {
+	use moraine_model::profile::ProfileRevision;
+
+	let profile = ProfileRevision {
+		protocol: 1,
+		project_id: project_id.to_string(),
+		game_id: sample_id("minecraft"),
+		revision_nonce: vec![0x41; 16],
+		display_name: display_name.to_string(),
+		summary: "A summary".to_string(),
+		description: "A description".to_string(),
+		icon: None,
+		gallery: Vec::new(),
+		links: Vec::new(),
+		communities: Vec::new(),
+		categories: Vec::new(),
+		tags: Vec::new(),
+		rights: None,
+		declared_time: 1_760_000_000,
+	};
+	let signed = sign_payload(Kind::Profile, &profile, &[signer]);
+	let digest = object_id(Kind::Profile, &signed.payload_bytes);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/profile"))
+		.body(Body::from(signed.wire_bytes()))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+	let feed = feed_wire_kind(signer, project_id, 1, None, digest, "profile-updated");
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(feed))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+	format!("gd:sha256:{}", hex::encode(digest))
 }
 
 pub(crate) fn id_bytes(id: &str) -> [u8; 32] {

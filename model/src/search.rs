@@ -15,6 +15,35 @@ pub enum ListingState {
 	Unavailable,
 }
 
+impl ListingState {
+	pub const fn as_str(self) -> &'static str {
+		match self {
+			Self::Listed => "listed",
+			Self::Unlisted => "unlisted",
+			Self::Quarantined => "quarantined",
+			Self::Blocked => "blocked",
+			Self::Withdrawn => "withdrawn",
+			Self::Unavailable => "unavailable",
+		}
+	}
+
+	pub fn parse(value: &str) -> Option<Self> {
+		Some(match value {
+			"listed" => Self::Listed,
+			"unlisted" => Self::Unlisted,
+			"quarantined" => Self::Quarantined,
+			"blocked" => Self::Blocked,
+			"withdrawn" => Self::Withdrawn,
+			"unavailable" => Self::Unavailable,
+			_ => return None,
+		})
+	}
+
+	pub const fn appears_in_search(self) -> bool {
+		matches!(self, Self::Listed | Self::Quarantined | Self::Withdrawn | Self::Unavailable)
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstancePopularity {
 	pub window: String,

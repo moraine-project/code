@@ -3,6 +3,7 @@ pub mod artifacts;
 pub mod compatibility;
 pub mod definitions;
 pub mod loader_releases;
+pub mod policy;
 pub mod review;
 pub mod search;
 pub mod views;
@@ -36,6 +37,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/projects/{id}/feed", get(feed_page).post(append_feed))
 		.route("/v1/projects/{id}/transfer", post(transfer))
 		.merge(crate::registry::views::routes())
+		.merge(policy::routes())
 }
 
 #[derive(Serialize)]
@@ -52,6 +54,8 @@ struct ProjectSummary {
 	head_entry: Option<String>,
 	profile: Option<String>,
 	owner: Option<OwnerView>,
+	listing_state: moraine_model::search::ListingState,
+	reason_code: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -144,6 +148,17 @@ async fn project_summary(State(state): State<AppState>, Path(id): Path<String>) 
 				(Some(kind), Some(id)) => Some(OwnerView { kind, id }),
 				_ => None,
 			};
+			let policy = match state.metadata.listing_policy(&id).await {
+				Ok(policy) => policy,
+				Err(error) => return storage_error(error),
+			};
+			let listing_state = policy
+				.as_ref()
+				.map(|policy| policy.listing_state)
+				.unwrap_or(moraine_model::search::ListingState::Listed);
+			if listing_state == moraine_model::search::ListingState::Blocked {
+				return (StatusCode::NOT_FOUND, "this instance does not serve that project").into_response();
+			}
 			let summary = ProjectSummary {
 				project_id: project.id,
 				genesis: id_for(&project.genesis_digest),
@@ -151,6 +166,8 @@ async fn project_summary(State(state): State<AppState>, Path(id): Path<String>) 
 				head_entry: project.head_digest.as_deref().map(id_for),
 				profile: project.profile_digest.as_deref().map(id_for),
 				owner,
+				listing_state,
+				reason_code: policy.and_then(|policy| policy.reason_code),
 			};
 			Json(summary).into_response()
 		}

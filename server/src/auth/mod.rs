@@ -76,6 +76,7 @@ pub const KNOWN_SCOPES: &[&str] = &[
 	"submissions:review",
 	"federation:manage",
 	"orgs:manage",
+	"directory:manage",
 	"notifications:read",
 ];
 

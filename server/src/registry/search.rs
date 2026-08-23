@@ -102,6 +102,13 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		.and_then(|value| value.to_str().ok())
 		.unwrap_or_default()
 		.to_string();
+	let policies = match state.metadata.listing_policies(&project_ids).await {
+		Ok(policies) => policies,
+		Err(error) => {
+			tracing::error!(%error, "directory policy lookup failed");
+			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
+		}
+	};
 	let keys: Vec<(String, String)> = hits
 		.iter()
 		.map(|hit| (hit.game_id.clone(), normalize_name(&hit.display_name)))
@@ -115,35 +122,53 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 	};
 	let results: Vec<SearchResult> = hits
 		.iter()
-		.map(|hit| SearchResult {
-			project_id: hit.project_id.clone(),
-			game_id: hit.game_id.clone(),
-			display_name: hit.display_name.clone(),
-			summary: hit.summary.clone(),
-			icon_url: None,
-			latest_release_id: None,
-			matched_release_id: None,
-			listing_state: ListingState::Listed,
-			source_instance: source_instance.clone(),
-			home: homes.get(&hit.project_id).cloned(),
-			annotations: collisions
+		.filter_map(|hit| {
+			let listing_state = policies
+				.get(&hit.project_id)
+				.map(|policy| policy.listing_state)
+				.unwrap_or(ListingState::Listed);
+			if !listing_state.appears_in_search() {
+				return None;
+			}
+			let mut annotations = Vec::new();
+			if let Some(count) = collisions
 				.get(&(hit.game_id.clone(), normalize_name(&hit.display_name)))
 				.filter(|count| **count > 1)
-				.map(|count| {
-					vec![Annotation {
-						kind: "name-collision".to_string(),
-						ref_digest: None,
-						label: format!(
-							"{} projects in this game share this name; compare the IDs, not the names",
-							count
-						),
-					}]
-				})
-				.unwrap_or_default(),
-			instance_popularity: popularities.get(&hit.project_id).map(|value| InstancePopularity {
-				window: "instance-30d".to_string(),
-				value: (*value).max(0) as u64,
-			}),
+			{
+				annotations.push(Annotation {
+					kind: "name-collision".to_string(),
+					ref_digest: None,
+					label: format!(
+						"{} projects in this game share this name; compare the IDs, not the names",
+						count
+					),
+				});
+			}
+			if listing_state == ListingState::Quarantined {
+				annotations.push(Annotation {
+					kind: "quarantined".to_string(),
+					ref_digest: None,
+					label: "This instance is holding this project pending a report; do not fetch it automatically"
+						.to_string(),
+				});
+			}
+			Some(SearchResult {
+				project_id: hit.project_id.clone(),
+				game_id: hit.game_id.clone(),
+				display_name: hit.display_name.clone(),
+				summary: hit.summary.clone(),
+				icon_url: None,
+				latest_release_id: None,
+				matched_release_id: None,
+				listing_state,
+				source_instance: source_instance.clone(),
+				home: homes.get(&hit.project_id).cloned(),
+				annotations,
+				instance_popularity: popularities.get(&hit.project_id).map(|value| InstancePopularity {
+					window: "instance-30d".to_string(),
+					value: (*value).max(0) as u64,
+				}),
+			})
 		})
 		.collect();
 	let next_cursor = if has_more {
