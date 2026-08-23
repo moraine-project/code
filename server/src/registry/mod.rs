@@ -2,6 +2,7 @@ pub mod advisories;
 pub mod artifacts;
 pub mod compatibility;
 pub mod definitions;
+pub mod loader_releases;
 pub mod review;
 pub mod search;
 pub mod views;
