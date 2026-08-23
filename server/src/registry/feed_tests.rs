@@ -286,6 +286,7 @@ async fn a_feed_can_be_filtered_by_loader_version() {
 	let response = application.clone().oneshot(request).await.expect("response");
 	let page = body_json(response).await;
 	let entries = page["entries"].as_array().expect("entries");
+	eprintln!("DEBUG page={page}");
 	assert_eq!(entries.len(), 1);
 	assert_eq!(entries[0]["seq"], 2);
 
@@ -329,4 +330,71 @@ async fn feed_titles_a_withdrawal() {
 	let response = application.oneshot(request).await.expect("response");
 	let page = body_json(response).await;
 	assert_eq!(page["entries"][0]["title"], "withdrawn: compromise");
+}
+
+#[tokio::test]
+async fn filters_release_entries_by_runtime_compatibility() {
+	use moraine_model::compatibility::{Predicate, Scheme};
+
+	let (application, _directory) = app().await;
+	let runtime_key = key(27);
+	let request = axum::http::Request::post("/v1/runtimes")
+		.body(Body::from(runtime_genesis_wire(&runtime_key)))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+	let runtime_id = body_json(response).await["id"].as_str().expect("runtime id").to_string();
+	let request = axum::http::Request::post(format!("/v1/runtimes/{runtime_id}/definitions"))
+		.body(Body::from(runtime_definition_wire(&runtime_key, &runtime_id)))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let signer = key(28);
+	let (project_id, _first) = publish_project(&application, &signer).await;
+	let (modern, modern_digest) = release_wire_with_runtime(
+		&signer,
+		&project_id,
+		0x71,
+		"2.0.0",
+		Some(Predicate::new(Scheme::Semver, vec![">=17".to_string()])),
+	);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+		.body(Body::from(modern))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+	let feed = feed_wire(&signer, &project_id, 1, None, modern_digest);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(feed))
+		.expect("request");
+	assert_eq!(
+		application.clone().oneshot(request).await.expect("response").status(),
+		StatusCode::CREATED
+	);
+
+	let matching = axum::http::Request::get(format!(
+		"/v1/projects/{project_id}/feed?runtime={runtime_id}&runtime_version=17"
+	))
+	.body(Body::empty())
+	.expect("request");
+	let response = application.clone().oneshot(matching).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let page = body_json(response).await;
+	let entries = page["entries"].as_array().expect("entries");
+	assert_eq!(entries.len(), 1);
+	assert_eq!(entries[0]["seq"], 1);
+
+	let older = axum::http::Request::get(format!(
+		"/v1/projects/{project_id}/feed?runtime={runtime_id}&runtime_version=16"
+	))
+	.body(Body::empty())
+	.expect("request");
+	let response = application.oneshot(older).await.expect("response");
+	let page = body_json(response).await;
+	assert!(page["entries"].as_array().expect("entries").is_empty());
 }

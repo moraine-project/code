@@ -108,6 +108,10 @@ struct FeedQuery {
 	loader: Option<String>,
 	#[serde(default)]
 	loader_version: Option<String>,
+	#[serde(default)]
+	runtime: Option<String>,
+	#[serde(default)]
+	runtime_version: Option<String>,
 }
 
 async fn create_project(State(state): State<AppState>, body: Bytes) -> Response {
@@ -456,6 +460,7 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 	let mut entries = Vec::with_capacity(limit as usize);
 	let mut scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
 	let mut loader_scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
+	let mut runtime_scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
 	let mut scanned = query.after;
 	let mut pages = 0;
 	loop {
@@ -509,7 +514,23 @@ async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(
 							resolved
 						}
 					};
-					if !crate::registry::compatibility::release_matches_loader_version(object, loader, version, ordering) {
+					let matched =
+						crate::registry::compatibility::release_matches_loader_version(object, loader, version, ordering);
+					eprintln!("DBG loader={loader} version={version} seq={} matched={matched}", row.seq);
+					if !matched {
+						continue;
+					}
+				}
+				if let (Some(runtime), Some(version)) = (query.runtime.as_deref(), query.runtime_version.as_deref()) {
+					let ordering = match runtime_scheme {
+						Some(ordering) => ordering,
+						None => {
+							let resolved = crate::registry::compatibility::runtime_ordering(&state, runtime).await;
+							runtime_scheme = Some(resolved);
+							resolved
+						}
+					};
+					if !crate::registry::compatibility::release_matches_runtime(object, version, ordering) {
 						continue;
 					}
 				}

@@ -73,6 +73,32 @@ pub(crate) fn release_matches_loader_version(
 	})
 }
 
+pub(crate) fn release_matches_runtime(
+	object: &StoredObject,
+	version: &str,
+	scheme: Option<moraine_model::version::OrderingScheme>,
+) -> bool {
+	use moraine_model::Canonical;
+	let Ok(moraine_model::release::ReleaseObject::Release(release)) =
+		moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload)
+	else {
+		return false;
+	};
+	release.compatibility.iter().any(|entry| match &entry.runtime_predicate {
+		None => false,
+		Some(predicate) => predicate_satisfied(predicate, version, scheme),
+	})
+}
+
+pub(crate) async fn runtime_ordering(state: &AppState, runtime_id: &str) -> Option<moraine_model::version::OrderingScheme> {
+	use moraine_model::Canonical;
+	let definition = state.metadata.definition(runtime_id).await.ok().flatten()?;
+	let current = definition.current_digest?;
+	let object = state.metadata.object(&current).await.ok().flatten()?;
+	let runtime = moraine_model::definition::RuntimeDef::from_canonical_bytes(&object.payload).ok()?;
+	moraine_model::version::OrderingScheme::parse(&runtime.version_ordering)
+}
+
 pub(crate) async fn loader_ordering(state: &AppState, loader_id: &str) -> Option<moraine_model::version::OrderingScheme> {
 	use moraine_model::Canonical;
 	let definition = state.metadata.definition(loader_id).await.ok().flatten()?;

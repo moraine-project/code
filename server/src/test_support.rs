@@ -129,6 +129,33 @@ pub(crate) fn game_definition_wire(key: &SigningKey, game_id: &str) -> Vec<u8> {
 	sign_payload(Kind::GameDef, &definition, &[key]).wire_bytes()
 }
 
+pub(crate) fn runtime_genesis_wire(key: &SigningKey) -> Vec<u8> {
+	let genesis = Genesis {
+		protocol: 1,
+		kind: GenesisKind::Runtime,
+		nonce: vec![0x72; 16],
+		roots: vec![RootKey::from_public_key(key.verifying_key().to_bytes().to_vec()).expect("root")],
+		threshold: 1,
+		authorized_kinds: vec!["delegation".to_string(), "runtime-def".to_string()],
+		home_hint: None,
+		contacts: None,
+		created_at: 1_760_000_000,
+	};
+	sign_payload(Kind::Genesis, &genesis, &[key]).wire_bytes()
+}
+
+pub(crate) fn runtime_definition_wire(key: &SigningKey, runtime_id: &str) -> Vec<u8> {
+	let definition = moraine_model::definition::RuntimeDef {
+		protocol: 1,
+		runtime_id: runtime_id.to_string(),
+		kind: "java".to_string(),
+		display_name: "Java".to_string(),
+		version_ordering: "semver".to_string(),
+		declared_time: 1_760_000_000,
+	};
+	sign_payload(Kind::RuntimeDef, &definition, &[key]).wire_bytes()
+}
+
 pub(crate) fn loader_genesis_wire(key: &SigningKey) -> Vec<u8> {
 	let genesis = Genesis {
 		protocol: 1,
@@ -249,6 +276,54 @@ pub(crate) fn release_wire_for_game_with_loader(
 			loader_version_predicate: loader_version.map(|version| Predicate::new(Scheme::Exact, vec![version.to_string()])),
 			side: Side::Both,
 			runtime_predicate: None,
+			os_predicate: None,
+			arch_predicate: None,
+		}],
+		artifacts: vec![Artifact {
+			digest: vec![0xAB; 32],
+			size: 10,
+			media_type: "application/java-archive".to_string(),
+			filename: "example.jar".to_string(),
+			is_primary: true,
+			os_predicate: None,
+			arch_predicate: None,
+		}],
+		dependencies: Vec::new(),
+		source_reference: None,
+		changelog_digest: None,
+		license_expression: None,
+		rights: None,
+		sbom_digest: None,
+		minimum_verifier_version: 1,
+		critical_extensions: Vec::new(),
+	};
+	let signed = sign_payload(Kind::Release, &release, &[signer]);
+	let digest = object_id(Kind::Release, &signed.payload_bytes);
+	(signed.wire_bytes(), digest)
+}
+
+pub(crate) fn release_wire_with_runtime(
+	signer: &SigningKey,
+	project_id: &str,
+	nonce: u8,
+	human_version: &str,
+	runtime_predicate: Option<Predicate>,
+) -> (Vec<u8>, [u8; 32]) {
+	let release = ReleasePayload {
+		protocol: 1,
+		project_id: project_id.to_string(),
+		game_id: sample_id("minecraft"),
+		release_nonce: vec![nonce; 16],
+		human_version: human_version.to_string(),
+		channel: "release".to_string(),
+		kind: "mod".to_string(),
+		declared_time: 1_760_000_000,
+		compatibility: vec![Compatibility {
+			game_version_predicate: Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]),
+			loader_id: None,
+			loader_version_predicate: None,
+			side: Side::Both,
+			runtime_predicate,
 			os_predicate: None,
 			arch_predicate: None,
 		}],

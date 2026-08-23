@@ -226,18 +226,19 @@ review acceptance, and during federation sync, and it re-verifies the transfer
 and requires that it start from the currently recorded owner. Ownership is
 therefore a feed fact: a directory learns it by verifying the same signed
 material, not by trusting the home's summary. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
-bounded page of entries. Optional `game_version`, `loader`, and `loader_version` filters restrict the
-page to release entries whose declared compatibility matches them. The game
-version is evaluated through the game's declared version ordering and the
-loader version through the loader definition's declared ordering, rather than
-string comparison; the loader is matched by the loader ID a release declares.
-A `loader_version` without a `loader` matches nothing, and a release that names
-a loader without a version predicate matches every version of it. A version
-range is only evaluated when the game or loader definition that declares its
-ordering is hosted here; without it the entry is treated as unsatisfied rather
-than assumed to be semver.
-compatibility that cannot be evaluated without an ordered list of versions is
-treated as unsatisfied, and non-release entries are kept. The page reads
+bounded page of entries. Optional `game_version`, `loader`, `loader_version`,
+`runtime`, and `runtime_version` filters restrict the page to release entries
+whose declared compatibility matches them. The game version is evaluated
+through the game's declared version ordering, the loader version through the
+loader definition's declared ordering, and the runtime version through the
+runtime definition's declared ordering, rather than string comparison; the
+loader is matched by the loader ID a release declares. A `runtime_version`
+without a `runtime` matches nothing, and the runtime filter matches a release
+whose `runtime_predicate` accepts the version. A version range is only
+evaluated when the definition that declares its ordering is hosted here;
+without it the entry is treated as unsatisfied rather than assumed to be
+semver, so a range that cannot be evaluated without an ordered list of versions
+is treated as unsatisfied. Non-release entries are kept. The page reads
 further when a full batch yields fewer than the requested entries, up to
 `max_feed_scan_pages` batches (50 by default, advertised in the capability
 document), so a filter does not return a short page while matching entries sit
