@@ -9,8 +9,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::TryStreamExt;
 use serde::Serialize;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio_util::io::{ReaderStream, StreamReader};
+use tokio_util::io::StreamReader;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
@@ -213,19 +212,15 @@ async fn serve_blob(state: &AppState, digest_hex: &str, headers: &HeaderMap, hea
 			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
 		}
 	}
-	let Some(mut file) = (match state.store.open(&digest).await {
-		Ok(file) => file,
+	let Some(length) = (match state.store.size(&digest).await {
+		Ok(size) => size,
 		Err(error) => {
-			tracing::error!(%error, "blob open failed");
+			tracing::error!(%error, "blob size lookup failed");
 			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
 		}
 	}) else {
 		return (StatusCode::NOT_FOUND, "no such blob").into_response();
 	};
-	let Ok(metadata) = file.metadata().await else {
-		return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
-	};
-	let length = metadata.len();
 
 	let requested = headers
 		.get(header::RANGE)
@@ -254,14 +249,16 @@ async fn serve_blob(state: &AppState, digest_hex: &str, headers: &HeaderMap, hea
 	let content_length = if length == 0 { 0 } else { end - start + 1 };
 	let body = if head {
 		Body::empty()
-	} else if status == StatusCode::PARTIAL_CONTENT {
-		if let Err(error) = file.seek(std::io::SeekFrom::Start(start)).await {
-			tracing::error!(%error, "blob seek failed");
-			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
-		}
-		Body::from_stream(ReaderStream::new(file.take(content_length)))
 	} else {
-		Body::from_stream(ReaderStream::new(file))
+		let range = (status == StatusCode::PARTIAL_CONTENT).then_some((start, end));
+		match state.store.read(&digest, range).await {
+			Ok(Some(stream)) => Body::from_stream(stream),
+			Ok(None) => return (StatusCode::NOT_FOUND, "no such blob").into_response(),
+			Err(error) => {
+				tracing::error!(%error, "blob read failed");
+				return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
+			}
+		}
 	};
 
 	let mut response = Response::new(body);
@@ -353,15 +350,21 @@ mod tests {
 
 	async fn test_state(web_dir: Option<std::path::PathBuf>) -> (AppState, tempfile::TempDir) {
 		let directory = tempfile::tempdir().expect("tempdir");
-		let store = Arc::new(BlobStore::new(directory.path()).await.expect("store"));
+		let store = BlobStore::new(directory.path()).await.expect("store");
+		let state = state_with(store, directory.path(), web_dir).await;
+		(state, directory)
+	}
+
+	async fn state_with(store: BlobStore, directory: &std::path::Path, web_dir: Option<std::path::PathBuf>) -> AppState {
+		let store = Arc::new(store);
 		let metadata = Arc::new(
-			MetadataStore::open(directory.path().join("metadata.sqlite"))
+			MetadataStore::open(directory.join("metadata.sqlite"))
 				.await
 				.expect("metadata"),
 		);
 		let config = crate::config::Config {
 			bind: "127.0.0.1:0".parse().expect("addr"),
-			data_dir: directory.path().to_path_buf(),
+			data_dir: directory.to_path_buf(),
 			max_artifact_bytes: 1024,
 			max_upload_bytes_per_account: 5_368_709_120,
 			max_feed_page_entries: 100,
@@ -379,8 +382,9 @@ mod tests {
 			allow_insecure_federation_local: false,
 			publishing: crate::config::Publishing::Review,
 			web_dir: web_dir.clone(),
+			s3: Default::default(),
 		};
-		let state = AppState {
+		AppState {
 			store,
 			metadata,
 			capability: Arc::new(Capability::discover(&config)),
@@ -388,8 +392,7 @@ mod tests {
 			metrics: std::sync::Arc::new(crate::ops::metrics::Metrics::new()),
 			rate_limiter: std::sync::Arc::new(crate::auth::ratelimit::RateLimiter::new()),
 			web_dir: web_dir.map(Arc::new),
-		};
-		(state, directory)
+		}
 	}
 
 	async fn test_app_with(web_dir: Option<std::path::PathBuf>) -> (Router, tempfile::TempDir) {
@@ -458,6 +461,83 @@ mod tests {
 		let served = axum::http::Request::get(&path).body(Body::empty()).expect("request");
 		let response = app.oneshot(served).await.expect("response");
 		assert_eq!(response.status(), StatusCode::OK);
+		let body = response.into_body().collect().await.expect("collect").to_bytes();
+		assert_eq!(body.as_ref(), b"artifact");
+	}
+
+	fn live_s3_settings() -> Option<(String, crate::config::S3Settings)> {
+		let bucket = std::env::var("MORAINE_TEST_S3_BUCKET").ok()?;
+		Some((
+			bucket.clone(),
+			crate::config::S3Settings {
+				bucket: Some(bucket),
+				endpoint: std::env::var("MORAINE_TEST_S3_ENDPOINT").ok(),
+				region: std::env::var("MORAINE_TEST_S3_REGION").ok(),
+				access_key_id: std::env::var("MORAINE_TEST_S3_ACCESS_KEY_ID").ok(),
+				secret_access_key: std::env::var("MORAINE_TEST_S3_SECRET_ACCESS_KEY").ok(),
+				prefix: format!(
+					"moraine-test-{}",
+					std::time::SystemTime::now()
+						.duration_since(std::time::UNIX_EPOCH)
+						.map(|duration| duration.as_nanos())
+						.unwrap_or(0)
+				),
+			},
+		))
+	}
+
+	#[tokio::test]
+	async fn uploads_and_serves_through_object_storage() {
+		let Some((bucket, settings)) = live_s3_settings() else {
+			return;
+		};
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = BlobStore::with_object_store(
+			crate::blob::s3_object_store(&bucket, &settings).expect("s3"),
+			settings.prefix.clone(),
+			directory.path().join("staging"),
+		)
+		.await
+		.expect("store");
+		let state = state_with(store, directory.path(), None).await;
+		let app = router(state);
+
+		let token = crate::test_support::upload_token(&app, "uploader@example.org").await;
+		let upload = axum::http::Request::post("/v1/blobs")
+			.header(header::AUTHORIZATION, format!("Bearer {token}"))
+			.body(Body::from("object artifact"))
+			.expect("request");
+		let response = app.clone().oneshot(upload).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+		let receipt: serde_json::Value =
+			serde_json::from_slice(&to_bytes(response.into_body(), 16 * 1024).await.expect("body")).expect("json");
+		let hex_digest = receipt["digest"]
+			.as_str()
+			.expect("digest")
+			.strip_prefix("sha256:")
+			.expect("prefix")
+			.to_string();
+		let path = format!("/v1/blobs/sha256/{hex_digest}");
+
+		crate::db::MetadataStore::open(directory.path().join("metadata.sqlite"))
+			.await
+			.expect("metadata")
+			.index_artifact(hex::decode(&hex_digest).expect("hex").as_slice(), "p", &[0u8; 32])
+			.await
+			.expect("index");
+
+		let served = axum::http::Request::get(&path).body(Body::empty()).expect("request");
+		let response = app.clone().oneshot(served).await.expect("response");
+		assert_eq!(response.status(), StatusCode::OK);
+		let body = response.into_body().collect().await.expect("collect").to_bytes();
+		assert_eq!(body.as_ref(), b"object artifact");
+
+		let ranged = axum::http::Request::get(&path)
+			.header(header::RANGE, "bytes=7-14")
+			.body(Body::empty())
+			.expect("request");
+		let response = app.oneshot(ranged).await.expect("response");
+		assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
 		let body = response.into_body().collect().await.expect("collect").to_bytes();
 		assert_eq!(body.as_ref(), b"artifact");
 	}

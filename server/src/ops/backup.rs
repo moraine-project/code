@@ -29,7 +29,7 @@ pub async fn run(config: &Config, out: &Path) -> Result<Summary, String> {
 		.await
 		.map_err(|error| error.to_string())?;
 
-	let store = BlobStore::new(&config.data_dir).await.map_err(|error| error.to_string())?;
+	let store = crate::blob::open_store(config).await.map_err(|error| error.to_string())?;
 	let copied = out.join("blobs");
 	std::fs::create_dir_all(&copied).map_err(|error| error.to_string())?;
 	let mut inventory = String::new();
@@ -38,7 +38,7 @@ pub async fn run(config: &Config, out: &Path) -> Result<Summary, String> {
 	for (digest, _) in store.list_committed().await.map_err(|error| error.to_string())? {
 		let name = hex::encode(digest);
 		let size = store.size(&digest).await.map_err(|error| error.to_string())?.unwrap_or(0);
-		std::fs::copy(store.blob_path(&digest), copied.join(&name)).map_err(|error| error.to_string())?;
+		copy_blob(&store, &digest, &copied.join(&name)).await?;
 		inventory.push_str(&format!("{name} {size}\n"));
 		blobs += 1;
 		bytes += size;
@@ -46,6 +46,26 @@ pub async fn run(config: &Config, out: &Path) -> Result<Summary, String> {
 	std::fs::write(out.join("blobs.txt"), inventory).map_err(|error| error.to_string())?;
 	let projects = metadata.metrics_snapshot().await.map_err(|error| error.to_string())?.projects;
 	Ok(Summary { projects, blobs, bytes })
+}
+
+async fn copy_blob(store: &BlobStore, digest: &[u8; 32], destination: &std::path::Path) -> Result<(), String> {
+	use futures_util::StreamExt;
+	use tokio::io::AsyncWriteExt;
+	let mut stream = store
+		.read(digest, None)
+		.await
+		.map_err(|error| error.to_string())?
+		.ok_or_else(|| format!("blob {} is missing", hex::encode(digest)))?;
+	let mut file = tokio::fs::File::create(destination)
+		.await
+		.map_err(|error| error.to_string())?;
+	while let Some(chunk) = stream.next().await {
+		file.write_all(&chunk.map_err(|error| error.to_string())?)
+			.await
+			.map_err(|error| error.to_string())?;
+	}
+	file.flush().await.map_err(|error| error.to_string())?;
+	Ok(())
 }
 
 pub struct Verified {
@@ -140,6 +160,7 @@ mod tests {
 			publishing: crate::config::Publishing::Review,
 			allow_insecure_federation_local: false,
 			web_dir: None,
+			s3: Default::default(),
 		}
 	}
 

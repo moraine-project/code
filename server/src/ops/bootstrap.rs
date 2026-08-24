@@ -85,6 +85,7 @@ mod tests {
 			publishing: crate::config::Publishing::Review,
 			allow_insecure_federation_local: false,
 			web_dir: None,
+			s3: Default::default(),
 		}
 	}
 

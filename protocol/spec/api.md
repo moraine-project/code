@@ -131,6 +131,15 @@ Artifacts are content addressed. An artifact digest renders as
 `sha256:<64 hex>`. Object IDs use a separate `gd:sha256:` namespace and are not
 blob addresses.
 
+Committed blobs live either on the local filesystem or in an S3-compatible
+object store. The choice is an operator setting and does not change a digest,
+a URL, or a response: the store is addressed by digest on both backends, and a
+client cannot tell which one holds the bytes. Uploads always stage on local
+disk first, so a partial transfer never reaches the object store, and a
+committed blob is read back by streaming, with byte ranges passed through to
+the backend. An object-store instance names a bucket, an endpoint, a region, a
+prefix, and credentials; a local instance needs only its data directory.
+
 `POST /v1/blobs` streams the request body into private staging, computes the
 digest as it goes, and refuses anything over the advertised artifact limit with
 `413`. It requires the `artifacts:write` scope, so an unauthenticated caller

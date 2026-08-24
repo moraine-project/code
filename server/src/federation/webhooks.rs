@@ -477,6 +477,7 @@ mod tests {
 			allow_insecure_federation_local: true,
 			publishing: crate::config::Publishing::Open,
 			web_dir: None,
+			s3: Default::default(),
 		};
 		let state = AppState {
 			store,

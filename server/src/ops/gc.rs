@@ -83,6 +83,7 @@ mod tests {
 			publishing: crate::config::Publishing::Review,
 			allow_insecure_federation_local: false,
 			web_dir: None,
+			s3: Default::default(),
 		};
 		AppState {
 			store,
@@ -98,7 +99,7 @@ mod tests {
 	async fn commit_aged(state: &AppState, bytes: &[u8], modified: SystemTime) -> [u8; 32] {
 		let staged = state.store.put_staged(bytes, 1024).await.expect("stage");
 		let digest = state.store.commit(staged).await.expect("commit");
-		std::fs::File::open(state.store.blob_path(&digest))
+		std::fs::File::open(state.store.local_path(&digest).expect("local store"))
 			.expect("open")
 			.set_modified(modified)
 			.expect("mtime");

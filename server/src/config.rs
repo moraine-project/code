@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use clap::{Parser, ValueEnum};
+use clap::{Args, Parser, ValueEnum};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Publishing {
@@ -108,6 +108,30 @@ pub struct Config {
 
 	#[arg(long, env = "MORAINE_WEB_DIR")]
 	pub web_dir: Option<PathBuf>,
+
+	#[command(flatten)]
+	pub s3: S3Settings,
+}
+
+#[derive(Debug, Clone, Default, Args)]
+pub struct S3Settings {
+	#[arg(long, env = "MORAINE_S3_BUCKET")]
+	pub bucket: Option<String>,
+
+	#[arg(long, env = "MORAINE_S3_ENDPOINT")]
+	pub endpoint: Option<String>,
+
+	#[arg(long, env = "MORAINE_S3_REGION")]
+	pub region: Option<String>,
+
+	#[arg(long, env = "MORAINE_S3_ACCESS_KEY_ID")]
+	pub access_key_id: Option<String>,
+
+	#[arg(long, env = "MORAINE_S3_SECRET_ACCESS_KEY")]
+	pub secret_access_key: Option<String>,
+
+	#[arg(long, env = "MORAINE_S3_PREFIX", default_value = "moraine")]
+	pub prefix: String,
 }
 
 impl Config {
@@ -158,6 +182,7 @@ mod tests {
 			allow_insecure_federation_local: false,
 			publishing: Publishing::Review,
 			web_dir: None,
+			s3: Default::default(),
 		}
 	}
 

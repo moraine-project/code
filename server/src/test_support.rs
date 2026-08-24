@@ -551,6 +551,7 @@ pub(crate) async fn app_in_with_scan(
 		allow_insecure_federation_local,
 		publishing,
 		web_dir: None,
+		s3: Default::default(),
 	};
 	let state = AppState {
 		store,

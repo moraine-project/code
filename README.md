@@ -90,8 +90,32 @@ MORAINE_DATABASE_URL=postgres://user:password@host/moraine \
   cargo run -p moraine-server -- --data-dir ./data
 ```
 
-Artifact bytes stay on the filesystem in both cases. Backup and restore read
-the SQLite file directly, so use `pg_dump` for a PostgreSQL database.
+Artifact bytes stay on the filesystem by default. To keep them in an
+S3-compatible object store instead, set the bucket; Backblaze B2, RustFS, and
+MinIO all speak this API, and the endpoint takes the provider's host with
+path-style addressing:
+
+```sh
+MORAINE_S3_BUCKET=moraine \
+MORAINE_S3_ENDPOINT=https://s3.us-west-004.backblazeb2.com \
+MORAINE_S3_REGION=us-west-004 \
+MORAINE_S3_ACCESS_KEY_ID=<key-id> \
+MORAINE_S3_SECRET_ACCESS_KEY=<application-key> \
+MORAINE_S3_PREFIX=moraine \
+  cargo run -p moraine-server -- --data-dir ./data
+```
+
+Uploads still stage on local disk so a partial transfer never reaches the
+bucket, and a committed blob is served to clients by streaming it back out of
+the object store, including byte ranges. Set `MORAINE_S3_ACCESS_KEY_ID` and
+`MORAINE_S3_SECRET_ACCESS_KEY` together; without them the client falls back to
+the standard provider chain, which is what an instance role provides. The
+prefix namespaces every object so one bucket can hold several instances.
+
+Backup and restore read the SQLite file directly, so use `pg_dump` for a
+PostgreSQL database, and the same S3 client or an operator tool for a bucket.
+`moraine-server backup` copies committed blobs through the store, so it works
+against either backend.
 
 The role does not need to own the database or be a superuser. It needs
 `CONNECT` on the database and `USAGE` and `CREATE` on the schema the connection
