@@ -22,6 +22,16 @@ set live in the corresponding genesis, which is a separate object of kind
 `genesis`. Editing a definition is a new signed revision, never a mutation of
 the old one.
 
+A definition may be authored as a readable TOML file and compiled to canonical
+bytes before signing, so the input stays reviewable and diffable. The file is
+an input convenience and is never the wire format or the signed artifact:
+duplicate keys, implicit typing, and ordering differences make a text format
+unsuitable for signatures. TOML is used because it has explicit types, rejects
+duplicate keys, and has no anchors, so a file has one unambiguous meaning
+before compilation. A definition is signed by whoever authors it, so no
+pre-signed definitions ship with this implementation; an operator authors its
+own and reuses that key.
+
 A game definition's `loader_authorities` and `loaders_allowed` are enforced when
 a loader definition, release, or acceptance mapping is stored, not merely
 declared: a mapping that names a game whose definition this instance holds is

@@ -19,10 +19,12 @@ moraine-install = { path = "../install" }
 moraine-metadata = { path = "../metadata" }
 moraine-model = { path = "../model" }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "webpki-roots", "stream"] }
+serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs"] }
 tokio-util = { version = "0.7", features = ["io"] }
+toml = "1.1"
 
 [dev-dependencies]
 tempfile = "3"

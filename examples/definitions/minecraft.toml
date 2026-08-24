@@ -1,0 +1,24 @@
+kind = "game"
+display_name = "Minecraft"
+version_ordering = "semver"
+loaders_allowed = true
+
+[[categories]]
+id = "utility"
+label = "Utility"
+
+[[categories]]
+id = "worldgen"
+label = "World Generation"
+
+[[categories]]
+id = "library"
+label = "Library"
+
+[[tags]]
+id = "client"
+label = "Client"
+
+[[tags]]
+id = "server"
+label = "Server"

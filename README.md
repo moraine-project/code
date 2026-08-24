@@ -240,10 +240,26 @@ it reaches directories through sync like any other feed fact.
 A game, loader, or runtime is its own signed identity, and the server reads
 them from a `definitions` directory beside the data directory at startup. Sign
 one with a key of your own; the identity is the genesis, so its ID is derived
-rather than chosen:
+rather than chosen.
+
+A definition can be authored as a readable TOML file and compiled to canonical
+signed bytes, which keeps a definition reviewable and diffable. `examples/`
+holds starting points:
 
 ```sh
 cargo run -p moraine-publish -- keygen --key game.key
+cargo run -p moraine-publish -- define --key game.key \
+  --file examples/definitions/minecraft.toml --out data/definitions
+# the game ID is now printed; use it in a loader file
+cargo run -p moraine-publish -- define --key loader.key \
+  --file examples/definitions/fabric.toml --out data/definitions
+cargo run -p moraine-publish -- define --key runtime.key \
+  --file examples/definitions/java.toml --out data/definitions
+```
+
+The same definitions can be authored from flags instead:
+
+```sh
 cargo run -p moraine-publish -- define-game --key game.key --name "Minecraft" \
   --version-ordering semver --out data/definitions
 cargo run -p moraine-publish -- define-loader --key loader.key --game <game-id> \
@@ -254,9 +270,16 @@ cargo run -p moraine-publish -- define-runtime --key runtime.key --kind java \
   --name "Java" --out data/definitions
 ```
 
+A definition is signed by the operator who authors it, so this repository ships
+no pre-signed seed: a shipped definition would need a shipped private key, and
+a game definition's `loader_authorities` would then name an identity nobody
+else can extend. Author your own once and reuse the key.
+
 Each command writes the signed bytes the definitions directory loads; drop them
 in and restart, or `POST` them to `/v1/games`, `/v1/loaders`, or `/v1/runtimes`
-and then to the matching `/definitions` route. A loader names the game it
+and then to the matching `/definitions` route. A readable file is compiled and
+signed locally; the text is never signed and never served, so editing it after
+the fact changes nothing. A loader names the game it
 targets, so publish the game first. `define-loader-release` is a loader object
 of the release shape: it records one loader version and the game versions it
 supports, and it does not replace the loader definition. Loader releases and

@@ -1,0 +1,4 @@
+kind = "runtime"
+display_name = "Java"
+runtime_kind = "java"
+version_ordering = "semver"

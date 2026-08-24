@@ -70,6 +70,15 @@ enum Command {
 		file: PathBuf,
 	},
 
+	Define {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		file: PathBuf,
+		#[arg(long, default_value = "definitions")]
+		out: PathBuf,
+	},
+
 	DefineGame {
 		#[arg(long)]
 		key: PathBuf,
@@ -309,6 +318,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			locale,
 			file,
 		} => commands::changelog(&key, &home, &project, release, &locale, &file).await,
+		Command::Define { key, file, out } => definitions::from_file(&key, &file, &out),
 		Command::DefineGame {
 			key,
 			name,
