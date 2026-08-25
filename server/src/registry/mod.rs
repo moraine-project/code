@@ -2,6 +2,7 @@ pub mod advisories;
 pub mod artifacts;
 pub mod compatibility;
 pub mod definitions;
+pub mod legal;
 pub mod loader_releases;
 pub mod policy;
 pub mod review;
@@ -38,6 +39,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/projects/{id}/transfer", post(transfer))
 		.merge(crate::registry::views::routes())
 		.merge(policy::routes())
+		.merge(legal::routes())
 }
 
 #[derive(Serialize)]
@@ -727,6 +729,10 @@ mod feed_tests;
 #[cfg(test)]
 #[path = "admission_tests.rs"]
 mod admission_tests;
+
+#[cfg(test)]
+#[path = "legal_tests.rs"]
+mod legal_tests;
 
 #[cfg(test)]
 #[path = "ownership_tests.rs"]

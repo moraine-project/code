@@ -509,6 +509,32 @@ instance does not serve it. Listing policy never touches signed bytes; it
 records what one operator decided, which another operator is free to disagree
 with.
 
+## Legal and takedown requests
+
+`POST /v1/legal-requests` records a legal or policy request against a project or
+a release, and needs the `directory:manage` scope. A record names the request
+`kind` (`copyright-notice`, `counter-notice`, `court-order`,
+`law-enforcement-request`, `platform-policy-action`, or `other`), the
+`claimant_ref`, the `target_kind` and `target_id`, the `stated_basis`, the
+`received_at` time, the `action_taken` (`none`, `noted`,
+`availability-disabled`, or `availability-restored`), an optional
+`designated_agent_ref`, and an optional `responds_to` naming an earlier record,
+which is how a counter-notice or appeal is filed.
+
+`GET /v1/legal-requests?target_kind=&target_id=` lists the records against one
+target, newest first, and `GET /v1/legal-requests/{id}` reads one by its
+assigned id. Both need `directory:manage`, because a record can contain a
+claimant and a stated legal basis.
+
+Records are append-only: there is no update or delete, and a later decision is
+another record. A record never rewrites signed bytes and never claims a release
+was cryptographically invalid; it records what an operator received and what it
+did. Disabling availability at this instance is a separate `directory_policy`
+setting, so the record of the request and the decision to act on it stay
+distinct and each is attributed to the operator that made it. An operator that
+must delete stored bytes can do so while the record, the feed history, and the
+publisher signature still show what existed and who published it.
+
 ## Organizations
 
 `GET /v1/orgs` lists the organizations the authenticated account belongs to as

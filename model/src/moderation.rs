@@ -175,6 +175,121 @@ pub struct ImpersonationReport {
 	pub decided_at: Option<i64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegalRequestKind {
+	CopyrightNotice,
+	CounterNotice,
+	CourtOrder,
+	LawEnforcementRequest,
+	PlatformPolicyAction,
+	Other,
+}
+
+impl LegalRequestKind {
+	pub const fn as_str(self) -> &'static str {
+		match self {
+			Self::CopyrightNotice => "copyright-notice",
+			Self::CounterNotice => "counter-notice",
+			Self::CourtOrder => "court-order",
+			Self::LawEnforcementRequest => "law-enforcement-request",
+			Self::PlatformPolicyAction => "platform-policy-action",
+			Self::Other => "other",
+		}
+	}
+
+	pub fn parse(value: &str) -> Option<Self> {
+		Some(match value {
+			"copyright-notice" => Self::CopyrightNotice,
+			"counter-notice" => Self::CounterNotice,
+			"court-order" => Self::CourtOrder,
+			"law-enforcement-request" => Self::LawEnforcementRequest,
+			"platform-policy-action" => Self::PlatformPolicyAction,
+			"other" => Self::Other,
+			_ => return None,
+		})
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegalTarget {
+	Project,
+	Release,
+}
+
+impl LegalTarget {
+	pub const fn as_str(self) -> &'static str {
+		match self {
+			Self::Project => "project",
+			Self::Release => "release",
+		}
+	}
+
+	pub fn parse(value: &str) -> Option<Self> {
+		Some(match value {
+			"project" => Self::Project,
+			"release" => Self::Release,
+			_ => return None,
+		})
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegalAction {
+	None,
+	Noted,
+	AvailabilityDisabled,
+	AvailabilityRestored,
+}
+
+impl LegalAction {
+	pub const fn as_str(self) -> &'static str {
+		match self {
+			Self::None => "none",
+			Self::Noted => "noted",
+			Self::AvailabilityDisabled => "availability-disabled",
+			Self::AvailabilityRestored => "availability-restored",
+		}
+	}
+
+	pub fn parse(value: &str) -> Option<Self> {
+		Some(match value {
+			"none" => Self::None,
+			"noted" => Self::Noted,
+			"availability-disabled" => Self::AvailabilityDisabled,
+			"availability-restored" => Self::AvailabilityRestored,
+			_ => return None,
+		})
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegalRequest {
+	pub kind: LegalRequestKind,
+	pub claimant_ref: String,
+	pub target_kind: LegalTarget,
+	pub target_id: String,
+	pub stated_basis: String,
+	pub received_at: i64,
+	pub action_taken: LegalAction,
+	pub designated_agent_ref: Option<String>,
+	pub responds_to: Option<String>,
+}
+
+impl LegalRequest {
+	pub fn validate(&self) -> Result<(), String> {
+		if self.claimant_ref.trim().is_empty() {
+			return Err("claimant_ref is required".to_string());
+		}
+		if self.target_id.trim().is_empty() {
+			return Err("target_id is required".to_string());
+		}
+		if self.stated_basis.trim().is_empty() {
+			return Err("stated_basis is required".to_string());
+		}
+		Ok(())
+	}
+}
+
 pub fn valid_handle(handle: &str) -> bool {
 	!handle.is_empty()
 		&& handle.len() <= 64
@@ -209,6 +324,34 @@ mod tests {
 		assert_eq!(classify_reason("spam", 1), Reason::Known(ReasonCode::Spam));
 		assert_eq!(classify_reason("spam", 2), Reason::Unknown);
 		assert_eq!(classify_reason("not-a-code", 1), Reason::Unknown);
+	}
+
+	#[test]
+	fn a_legal_request_needs_a_claimant_a_target_and_a_basis() {
+		let request = LegalRequest {
+			kind: LegalRequestKind::CopyrightNotice,
+			claimant_ref: "holder@example.org".to_string(),
+			target_kind: LegalTarget::Project,
+			target_id: "gd:sha256:aa".to_string(),
+			stated_basis: "reproduces a copyrighted asset".to_string(),
+			received_at: 1_760_000_000,
+			action_taken: LegalAction::AvailabilityDisabled,
+			designated_agent_ref: None,
+			responds_to: None,
+		};
+		assert!(request.validate().is_ok());
+
+		let mut incomplete = request.clone();
+		incomplete.stated_basis = "  ".to_string();
+		assert!(incomplete.validate().is_err());
+
+		assert_eq!(LegalRequestKind::parse("court-order"), Some(LegalRequestKind::CourtOrder));
+		assert_eq!(
+			LegalAction::parse("availability-restored"),
+			Some(LegalAction::AvailabilityRestored)
+		);
+		assert_eq!(LegalTarget::parse("release"), Some(LegalTarget::Release));
+		assert_eq!(LegalRequestKind::parse("subpoena"), None);
 	}
 
 	#[test]
