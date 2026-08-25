@@ -733,5 +733,9 @@ mod admission_tests;
 mod ownership_tests;
 
 #[cfg(test)]
+#[path = "policy_tests.rs"]
+mod policy_tests;
+
+#[cfg(test)]
 #[path = "views_tests.rs"]
 mod views_tests;
