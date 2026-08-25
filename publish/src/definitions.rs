@@ -4,7 +4,8 @@ use moraine_crypto::{ObjectKind, SigningKey};
 use moraine_model::Canonical;
 use moraine_model::compatibility::{Predicate, Scheme};
 use moraine_model::definition::{
-	Category as GameCategory, GameDef, LoaderDef, LoaderObject, LoaderRelease, RuntimeDef, Tag as GameTag, VersionSyntax,
+	Category as GameCategory, DeclaredBy, GameDef, LoaderAcceptance, LoaderDef, LoaderObject, LoaderRelease, Qualification,
+	RuntimeDef, Tag as GameTag, VersionSyntax,
 };
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::signed::sign_payload;
@@ -255,6 +256,45 @@ pub fn loader_release(
 	Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn loader_acceptance(
+	key_path: &Path,
+	accepting_loader_id: &str,
+	accepted_loader_id: &str,
+	game_id: &str,
+	qualification: &str,
+	game_versions: &[String],
+	accepted_versions: &[String],
+	declared_by_kind: &str,
+	declared_by_id: Option<&str>,
+	out: &Path,
+) -> Result<(), String> {
+	let key = keyfile::load(key_path)?;
+	let qualification =
+		Qualification::parse(qualification).ok_or_else(|| format!("unknown qualification `{qualification}`"))?;
+	let acceptance = LoaderObject::Acceptance(LoaderAcceptance {
+		protocol: 1,
+		accepting_loader_id: accepting_loader_id.to_string(),
+		accepted_loader_id: accepted_loader_id.to_string(),
+		game_id: game_id.to_string(),
+		game_version_predicate: (!game_versions.is_empty()).then(|| Predicate::new(Scheme::Exact, game_versions.to_vec())),
+		loader_version_predicate: None,
+		accepted_version_predicate: (!accepted_versions.is_empty())
+			.then(|| Predicate::new(Scheme::Exact, accepted_versions.to_vec())),
+		qualification,
+		declared_by: DeclaredBy {
+			kind: declared_by_kind.to_string(),
+			id: declared_by_id.unwrap_or(accepting_loader_id).to_string(),
+		},
+		evidence_digest: None,
+		declared_time: now(),
+	});
+	let signed = sign_payload(ObjectKind::LoaderDef, &acceptance, &[&key]);
+	write_object(out, &signed.id(ObjectKind::LoaderDef), &signed.wire_bytes())?;
+	println!("loader_acceptance: {}", signed.id(ObjectKind::LoaderDef));
+	Ok(())
+}
+
 fn emit<T: Canonical + Clone>(
 	key: &SigningKey,
 	genesis_kind: GenesisKind,
@@ -445,6 +485,43 @@ label = "Client"
 		assert_eq!(definition.display_name, "Minecraft");
 		assert_eq!(definition.categories[0].id, "utility");
 		assert_eq!(definition.tags[0].label, "Client");
+	}
+
+	#[test]
+	fn writes_an_acceptance_mapping() {
+		use moraine_model::signed::SignedObject;
+
+		let directory = tempfile::tempdir().expect("tempdir");
+		let key_path = directory.path().join("loader.key");
+		keyfile::create(&key_path).expect("key");
+		let out = directory.path().join("definitions");
+		loader_acceptance(
+			&key_path,
+			"gd:sha256:accepting",
+			"gd:sha256:accepted",
+			"gd:sha256:game",
+			"most",
+			&["1.20.1".to_string()],
+			&[],
+			"loader-authority",
+			None,
+			&out,
+		)
+		.expect("acceptance");
+
+		let path = std::fs::read_dir(&out)
+			.expect("read")
+			.filter_map(|entry| Some(entry.ok()?.path()))
+			.next()
+			.expect("file");
+		let signed = SignedObject::<LoaderObject>::from_bytes(&std::fs::read(&path).expect("read")).expect("decode");
+		let LoaderObject::Acceptance(acceptance) = signed.payload else {
+			panic!("expected an acceptance mapping");
+		};
+		assert_eq!(acceptance.accepting_loader_id, "gd:sha256:accepting");
+		assert_eq!(acceptance.accepted_loader_id, "gd:sha256:accepted");
+		assert_eq!(acceptance.qualification.as_str(), "most");
+		assert_eq!(acceptance.declared_by.id, "gd:sha256:accepting");
 	}
 
 	#[test]

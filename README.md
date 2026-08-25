@@ -291,6 +291,9 @@ cargo run -p moraine-publish -- define-loader --key loader.key --game <game-id> 
   --name "Fabric" --out data/definitions
 cargo run -p moraine-publish -- define-loader-release --key loader.key \
   --loader <loader-id> --version 0.15.0 --game-version 1.20.1 --out data/definitions
+cargo run -p moraine-publish -- define-loader-acceptance --key loader.key \
+  --loader <loader-id> --accepts <accepted-loader-id> --game <game-id> \
+  --qualification most --out data/definitions
 cargo run -p moraine-publish -- define-runtime --key runtime.key --kind java \
   --name "Java" --out data/definitions
 ```
@@ -312,7 +315,11 @@ acceptance mappings are the other two shapes under `loader-def`, and the
 directory loader recognizes all three. A published release is listed at
 `GET /v1/loaders/{id}/releases`, and `(loader-id, version)` binds to one object:
 re-publishing the same version with different bytes is refused, so a loader's
-version history cannot be silently rewritten.
+version history cannot be silently rewritten. An acceptance mapping is the
+`mapping` shape: it says the accepting loader may run another loader's
+artifacts in one direction only, is never followed transitively, and is listed
+at `GET /v1/loaders/{id}/accepts`. Auto-selection through a mapping stays off
+unless a client chooses to act on the label.
 
 `publish` and `submit` take `--kind` and default to `release-published`. The
 key is your project's root. Keep it safe: losing it means losing the project

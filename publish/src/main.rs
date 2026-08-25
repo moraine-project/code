@@ -118,6 +118,29 @@ enum Command {
 		out: PathBuf,
 	},
 
+	DefineLoaderAcceptance {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		loader: String,
+		#[arg(long)]
+		accepts: String,
+		#[arg(long)]
+		game: String,
+		#[arg(long)]
+		qualification: String,
+		#[arg(long = "game-version")]
+		game_versions: Vec<String>,
+		#[arg(long = "accepted-version")]
+		accepted_versions: Vec<String>,
+		#[arg(long, default_value = "loader-authority")]
+		declared_by_kind: String,
+		#[arg(long)]
+		declared_by: Option<String>,
+		#[arg(long, default_value = "definitions")]
+		out: PathBuf,
+	},
+
 	DefineLoaderRelease {
 		#[arg(long)]
 		key: PathBuf,
@@ -340,6 +363,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			version_ordering,
 			out,
 		} => definitions::runtime(&key, &kind, &name, &version_ordering, &out),
+		Command::DefineLoaderAcceptance {
+			key,
+			loader,
+			accepts,
+			game,
+			qualification,
+			game_versions,
+			accepted_versions,
+			declared_by_kind,
+			declared_by,
+			out,
+		} => definitions::loader_acceptance(
+			&key,
+			&loader,
+			&accepts,
+			&game,
+			&qualification,
+			&game_versions,
+			&accepted_versions,
+			&declared_by_kind,
+			declared_by.as_deref(),
+			&out,
+		),
 		Command::DefineLoaderRelease {
 			key,
 			loader,

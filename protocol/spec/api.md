@@ -694,6 +694,18 @@ rewrite, so a loader's version history cannot be silently replaced. The
 release objects are signed and remain the source of truth; the listing is an
 index over them.
 
+`GET /v1/loaders/{id}/accepts` lists a loader's acceptance mappings as
+`{ accepted_loader_id, accepted, qualification, declared_by, declared_time,
+game_version_predicate, accepted_version_predicate }`. A mapping is a signed
+statement that the accepting loader may run artifacts declared for the accepted
+loader, in one direction only, and it is never transitive: a mapping that
+references another mapping is not followed. The `qualification` (`native`,
+`most`, `experimental`, or `untested`) is carried through to a client, and a
+mapping never causes automatic selection on its own. The pair `(accepting,
+accepted)` keeps one current mapping: re-publishing the same pair with
+different bytes replaces it, but a mapping whose `declared_time` is older than
+the recorded one is refused with `409` rather than rewinding the statement.
+
 At startup the server reads every regular file in a `definitions` directory
 beside the data directory. A file holding a game, loader, or runtime genesis is
 imported as that identity; a file holding a signed definition object is

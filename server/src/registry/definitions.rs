@@ -402,16 +402,24 @@ async fn store_definition_version(
 	}
 	state.metadata.put_object(&stored(&object)).await.map_err(store_failure)?;
 	if expected == GenesisKind::Loader
-		&& let Ok(LoaderObject::Release(release)) = LoaderObject::from_canonical_bytes(&object.payload_bytes)
-		&& let Err(error) = state
-			.metadata
-			.index_loader_release(&release.loader_id, &release.version_id, &object.digest, release.declared_time)
-			.await
+		&& let Ok(loader_object) = LoaderObject::from_canonical_bytes(&object.payload_bytes)
 	{
-		if let sqlx::Error::Protocol(message) = &error {
-			return Err((StatusCode::CONFLICT, message.clone()));
+		let indexed = match &loader_object {
+			LoaderObject::Release(release) => {
+				state
+					.metadata
+					.index_loader_release(&release.loader_id, &release.version_id, &object.digest, release.declared_time)
+					.await
+			}
+			LoaderObject::Acceptance(acceptance) => state.metadata.index_loader_acceptance(acceptance, &object.digest).await,
+			LoaderObject::Definition(_) => Ok(()),
+		};
+		if let Err(error) = indexed {
+			if let sqlx::Error::Protocol(message) = &error {
+				return Err((StatusCode::CONFLICT, message.clone()));
+			}
+			return Err(store_failure(error));
 		}
-		return Err(store_failure(error));
 	}
 	if expected != GenesisKind::Loader || is_loader_definition(&object.payload_bytes) {
 		state

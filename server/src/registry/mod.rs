@@ -3,6 +3,7 @@ pub mod artifacts;
 pub mod compatibility;
 pub mod definitions;
 pub mod legal;
+pub mod loader_accepts;
 pub mod loader_releases;
 pub mod policy;
 pub mod review;
@@ -40,6 +41,7 @@ pub fn routes() -> Router<AppState> {
 		.merge(crate::registry::views::routes())
 		.merge(policy::routes())
 		.merge(legal::routes())
+		.merge(loader_accepts::routes())
 }
 
 #[derive(Serialize)]

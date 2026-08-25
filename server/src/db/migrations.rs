@@ -62,6 +62,11 @@ const MIGRATIONS: &[Migration] = &[
 		sqlite: include_str!("../../migrations/sqlite/0008_legal_requests.sql"),
 		postgres: include_str!("../../migrations/postgres/0008_legal_requests.sql"),
 	},
+	Migration {
+		name: "0009_loader_accepts",
+		sqlite: include_str!("../../migrations/sqlite/0009_loader_accepts.sql"),
+		postgres: include_str!("../../migrations/postgres/0009_loader_accepts.sql"),
+	},
 ];
 
 pub(super) async fn run_migrations(pool: &AnyPool, engine: Engine) -> Result<usize, sqlx::Error> {

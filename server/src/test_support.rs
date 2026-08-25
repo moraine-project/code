@@ -207,6 +207,37 @@ pub(crate) fn loader_release_wire(key: &SigningKey, loader_id: &str, version: &s
 	.wire_bytes()
 }
 
+pub(crate) fn loader_acceptance_wire(
+	key: &SigningKey,
+	accepting_loader_id: &str,
+	accepted_loader_id: &str,
+	game_id: &str,
+	declared_time: i64,
+) -> Vec<u8> {
+	use moraine_model::definition::{DeclaredBy, LoaderAcceptance, Qualification};
+	sign_payload(
+		Kind::LoaderDef,
+		&LoaderObject::Acceptance(LoaderAcceptance {
+			protocol: 1,
+			accepting_loader_id: accepting_loader_id.to_string(),
+			accepted_loader_id: accepted_loader_id.to_string(),
+			game_id: game_id.to_string(),
+			game_version_predicate: None,
+			loader_version_predicate: None,
+			accepted_version_predicate: None,
+			qualification: Qualification::Native,
+			declared_by: DeclaredBy {
+				kind: "loader-authority".to_string(),
+				id: accepting_loader_id.to_string(),
+			},
+			evidence_digest: None,
+			declared_time,
+		}),
+		&[key],
+	)
+	.wire_bytes()
+}
+
 pub(crate) fn genesis_wire(signer: &SigningKey, kinds: &[&str]) -> Vec<u8> {
 	genesis_wire_roots(&[signer], kinds)
 }
