@@ -2,6 +2,7 @@ pub mod advisories;
 pub mod artifacts;
 pub mod compatibility;
 pub mod definitions;
+pub mod feed;
 pub mod legal;
 pub mod loader_accepts;
 pub mod loader_releases;
@@ -11,7 +12,7 @@ pub mod search;
 pub mod views;
 
 use axum::body::Bytes;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -22,10 +23,9 @@ use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::feed::FeedEntry;
 use moraine_model::signed::SignedObject;
 use moraine_model::trust::{RootSet, verify_key_delegation, verify_ownership_transfer};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::db::{FeedRow, ProjectRow, StoredObject};
-use crate::registry::views::describe_stored;
 use crate::routes::AppState;
 use crate::verify::{self, VerifyError};
 
@@ -36,7 +36,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/projects", post(create_project))
 		.route("/v1/projects/{id}", get(project_summary))
 		.route("/v1/projects/{id}/objects/{kind}", post(store_object))
-		.route("/v1/projects/{id}/feed", get(feed_page).post(append_feed))
+		.route("/v1/projects/{id}/feed", get(feed::page).post(append_feed))
 		.route("/v1/projects/{id}/transfer", post(transfer))
 		.merge(crate::registry::views::routes())
 		.merge(policy::routes())
@@ -78,44 +78,6 @@ struct ObjectReceipt {
 struct FeedReceipt {
 	seq: i64,
 	entry: String,
-}
-
-#[derive(Serialize)]
-struct FeedEntryView {
-	seq: i64,
-	kind: String,
-	title: Option<String>,
-	release: Option<crate::registry::views::ReleaseSummary>,
-	object: String,
-	entry: String,
-	declared_at: i64,
-	previous: Option<String>,
-}
-
-#[derive(Serialize)]
-struct FeedPage {
-	project_id: String,
-	head_seq: i64,
-	entries: Vec<FeedEntryView>,
-	next: Option<i64>,
-	truncated: bool,
-}
-
-#[derive(Deserialize)]
-struct FeedQuery {
-	#[serde(default)]
-	after: i64,
-	limit: Option<i64>,
-	#[serde(default)]
-	game_version: Option<String>,
-	#[serde(default)]
-	loader: Option<String>,
-	#[serde(default)]
-	loader_version: Option<String>,
-	#[serde(default)]
-	runtime: Option<String>,
-	#[serde(default)]
-	runtime_version: Option<String>,
 }
 
 async fn create_project(State(state): State<AppState>, body: Bytes) -> Response {
@@ -449,135 +411,6 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 		return Err(Box::new(storage_error(error)));
 	}
 	Ok((row.seq, entry_id))
-}
-
-async fn feed_page(State(state): State<AppState>, Path(id): Path<String>, Query(query): Query<FeedQuery>) -> Response {
-	let project = match state.metadata.project(&id).await {
-		Ok(Some(project)) => project,
-		Ok(None) => return (StatusCode::NOT_FOUND, "no such project").into_response(),
-		Err(error) => return storage_error(error),
-	};
-	let limit = query
-		.limit
-		.unwrap_or(state.capability.max_feed_page_entries as i64)
-		.clamp(1, state.capability.max_feed_page_entries as i64);
-	let mut entries = Vec::with_capacity(limit as usize);
-	let mut scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
-	let mut loader_scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
-	let mut runtime_scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
-	let mut scanned = query.after;
-	let mut pages = 0;
-	loop {
-		let rows = match state.metadata.feed_after(&id, scanned, limit).await {
-			Ok(rows) => rows,
-			Err(error) => return storage_error(error),
-		};
-		if rows.is_empty() {
-			break;
-		}
-		let fetched = rows.len() as i64;
-		scanned = rows.last().map(|row| row.seq).unwrap_or(scanned);
-		for row in &rows {
-			if entries.len() as i64 >= limit {
-				break;
-			}
-			let declared_at = FeedEntry::from_canonical_bytes(&row.payload)
-				.map(|entry| entry.declared_at)
-				.unwrap_or(0);
-			let object = match state.metadata.object(&row.object_digest).await {
-				Ok(Some(object)) => Some(object),
-				_ => None,
-			};
-			if let Some(object) = object.as_ref()
-				&& object.kind == "release"
-			{
-				if let Some(version) = query.game_version.as_deref() {
-					let ordering = match scheme {
-						Some(ordering) => ordering,
-						None => {
-							let resolved = crate::registry::compatibility::game_ordering(&state, object).await;
-							scheme = Some(resolved);
-							resolved
-						}
-					};
-					if !crate::registry::compatibility::release_matches_game_version(object, version, ordering) {
-						continue;
-					}
-				}
-				if let Some(loader) = query.loader.as_deref()
-					&& !crate::registry::compatibility::release_declares_loader(object, loader)
-				{
-					continue;
-				}
-				if let (Some(loader), Some(version)) = (query.loader.as_deref(), query.loader_version.as_deref()) {
-					let ordering = match loader_scheme {
-						Some(ordering) => ordering,
-						None => {
-							let resolved = crate::registry::compatibility::loader_ordering(&state, loader).await;
-							loader_scheme = Some(resolved);
-							resolved
-						}
-					};
-					let matched =
-						crate::registry::compatibility::release_matches_loader_version(object, loader, version, ordering);
-					eprintln!("DBG loader={loader} version={version} seq={} matched={matched}", row.seq);
-					if !matched {
-						continue;
-					}
-				}
-				if let (Some(runtime), Some(version)) = (query.runtime.as_deref(), query.runtime_version.as_deref()) {
-					let ordering = match runtime_scheme {
-						Some(ordering) => ordering,
-						None => {
-							let resolved = crate::registry::compatibility::runtime_ordering(&state, runtime).await;
-							runtime_scheme = Some(resolved);
-							resolved
-						}
-					};
-					if !crate::registry::compatibility::release_matches_runtime(object, version, ordering) {
-						continue;
-					}
-				}
-			}
-			let (title, release) = match object.as_ref() {
-				Some(object) => (describe_stored(object), crate::registry::views::summarize_release(object)),
-				_ => (None, None),
-			};
-			entries.push(FeedEntryView {
-				seq: row.seq,
-				kind: row.kind.clone(),
-				title,
-				release,
-				object: id_for(&row.object_digest),
-				entry: id_for(&row.entry_digest),
-				declared_at,
-				previous: row.previous.as_deref().map(id_for),
-			});
-		}
-		pages += 1;
-		if (entries.len() as i64) >= limit
-			|| fetched < limit
-			|| pages >= state.capability.max_feed_scan_pages.max(1) as usize
-		{
-			break;
-		}
-	}
-	let next = match entries.last() {
-		Some(entry) => Some(entry.seq),
-		None if scanned > query.after => Some(scanned),
-		None => None,
-	};
-	let truncated = (entries.len() as i64) < limit
-		&& scanned > query.after
-		&& pages >= state.capability.max_feed_scan_pages.max(1) as usize;
-	let page = FeedPage {
-		project_id: project.id,
-		head_seq: project.head_seq,
-		entries,
-		next,
-		truncated,
-	};
-	Json(page).into_response()
 }
 
 async fn load_root(state: &AppState, project_id: &str) -> Result<RootSet, Box<Response>> {
