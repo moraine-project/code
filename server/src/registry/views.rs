@@ -17,7 +17,6 @@ use crate::routes::AppState;
 
 pub fn routes() -> Router<AppState> {
 	Router::new()
-		.route("/v1/projects/{id}/profile", get(project_profile))
 		.route("/v1/projects/{id}/releases/{hex}", get(release_view))
 		.route("/v1/projects/{id}/changelog/{hex}", get(changelog_view))
 		.route("/v1/lookup", get(lookup))
@@ -142,71 +141,6 @@ async fn lookup(State(state): State<AppState>, Query(query): Query<LookupQuery>)
 fn parse_sha256(value: &str) -> Option<[u8; 32]> {
 	let hex = value.strip_prefix("sha256:").unwrap_or(value);
 	hex::decode(hex).ok()?.try_into().ok()
-}
-
-#[derive(Serialize)]
-struct ProfileView {
-	project_id: String,
-	display_name: String,
-	summary: String,
-	description: String,
-	categories: Vec<String>,
-	tags: Vec<String>,
-	links: Vec<LinkView>,
-	communities: Vec<LinkView>,
-	revision: String,
-}
-
-#[derive(Serialize)]
-struct LinkView {
-	kind: String,
-	url: String,
-}
-
-async fn project_profile(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-	let project = match state.metadata.project(&id).await {
-		Ok(Some(project)) => project,
-		Ok(None) => return (StatusCode::NOT_FOUND, "no such project").into_response(),
-		Err(error) => return storage_error(error),
-	};
-	let Some(revision_digest) = project.profile_digest else {
-		return (StatusCode::NOT_FOUND, "no profile published").into_response();
-	};
-	let Some(object) = (match state.metadata.object(&revision_digest).await {
-		Ok(object) => object,
-		Err(error) => return storage_error(error),
-	}) else {
-		return (StatusCode::INTERNAL_SERVER_ERROR, "profile object is missing").into_response();
-	};
-	let Ok(profile) = ProfileRevision::from_canonical_bytes(&object.payload) else {
-		return (StatusCode::INTERNAL_SERVER_ERROR, "stored profile does not decode").into_response();
-	};
-	let view = ProfileView {
-		project_id: profile.project_id,
-		display_name: profile.display_name,
-		summary: profile.summary,
-		description: profile.description,
-		categories: profile.categories,
-		tags: profile.tags,
-		links: profile
-			.links
-			.into_iter()
-			.map(|link| LinkView {
-				kind: link.kind,
-				url: link.url,
-			})
-			.collect(),
-		communities: profile
-			.communities
-			.into_iter()
-			.map(|link| LinkView {
-				kind: link.kind,
-				url: link.url,
-			})
-			.collect(),
-		revision: id_for(&revision_digest),
-	};
-	Json(view).into_response()
 }
 
 #[derive(Serialize)]

@@ -271,7 +271,12 @@ verifies must fetch the object document instead.
 
 - `GET /v1/projects/{id}/profile` returns the current profile revision's
   display name, summary, description, categories, tags, links, and communities.
-  It is `404` until a `profile-updated` entry has been accepted.
+  It is `404` until a `profile-updated` entry has been accepted. With `?at=N`
+  it returns the newest `profile-updated` revision at or before feed sequence
+  `N` instead, so a client can show what a project was named or described at a
+  past point; a sequence before the first revision is `404`. The `revision`
+  field names the object, which is also fetchable at `/v1/objects/{hex}`, so a
+  rename is visible rather than silent.
 - `GET /v1/projects/{id}/releases/{hex}` returns one release's version,
   channel, kind, license, artifacts, compatibility entries, dependencies, and
   rights. The digest is the release object's identity digest. A `withdrawal`

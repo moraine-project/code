@@ -8,6 +8,7 @@ pub mod legal;
 pub mod loader_accepts;
 pub mod loader_releases;
 pub mod policy;
+pub mod profile;
 pub mod review;
 pub mod search;
 pub mod views;
@@ -40,6 +41,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/projects/{id}/feed", get(feed::page).post(append_feed))
 		.route("/v1/projects/{id}/transfer", post(transfer))
 		.merge(crate::registry::views::routes())
+		.merge(profile::routes())
 		.merge(policy::routes())
 		.merge(legal::routes())
 		.merge(loader_accepts::routes())
@@ -587,6 +589,10 @@ mod ownership_tests;
 #[cfg(test)]
 #[path = "policy_tests.rs"]
 mod policy_tests;
+
+#[cfg(test)]
+#[path = "profile_tests.rs"]
+mod profile_tests;
 
 #[cfg(test)]
 #[path = "views_tests.rs"]
