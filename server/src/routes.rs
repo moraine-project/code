@@ -49,6 +49,7 @@ pub fn router(state: AppState) -> Router {
 		.merge(crate::registry::search::routes())
 		.merge(crate::auth::orgs::routes())
 		.merge(crate::registry::advisories::routes())
+		.merge(crate::registry::attestations::routes())
 		.merge(crate::federation::mirrors::routes())
 		.merge(crate::federation::notifications::routes())
 		.merge(crate::federation::webhooks::routes())

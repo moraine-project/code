@@ -240,6 +240,20 @@ An advisory is attributed evidence, not a takedown: it is shown on the release
 page and in the advisories API, and it never changes the signed record. Only
 `malware` at `high` or `critical` may block promotion.
 
+Scanner providers also publish signed evidence about an artifact digest:
+
+```sh
+cargo run -p moraine-publish -- attestation --key scanner.key --home http://127.0.0.1:8080 \
+  --signer my-scanner --artifact sha256:<hex> --kind sbom \
+  --media-type application/spdx+json --subject <project-id> --body sbom.spdx.json
+```
+
+The signer must be a provider pinned on the home. Kinds are `build-provenance`,
+`review`, `scanner-result`, `sbom`, and `compatibility-test`; `--body` attaches
+small evidence inline and `--body-digest sha256:<hex>` references larger evidence
+by digest. Evidence is listed at `GET /v1/attestations/{sha256}`, optionally
+filtered by `kind`.
+
 Withdraw a release without rewriting it:
 
 ```sh

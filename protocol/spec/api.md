@@ -566,6 +566,31 @@ None of this touches signing. An org role manages a project page; it does not
 authorize a release. Signing authority still comes only from a key delegation
 under the project's root.
 
+## Attestations
+
+An attestation is signed evidence about an exact artifact digest, with an
+enumerated kind: `build-provenance`, `review`, `scanner-result`, `sbom`, or
+`compatibility-test`. It carries a subject, a media type, and either a body
+digest or a small inline body, never both.
+
+`POST /v1/attestations` accepts a signed evidence attestation whose
+`signer_id` names a provider pinned on this instance, verified against that
+pinned key the same way an advisory is. An unpinned signer is refused with
+`409`, so publishing evidence is a deliberate operator decision like pinning a
+scanner provider. An attestation may also be stored under a project at
+`POST /v1/projects/{id}/objects/attestation` when the project's genesis
+authorizes the `attestation` kind, which is how a project attaches provenance
+to its own artifact.
+
+`GET /v1/attestations/{sha256}?kind=` lists the evidence attestations recorded
+for one artifact digest, newest first, optionally filtered to a single kind.
+Each entry names the attestation's object id, its kind, signer, subject, media
+type, issue time, and whether it carries a body digest or an inline body; the
+body itself is not inlined into the listing, and the signed object is fetched
+from `/v1/objects/{hex}` like any other. An attestation is evidence, never a
+guarantee, and a client that does not understand a kind shows it as
+unrecognized rather than ignoring it.
+
 ## Advisories
 
 An advisory is a signed statement by a provider about one artifact digest. A

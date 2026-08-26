@@ -1,5 +1,6 @@
 pub mod advisories;
 pub mod artifacts;
+pub mod attestations;
 pub mod compatibility;
 pub mod definitions;
 pub mod feed;
@@ -534,6 +535,12 @@ pub(crate) async fn store_object_record(state: &AppState, object: &verify::Verif
 			moraine_model::release::ReleaseObject::Withdrawal(_) => {}
 		}
 	}
+	if object.kind == ObjectKind::Attestation
+		&& let Ok(moraine_model::attestation::AttestationObject::Evidence(attestation)) =
+			moraine_model::attestation::AttestationObject::from_canonical_bytes(&object.payload_bytes)
+	{
+		state.metadata.insert_attestation(&attestation, &object.digest).await?;
+	}
 	if object.kind == ObjectKind::Changelog
 		&& let Ok(changelog) = moraine_model::changelog::Changelog::from_canonical_bytes(&object.payload_bytes)
 	{
@@ -564,6 +571,10 @@ mod feed_tests;
 #[cfg(test)]
 #[path = "admission_tests.rs"]
 mod admission_tests;
+
+#[cfg(test)]
+#[path = "attestations_tests.rs"]
+mod attestations_tests;
 
 #[cfg(test)]
 #[path = "legal_tests.rs"]

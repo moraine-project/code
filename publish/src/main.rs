@@ -192,6 +192,29 @@ enum Command {
 		evidence: Option<String>,
 	},
 
+	Attestation {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		home: String,
+		#[arg(long)]
+		signer: String,
+		#[arg(long)]
+		artifact: String,
+		#[arg(long)]
+		kind: String,
+		#[arg(long, default_value = "application/octet-stream")]
+		media_type: String,
+		#[arg(long, default_value = "project")]
+		subject_kind: String,
+		#[arg(long)]
+		subject: String,
+		#[arg(long)]
+		body: Option<PathBuf>,
+		#[arg(long)]
+		body_digest: Option<String>,
+	},
+
 	Withdraw {
 		#[arg(long)]
 		key: PathBuf,
@@ -410,6 +433,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		} => {
 			commands::advisory(
 				&key, &home, &provider, &project, &game, &digest, &severity, &category, block, evidence,
+			)
+			.await
+		}
+		Command::Attestation {
+			key,
+			home,
+			signer,
+			artifact,
+			kind,
+			media_type,
+			subject_kind,
+			subject,
+			body,
+			body_digest,
+		} => {
+			commands::attestation(
+				&key,
+				&home,
+				&signer,
+				&artifact,
+				&kind,
+				&media_type,
+				&subject_kind,
+				&subject,
+				body.as_deref(),
+				body_digest.as_deref(),
 			)
 			.await
 		}

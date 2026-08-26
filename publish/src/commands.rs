@@ -341,6 +341,47 @@ pub async fn advisory(
 	Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn attestation(
+	key_path: &Path,
+	home_url: &str,
+	signer_id: &str,
+	artifact: &str,
+	kind: &str,
+	media_type: &str,
+	subject_kind: &str,
+	subject_id: &str,
+	body: Option<&Path>,
+	body_digest: Option<&str>,
+) -> Result<(), String> {
+	use moraine_model::attestation::{Attestation, AttestationKind};
+
+	let key = keyfile::load(key_path)?;
+	let kind = AttestationKind::parse(kind).ok_or_else(|| format!("unknown attestation kind `{kind}`"))?;
+	let body_inline = match body {
+		Some(path) => Some(std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?),
+		None => None,
+	};
+	let body_digest = body_digest.map(parse_sha256).transpose()?.map(|bytes| bytes.to_vec());
+	let attestation = Attestation {
+		protocol: 1,
+		artifact_digest: parse_sha256(artifact)?.to_vec(),
+		subject_kind: subject_kind.to_string(),
+		subject_id: subject_id.to_string(),
+		kind,
+		media_type: media_type.to_string(),
+		body_digest,
+		body_inline,
+		signer_id: signer_id.to_string(),
+		issued_at: now(),
+	};
+	let signed = sign_payload(ObjectKind::Attestation, &attestation, &[&key]);
+	let home = Home::new(home_url)?;
+	let receipt = home.post_wire("/v1/attestations", signed.wire_bytes()).await?;
+	println!("attestation: {}", receipt["attestation"].as_str().unwrap_or("?"));
+	Ok(())
+}
+
 fn parse_sha256(value: &str) -> Result<[u8; 32], String> {
 	let hex = value
 		.strip_prefix("sha256:")
