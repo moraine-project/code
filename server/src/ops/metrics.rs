@@ -21,6 +21,7 @@ pub struct Metrics {
 	federation_signature_failures: AtomicU64,
 	federation_storage_failures: AtomicU64,
 	federation_rejections: AtomicU64,
+	federation_forks: AtomicU64,
 }
 
 impl Metrics {
@@ -35,6 +36,7 @@ impl Metrics {
 			federation_signature_failures: AtomicU64::new(0),
 			federation_storage_failures: AtomicU64::new(0),
 			federation_rejections: AtomicU64::new(0),
+			federation_forks: AtomicU64::new(0),
 		}
 	}
 
@@ -50,6 +52,7 @@ impl Metrics {
 			FederationError::Verify(_) => &self.federation_signature_failures,
 			FederationError::Storage(_) => &self.federation_storage_failures,
 			FederationError::Rejected(_) => &self.federation_rejections,
+			FederationError::Fork(_) => &self.federation_forks,
 		};
 		counter.fetch_add(1, Ordering::Relaxed);
 	}
@@ -126,6 +129,10 @@ async fn render(State(state): State<AppState>) -> Response {
 		(
 			"moraine_federation_rejections_total",
 			state.metrics.federation_rejections.load(Ordering::Relaxed),
+		),
+		(
+			"moraine_federation_forks_total",
+			state.metrics.federation_forks.load(Ordering::Relaxed),
 		),
 	] {
 		body.push_str("# TYPE ");
@@ -212,6 +219,7 @@ mod tests {
 			"moraine_uptime_seconds",
 			"moraine_federation_protocol_failures_total",
 			"moraine_federation_storage_failures_total",
+			"moraine_federation_forks_total",
 			"moraine_federation_rejections_total",
 			"moraine_admission_oldest_seconds",
 			"moraine_webhook_backlog_oldest_seconds",

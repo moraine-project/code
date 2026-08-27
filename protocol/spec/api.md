@@ -426,6 +426,15 @@ the next sync then re-reads from that point. A reset increments a per-project
 `moraine_subscription_resets`, so a deliberate recovery stays distinguishable
 from a home that quietly rewound.
 
+A home that serves a different entry for a sequence this instance already
+recorded is equivocating, and that is refused with `502` and counted by
+`moraine_federation_forks_total` rather than applied as a normal update. The
+same check catches a home whose head sequence moves backwards against the
+recorded head, not only against the cursor, so a fork is a visible security
+error instead of a silent reorg. Nothing is written on a fork; the operator
+decides whether to keep following the home, reset the subscription, or pin the
+project elsewhere.
+
 The event kind maps to an object kind (`release-published` to a release,
 `profile-updated` to a profile, `key-changed`/`migration`/`recovery` to a
 delegation, `advisory` to an advisory), and an entry whose object kind is

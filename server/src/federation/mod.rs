@@ -315,6 +315,7 @@ pub enum FederationError {
 	Http(String),
 	Decode(String),
 	Verify(String),
+	Fork(String),
 	Storage(String),
 	Rejected(String),
 }
@@ -326,6 +327,7 @@ impl fmt::Display for FederationError {
 			Self::Http(detail) => write!(f, "home request failed: {detail}"),
 			Self::Decode(detail) => write!(f, "malformed home response: {detail}"),
 			Self::Verify(detail) => write!(f, "home data did not verify: {detail}"),
+			Self::Fork(detail) => write!(f, "the home equivocated: {detail}"),
 			Self::Storage(detail) => write!(f, "local storage failed: {detail}"),
 			Self::Rejected(detail) => write!(f, "home entry rejected: {detail}"),
 		}
@@ -336,6 +338,10 @@ impl fmt::Display for FederationError {
 struct ProjectSummary {
 	project_id: String,
 	genesis: String,
+	#[serde(default)]
+	head_seq: i64,
+	#[serde(default)]
+	head_entry: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -376,7 +382,9 @@ async fn sync_handler(State(state): State<AppState>, user: AuthenticatedUser, Js
 			let status = match error {
 				FederationError::InvalidUrl(_) => StatusCode::BAD_REQUEST,
 				FederationError::Rejected(_) => StatusCode::CONFLICT,
-				FederationError::Verify(_) | FederationError::Decode(_) => StatusCode::BAD_GATEWAY,
+				FederationError::Verify(_) | FederationError::Decode(_) | FederationError::Fork(_) => {
+					StatusCode::BAD_GATEWAY
+				}
 				_ => StatusCode::BAD_GATEWAY,
 			};
 			state.metrics.record_federation_failure(&error);
@@ -506,10 +514,27 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 		.map_err(storage)?;
 
 	match state.metadata.project(project_id).await.map_err(storage)? {
-		Some(existing) if existing.genesis_digest != genesis.digest.to_vec() => {
-			return Err(FederationError::Verify("local project has a different genesis".to_string()));
+		Some(existing) => {
+			if existing.genesis_digest != genesis.digest.to_vec() {
+				return Err(FederationError::Verify("local project has a different genesis".to_string()));
+			}
+			if existing.head_seq > summary.head_seq {
+				return Err(FederationError::Fork(format!(
+					"its head moved backwards from {} to {}",
+					existing.head_seq, summary.head_seq
+				)));
+			}
+			if existing.head_seq == summary.head_seq
+				&& existing.head_seq > 0
+				&& let (Some(local), Some(remote)) = (existing.head_digest.as_deref(), summary.head_entry.as_deref())
+				&& registry::id_for(local) != remote
+			{
+				return Err(FederationError::Fork(format!(
+					"it serves a different entry at sequence {}",
+					existing.head_seq
+				)));
+			}
 		}
-		Some(_) => {}
 		None => {
 			state
 				.metadata

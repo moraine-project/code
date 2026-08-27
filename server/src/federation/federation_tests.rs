@@ -186,6 +186,90 @@ async fn federation_follows_a_changelog_referenced_by_a_release() {
 }
 
 #[tokio::test]
+async fn detects_a_home_that_equivocates_on_the_same_sequence() {
+	let signer = key(32);
+	let genesis = genesis_wire(&signer, PROJECT_KINDS);
+
+	async fn serve(
+		signer: &moraine_crypto::SigningKey,
+		genesis: &[u8],
+		release_nonce: u8,
+		version: &str,
+	) -> (axum::Router, tempfile::TempDir, String) {
+		let (home, directory) = app_with_limit(crate::config::Publishing::Open, false, 1).await;
+		let request = axum::http::Request::post("/v1/projects")
+			.body(Body::from(genesis.to_vec()))
+			.expect("request");
+		let response = home.clone().oneshot(request).await.expect("response");
+		let project_id = body_json(response).await["project_id"]
+			.as_str()
+			.expect("project id")
+			.to_string();
+		let (release, digest) = release_wire_variant(signer, &project_id, release_nonce, version);
+		let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+			.body(Body::from(release))
+			.expect("request");
+		assert_eq!(
+			home.clone().oneshot(request).await.expect("response").status(),
+			StatusCode::CREATED
+		);
+		let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+			.body(Body::from(feed_wire(signer, &project_id, 1, None, digest)))
+			.expect("request");
+		assert_eq!(
+			home.clone().oneshot(request).await.expect("response").status(),
+			StatusCode::CREATED
+		);
+		(home, directory, project_id)
+	}
+
+	let (home_a, _dir_a, project_id) = serve(&signer, &genesis, 0xA1, "1.0.0").await;
+	let (home_b, _dir_b, _same_id) = serve(&signer, &genesis, 0xB2, "2.0.0").await;
+
+	let (directory, _directory_dir) = app_mode(crate::config::Publishing::Review, true).await;
+	let (session, csrf) = login(&directory, "ops@example.org").await;
+
+	let sync = |home: axum::Router| {
+		let session = session.clone();
+		let csrf = csrf.clone();
+		let project_id = project_id.clone();
+		async move {
+			let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+			let address = listener.local_addr().expect("addr");
+			tokio::spawn(async move {
+				let _ = axum::serve(listener, home).await;
+			});
+			axum::http::Request::post("/v1/federation/sync")
+				.header(header::CONTENT_TYPE, "application/json")
+				.header(header::COOKIE, format!("moraine_session={session}; moraine_csrf={csrf}"))
+				.header("x-csrf-token", csrf)
+				.body(Body::from(
+					serde_json::json!({
+						"home_url": format!("http://127.0.0.1:{}", address.port()),
+						"project_id": project_id,
+					})
+					.to_string(),
+				))
+				.expect("request")
+		}
+	};
+
+	let request = sync(home_a).await;
+	let response = directory.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+
+	let request = sync(home_b).await;
+	let response = directory.oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+	let body = axum::body::to_bytes(response.into_body(), 4096).await.expect("body");
+	assert!(
+		String::from_utf8_lossy(&body).contains("equivocated"),
+		"{}",
+		String::from_utf8_lossy(&body)
+	);
+}
+
+#[tokio::test]
 async fn federation_syncs_a_game_definition() {
 	let (home, _home_directory) = app().await;
 	let key = key(16);
