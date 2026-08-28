@@ -99,7 +99,7 @@ async fn indexes_a_project_signed_attestation() {
 	let signer = SigningKey::from_seed(&[0x93; 32]);
 	let (project_id, _release) =
 		publish_project_with_kinds(&application, &signer, &["delegation", "release", "profile", "attestation"]).await;
-	let artifact = [0xCD; 32];
+	let artifact = [0xAB; 32];
 
 	let publish = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/attestation"))
 		.body(Body::from(attestation_wire(
@@ -115,9 +115,24 @@ async fn indexes_a_project_signed_attestation() {
 	let list = axum::http::Request::get(format!("/v1/attestations/{}", hex::encode(artifact)))
 		.body(Body::empty())
 		.expect("request");
-	let response = application.oneshot(list).await.expect("response");
+	let response = application.clone().oneshot(list).await.expect("response");
 	assert_eq!(response.status(), StatusCode::OK);
 	let attestations = body_json(response).await;
 	assert_eq!(attestations.as_array().expect("attestations").len(), 1);
 	assert_eq!(attestations[0]["kind"], "build-provenance");
+
+	let release_view = axum::http::Request::get(format!("/v1/projects/{project_id}/releases/{}", hex::encode(_release)))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(release_view).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let view = body_json(response).await;
+	let evidence = view["attestations"].as_array().expect("attestations");
+	assert_eq!(evidence.len(), 1);
+	assert_eq!(evidence[0]["kind"], "build-provenance");
+	assert_eq!(evidence[0]["signer_id"], project_id);
+	assert!(
+		!view["compatibility"].as_array().expect("compatibility").is_empty(),
+		"declared compatibility stays separate from evidence"
+	);
 }

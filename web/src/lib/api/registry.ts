@@ -110,6 +110,18 @@ export const advisorySchema = z.object({
 	retracted_at: z.number().nullable().optional(),
 });
 
+export const attestationSchema = z.object({
+	attestation: z.string(),
+	kind: z.string(),
+	signer_id: z.string(),
+	subject_kind: z.string(),
+	subject_id: z.string(),
+	media_type: z.string(),
+	issued_at: z.number(),
+	body_digest: z.string().nullable().optional(),
+	has_inline_body: z.boolean(),
+});
+
 export const releaseSchema = z.object({
 	project_id: z.string(),
 	human_version: z.string(),
@@ -123,6 +135,7 @@ export const releaseSchema = z.object({
 	rights: rightsSchema.nullable().optional(),
 	withdrawal: withdrawalSchema.nullable().optional(),
 	advisories: z.array(advisorySchema).optional(),
+	attestations: z.array(attestationSchema).optional(),
 	changelog: z.string().nullable().optional(),
 });
 
@@ -202,6 +215,7 @@ export type DigestLookup = z.infer<typeof digestLookupSchema>;
 export type SearchResult = z.infer<typeof searchResultSchema>;
 export type Release = z.infer<typeof releaseSchema>;
 export type Changelog = z.infer<typeof changelogSchema>;
+export type Attestation = z.infer<typeof attestationSchema>;
 export type Artifact = z.infer<typeof artifactSchema>;
 export type FeedEntry = z.infer<typeof feedEntrySchema>;
 export type FeedPage = z.infer<typeof feedPageSchema>;

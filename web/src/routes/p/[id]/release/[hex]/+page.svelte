@@ -193,6 +193,31 @@
 			</section>
 		{/if}
 
+		{#if (data.release.attestations ?? []).length > 0}
+			<section class="card card-border">
+				<div class="card-body">
+					<h2 class="card-title">Evidence</h2>
+					<p class="text-base-content/60 text-sm">
+						Signed statements about this release's artifacts from the providers named below.
+						Compatibility above is declared by the publisher; evidence is not merged into it, and
+						neither is a safety guarantee.
+					</p>
+					<ul class="flex flex-col gap-2 text-sm">
+						{#each data.release.attestations ?? [] as entry (entry.attestation)}
+							<li>
+								<span class="badge badge-outline">{entry.kind}</span>
+								<span class="font-mono">{entry.signer_id}</span>
+								<span class="text-base-content/60">
+									{entry.media_type}{entry.has_inline_body ? ' · inline body' : ''}
+									· {formatTime(entry.issued_at)}
+								</span>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			</section>
+		{/if}
+
 		{#if data.release.dependencies.length > 0}
 			<section class="card card-border">
 				<div class="card-body">

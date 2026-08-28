@@ -157,6 +157,7 @@ struct ReleaseView {
 	rights: Option<RightsView>,
 	withdrawal: Option<WithdrawalView>,
 	advisories: Vec<crate::registry::advisories::AdvisoryView>,
+	attestations: Vec<crate::registry::attestations::AttestationView>,
 	changelog: Option<String>,
 }
 
@@ -235,6 +236,31 @@ async fn release_view(State(state): State<AppState>, Path((id, hex_digest)): Pat
 			}
 		}
 	}
+	let mut attestations = Vec::new();
+	let mut seen_evidence = std::collections::HashSet::new();
+	for artifact in &release.artifacts {
+		let rows = match state.metadata.attestations_for(&artifact.digest, None).await {
+			Ok(rows) => rows,
+			Err(error) => return storage_error(error),
+		};
+		for digest in rows {
+			if !seen_evidence.insert(digest.clone()) {
+				continue;
+			}
+			let Some(object) = (match state.metadata.object(&digest).await {
+				Ok(object) => object,
+				Err(error) => return storage_error(error),
+			}) else {
+				continue;
+			};
+			let Ok(moraine_model::attestation::AttestationObject::Evidence(attestation)) =
+				moraine_model::attestation::AttestationObject::from_canonical_bytes(&object.payload)
+			else {
+				continue;
+			};
+			attestations.push(crate::registry::attestations::evidence_view(&attestation, &digest));
+		}
+	}
 	let view = ReleaseView {
 		project_id: release.project_id,
 		human_version: release.human_version,
@@ -284,6 +310,7 @@ async fn release_view(State(state): State<AppState>, Path((id, hex_digest)): Pat
 			declared_time: withdrawal.declared_time,
 		}),
 		advisories,
+		attestations,
 		changelog: release.changelog_digest.map(|digest| id_for(&digest)),
 	};
 	Json(view).into_response()

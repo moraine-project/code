@@ -68,7 +68,7 @@ impl MetadataStore {
 }
 
 #[derive(Serialize)]
-struct AttestationView {
+pub(crate) struct AttestationView {
 	attestation: String,
 	kind: String,
 	signer_id: String,
@@ -126,6 +126,23 @@ async fn list_attestations(
 		});
 	}
 	Json(attestations).into_response()
+}
+
+pub(crate) fn evidence_view(attestation: &Attestation, object_digest: &[u8]) -> AttestationView {
+	AttestationView {
+		attestation: id_for(object_digest),
+		kind: attestation.kind.as_str().to_string(),
+		signer_id: attestation.signer_id.clone(),
+		subject_kind: attestation.subject_kind.clone(),
+		subject_id: attestation.subject_id.clone(),
+		media_type: attestation.media_type.clone(),
+		issued_at: attestation.issued_at,
+		body_digest: attestation
+			.body_digest
+			.as_ref()
+			.map(|digest| format!("sha256:{}", hex::encode(digest))),
+		has_inline_body: attestation.body_inline.is_some(),
+	}
 }
 
 #[derive(Deserialize)]

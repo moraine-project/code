@@ -283,7 +283,12 @@ verifies must fetch the object document instead.
   field appears once a `release-withdrawn` feed entry accepts a signed
   withdrawal for that release; the release record and its digest never change.
   When the release binds a changelog, a `changelog` field carries that object's
-  identity digest.
+  identity digest. An `advisories` field lists pinned-provider advisories whose
+  affected digest matches one of the release's artifacts, and an `attestations`
+  field lists evidence attestations for those same digests. The two are kept
+  separate from `compatibility`, which is what the publisher declared: evidence
+  is signed by the provider it names and is never merged into the declared
+  claim, and neither is a safety guarantee.
 - `GET /v1/projects/{id}/changelog/{hex}` returns a changelog's locale-tagged
   sections, each with a heading, body, and optional severity. The digest is the
   changelog object's identity digest. It is `404` unless the object was stored
