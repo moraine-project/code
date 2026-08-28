@@ -15,7 +15,9 @@ use crate::db::MetadataStore;
 use crate::routes::AppState;
 
 pub fn routes() -> Router<AppState> {
-	Router::new().route("/v1/directory/policy/{project_id}", get(get_policy).put(put_policy))
+	Router::new()
+		.route("/v1/directory/policy", get(list_policies))
+		.route("/v1/directory/policy/{project_id}", get(get_policy).put(put_policy))
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +50,22 @@ impl MetadataStore {
 		.execute(&self.pool)
 		.await?;
 		Ok(())
+	}
+
+	pub async fn all_listing_policies(&self) -> Result<Vec<(String, PolicyRow)>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT project_id, listing_state, reason_code, reason_note, updated_at FROM directory_policy
+			 ORDER BY updated_at DESC, project_id ASC",
+		)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows
+			.into_iter()
+			.filter_map(|row| {
+				let project_id: String = row.get("project_id");
+				Some((project_id, policy_from_row(row)?))
+			})
+			.collect())
 	}
 
 	pub async fn clear_listing_policy(&self, project_id: &str) -> Result<(), sqlx::Error> {
@@ -101,6 +119,27 @@ fn policy_from_row(row: sqlx::any::AnyRow) -> Option<PolicyRow> {
 		reason_note: row.get("reason_note"),
 		updated_at: row.get("updated_at"),
 	})
+}
+
+async fn list_policies(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
+	if !user.allows("directory:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
+	match state.metadata.all_listing_policies().await {
+		Ok(rows) => Json(
+			rows.into_iter()
+				.map(|(project_id, policy)| PolicyView {
+					project_id,
+					listing_state: policy.listing_state,
+					reason_code: policy.reason_code,
+					reason_note: policy.reason_note,
+					updated_at: Some(policy.updated_at),
+				})
+				.collect::<Vec<_>>(),
+		)
+		.into_response(),
+		Err(error) => storage_error(error),
+	}
 }
 
 #[derive(Serialize)]

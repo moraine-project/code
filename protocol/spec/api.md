@@ -517,6 +517,9 @@ to anyone. A project with no recorded policy is `listed`.
 `listing_state` is one of `listed`, `unlisted`, `quarantined`, `blocked`,
 `withdrawn`, or `unavailable`, and an optional `reason_code` from the published
 taxonomy and a short note explain it. Setting `listed` clears the record.
+`GET /v1/directory/policy` lists every project this instance currently overrides,
+newest first, and needs `directory:manage`, so an operator can review what it
+has unlisted, quarantined, or blocked rather than remembering each project.
 
 The policy is applied where it matters, and it is local policy rather than a
 statement about the release: `unlisted` and `blocked` projects are left out of

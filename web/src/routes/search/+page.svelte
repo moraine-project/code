@@ -110,6 +110,9 @@
 							{#each result.annotations ?? [] as annotation (annotation.kind)}
 								<span class="badge badge-warning badge-sm" role="note">{annotation.label}</span>
 							{/each}
+							{#if result.listing_state === 'withdrawn' || result.listing_state === 'unavailable'}
+								<span class="badge badge-warning badge-sm" role="note">{result.listing_state}</span>
+							{/if}
 							{#if result.instance_popularity}
 								<span class="badge badge-ghost badge-sm">
 									{result.instance_popularity.value} downloads and follows, this instance

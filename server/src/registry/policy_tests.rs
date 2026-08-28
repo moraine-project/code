@@ -49,6 +49,23 @@ async fn listing_policy_hides_a_project_from_search_and_blocks_it() {
 	let view = body_json(response).await;
 	assert_eq!(view["listing_state"], "unlisted");
 
+	let all = axum::http::Request::get("/v1/directory/policy")
+		.header(header::AUTHORIZATION, format!("Bearer {token}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(all).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let overrides = body_json(response).await;
+	assert_eq!(overrides.as_array().expect("overrides").len(), 1);
+	assert_eq!(overrides[0]["project_id"], project_id);
+	assert_eq!(overrides[0]["listing_state"], "unlisted");
+
+	let anonymous = axum::http::Request::get("/v1/directory/policy")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(anonymous).await.expect("response");
+	assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
 	let quarantine = axum::http::Request::builder()
 		.method("PUT")
 		.uri(format!("/v1/directory/policy/{project_id}"))

@@ -49,6 +49,17 @@
 		</div>
 		<p class="text-base-content/80 text-sm">Home: <code>{data.home || '(none)'}</code></p>
 	{:else if data.summary && data.feed}
+		{#if data.summary.listing_state && data.summary.listing_state !== 'listed'}
+			<div role="alert" class="alert alert-warning">
+				<span>
+					This instance lists this project as <strong>{data.summary.listing_state}</strong>{data
+						.summary.reason_code
+						? ` (${data.summary.reason_code})`
+						: ''}. That is this directory's local policy and never a statement about the publisher's
+					signature.
+				</span>
+			</div>
+		{/if}
 		<section class="card card-border">
 			<div class="card-body">
 				<h1 class="card-title break-all">

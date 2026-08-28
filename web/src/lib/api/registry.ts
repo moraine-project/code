@@ -8,6 +8,8 @@ export const projectSummarySchema = z.object({
 	head_seq: z.number(),
 	head_entry: z.string().nullable().optional(),
 	profile: z.string().nullable().optional(),
+	listing_state: z.string().optional(),
+	reason_code: z.string().nullable().optional(),
 });
 
 export const linkSchema = z.object({
