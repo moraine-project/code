@@ -4,6 +4,7 @@ pub mod attestations;
 pub mod compatibility;
 pub mod definitions;
 pub mod feed;
+pub mod impersonation;
 pub mod legal;
 pub mod loader_accepts;
 pub mod loader_releases;
@@ -45,6 +46,7 @@ pub fn routes() -> Router<AppState> {
 		.merge(policy::routes())
 		.merge(legal::routes())
 		.merge(loader_accepts::routes())
+		.merge(impersonation::routes())
 }
 
 #[derive(Serialize)]
@@ -577,6 +579,10 @@ mod admission_tests;
 #[cfg(test)]
 #[path = "attestations_tests.rs"]
 mod attestations_tests;
+
+#[cfg(test)]
+#[path = "impersonation_tests.rs"]
+mod impersonation_tests;
 
 #[cfg(test)]
 #[path = "legal_tests.rs"]

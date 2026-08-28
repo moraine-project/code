@@ -175,6 +175,37 @@ pub struct ImpersonationReport {
 	pub decided_at: Option<i64>,
 }
 
+impl ImpersonationReport {
+	pub fn validate(&self) -> Result<(), String> {
+		if self.claim_kind.trim().is_empty() {
+			return Err("claim_kind is required".to_string());
+		}
+		if self.claimant_ref.trim().is_empty() {
+			return Err("claimant_ref is required".to_string());
+		}
+		if self.evidence_ref.trim().is_empty() {
+			return Err("evidence_ref is required".to_string());
+		}
+		let project = self
+			.target_project_id
+			.as_deref()
+			.is_some_and(|value| !value.trim().is_empty());
+		let handle = self.target_handle.as_deref().is_some_and(|value| !value.trim().is_empty());
+		if !project && !handle {
+			return Err("a target project or handle is required".to_string());
+		}
+		if let Some(handle) = &self.target_handle
+			&& !valid_handle(handle)
+		{
+			return Err(format!("`{handle}` is not a valid handle"));
+		}
+		if self.status != ReportStatus::Open && self.decided_at.is_none() {
+			return Err("a decided report needs decided_at".to_string());
+		}
+		Ok(())
+	}
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegalRequestKind {
 	CopyrightNotice,
@@ -324,6 +355,32 @@ mod tests {
 		assert_eq!(classify_reason("spam", 1), Reason::Known(ReasonCode::Spam));
 		assert_eq!(classify_reason("spam", 2), Reason::Unknown);
 		assert_eq!(classify_reason("not-a-code", 1), Reason::Unknown);
+	}
+
+	#[test]
+	fn an_impersonation_report_needs_a_target_and_a_basis() {
+		let report = ImpersonationReport {
+			claim_kind: "trademark".to_string(),
+			claimant_ref: "holder@example.org".to_string(),
+			target_project_id: None,
+			target_handle: Some("official-brand".to_string()),
+			evidence_ref: "https://example.org/evidence".to_string(),
+			status: ReportStatus::Open,
+			decided_at: None,
+		};
+		assert!(report.validate().is_ok());
+
+		let mut untargeted = report.clone();
+		untargeted.target_handle = None;
+		assert!(untargeted.validate().is_err());
+
+		let mut undecided = report.clone();
+		undecided.status = ReportStatus::Upheld;
+		assert!(undecided.validate().is_err());
+
+		let mut bad_handle = report;
+		bad_handle.target_handle = Some("Not A Handle".to_string());
+		assert!(bad_handle.validate().is_err());
 	}
 
 	#[test]

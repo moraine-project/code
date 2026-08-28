@@ -523,6 +523,29 @@ instance does not serve it. Listing policy never touches signed bytes; it
 records what one operator decided, which another operator is free to disagree
 with.
 
+## Impersonation and trademark claims
+
+`POST /v1/impersonation-reports` records a claim against a project or an org
+handle, and needs the `directory:manage` scope. A record names the `claim_kind`
+(`impersonation`, `trademark`, or any other operator-defined label), the
+`claimant_ref`, the affected `target_project_id` or `target_handle`, an
+`evidence_ref`, and a `status` from `open`, `awaiting-response`, `upheld`,
+`rejected`, or `withdrawn`. A report that is not `open` must carry a
+`decided_at`, and a report must name a project or a handle, so a bare complaint
+is refused.
+
+`GET /v1/impersonation-reports?project=&handle=` lists the claims against one
+target, and `GET /v1/impersonation-reports/{id}` reads one by its assigned id.
+Both need `directory:manage`, because a claim names a claimant and an evidence
+reference.
+
+Reports are append-only, and a status change is a further record rather than an
+edit. A claim is an operand for a listing or handle decision, not a verdict: it
+never rewrites signed bytes, and the outcome is a `directory_policy` change or
+a handle decision, both attributed to the instance that made it. A handle is
+claimed atomically and is unique per instance, so a colliding claim is resolved
+through this process rather than by renaming another owner's project.
+
 ## Legal and takedown requests
 
 `POST /v1/legal-requests` records a legal or policy request against a project or
