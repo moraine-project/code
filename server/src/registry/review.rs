@@ -56,6 +56,9 @@ async fn submit(State(state): State<AppState>, user: AuthenticatedUser, body: By
 	if !user.allows("submissions:write") {
 		return forbidden();
 	}
+	if let Some(message) = crate::registry::sanctions::publishing_block(&state, &user.user_id).await {
+		return (StatusCode::FORBIDDEN, message).into_response();
+	}
 	let Ok(signed) = SignedObject::<FeedEntry>::from_bytes(&body) else {
 		return (StatusCode::BAD_REQUEST, "invalid feed entry").into_response();
 	};

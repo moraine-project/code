@@ -77,6 +77,27 @@ pub enum ScopeKind {
 	Account,
 }
 
+impl ScopeKind {
+	pub const fn as_str(self) -> &'static str {
+		match self {
+			Self::Instance => "instance",
+			Self::Project => "project",
+			Self::ReleaseDigest => "release-digest",
+			Self::Account => "account",
+		}
+	}
+
+	pub fn parse(value: &str) -> Option<Self> {
+		Some(match value {
+			"instance" => Self::Instance,
+			"project" => Self::Project,
+			"release-digest" => Self::ReleaseDigest,
+			"account" => Self::Account,
+			_ => return None,
+		})
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopeRef {
 	pub kind: ScopeKind,
@@ -123,6 +144,26 @@ pub struct Sanction {
 }
 
 impl Sanction {
+	pub fn validate(&self) -> Result<(), String> {
+		if self.subject_user_id.trim().is_empty() {
+			return Err("subject_user_id is required".to_string());
+		}
+		if self.reason_code.trim().is_empty() {
+			return Err("reason_code is required".to_string());
+		}
+		if self.scope.id.trim().is_empty() {
+			return Err("scope id is required".to_string());
+		}
+		if self.expires_at.is_some_and(|expires| expires <= self.starts_at) {
+			return Err("expires_at must be after starts_at".to_string());
+		}
+		Ok(())
+	}
+
+	pub const fn restricts_publishing(&self) -> bool {
+		matches!(self.kind, SanctionKind::UploadRestriction | SanctionKind::Suspension)
+	}
+
 	pub fn is_active_at(&self, now: i64) -> bool {
 		self.starts_at <= now && self.expires_at.is_none_or(|expires| now < expires)
 	}
@@ -409,6 +450,41 @@ mod tests {
 		);
 		assert_eq!(LegalTarget::parse("release"), Some(LegalTarget::Release));
 		assert_eq!(LegalRequestKind::parse("subpoena"), None);
+	}
+
+	#[test]
+	fn sanctions_validate_and_only_some_restrict_publishing() {
+		let warning = Sanction {
+			subject_user_id: "u".to_string(),
+			org_id: None,
+			kind: SanctionKind::Warning,
+			reason_code: "spam".to_string(),
+			reason_taxonomy_version: REASON_TAXONOMY_VERSION,
+			scope: ScopeRef {
+				kind: ScopeKind::Account,
+				id: "u".to_string(),
+			},
+			starts_at: 100,
+			expires_at: None,
+			decided_by: "admin".to_string(),
+		};
+		assert!(warning.validate().is_ok());
+		assert!(!warning.restricts_publishing());
+
+		let mut suspension = warning.clone();
+		suspension.kind = SanctionKind::Suspension;
+		assert!(suspension.restricts_publishing());
+
+		let mut bad_window = suspension.clone();
+		bad_window.expires_at = Some(50);
+		assert!(bad_window.validate().is_err());
+
+		let mut no_subject = suspension;
+		no_subject.subject_user_id = "  ".to_string();
+		assert!(no_subject.validate().is_err());
+
+		assert_eq!(ScopeKind::parse("release-digest"), Some(ScopeKind::ReleaseDigest));
+		assert_eq!(ScopeKind::parse("galaxy"), None);
 	}
 
 	#[test]

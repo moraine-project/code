@@ -30,9 +30,10 @@ the tools that check it.
   local notifications and signed outbound webhooks, game/loader/runtime
   definition hosting, signed modpack manifests with validated overrides, a
   per-project listing policy for unlisting or blocking, append-only legal,
-  takedown, and impersonation-claim records, evidence attestations from pinned
-  providers, and a pull-based federation sync that fetches, verifies, indexes,
-  and fork-checks a remote home's feed.
+  takedown, impersonation-claim, and account-sanction records with upload and
+  submission enforcement, evidence attestations from pinned providers, and a
+  pull-based federation sync that fetches, verifies, indexes, and fork-checks a
+  remote home's feed.
 
 ## Try it
 

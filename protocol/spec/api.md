@@ -523,6 +523,31 @@ instance does not serve it. Listing policy never touches signed bytes; it
 records what one operator decided, which another operator is free to disagree
 with.
 
+## Sanctions
+
+`POST /v1/sanctions` records an account sanction and needs the
+`directory:manage` scope. A sanction names a `subject_user_id`, an optional
+`org_id`, a `kind` (`warning`, `upload-restriction`, or `suspension`), a
+`reason_code` from the published taxonomy and its `reason_taxonomy_version`, a
+`scope_kind` (`instance`, `project`, `release-digest`, or `account`) with a
+`scope_id`, a `starts_at`, an optional `expires_at`, and a deciding authority.
+An expiry that does not fall after the start is refused.
+
+`GET /v1/sanctions?user=` lists the sanctions against one account and
+`GET /v1/sanctions/{id}` reads one by its assigned id, both under
+`directory:manage`.
+
+A sanction is a local restriction, never a protocol-wide identity ban, because
+no global identity exists. An active `suspension` or `upload-restriction` whose
+scope is `account` or `instance` blocks artifact upload and submission with
+`403`, so a denial-of-service uploader can be stopped without deleting anything
+they published; a `warning` restricts nothing and a lapsed sanction stops
+applying on its own. A project- or release-scoped sanction is recorded but does
+not gate an account's uploads, because it is evidence for a listing decision
+rather than a restriction on the account. Records are append-only and
+attributed, and a reason code from a taxonomy version this instance does not
+know is shown as unknown rather than guessed.
+
 ## Impersonation and trademark claims
 
 `POST /v1/impersonation-reports` records a claim against a project or an org

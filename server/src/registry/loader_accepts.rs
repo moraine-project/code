@@ -129,7 +129,3 @@ async fn list_loader_accepts(State(state): State<AppState>, Path(id): Path<Strin
 	}
 	Json(accepts).into_response()
 }
-
-#[cfg(test)]
-#[path = "loader_accepts_tests.rs"]
-mod tests;

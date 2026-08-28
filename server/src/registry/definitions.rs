@@ -489,7 +489,3 @@ fn storage_error(error: sqlx::Error) -> Response {
 	tracing::error!(%error, "definition store failed");
 	(StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response()
 }
-
-#[cfg(test)]
-#[path = "definition_tests.rs"]
-mod tests;

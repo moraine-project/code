@@ -707,5 +707,4 @@ fn storage_error(error: sqlx::Error) -> Response {
 }
 
 #[cfg(test)]
-#[path = "federation_tests.rs"]
-mod tests;
+mod federation_tests;

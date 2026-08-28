@@ -11,6 +11,7 @@ pub mod loader_releases;
 pub mod policy;
 pub mod profile;
 pub mod review;
+pub mod sanctions;
 pub mod search;
 pub mod views;
 
@@ -47,6 +48,7 @@ pub fn routes() -> Router<AppState> {
 		.merge(legal::routes())
 		.merge(loader_accepts::routes())
 		.merge(impersonation::routes())
+		.merge(sanctions::routes())
 }
 
 #[derive(Serialize)]
@@ -569,37 +571,37 @@ pub(crate) fn storage_error(error: sqlx::Error) -> Response {
 }
 
 #[cfg(test)]
-#[path = "feed_tests.rs"]
+mod definition_tests;
+
+#[cfg(test)]
 mod feed_tests;
 
 #[cfg(test)]
-#[path = "admission_tests.rs"]
 mod admission_tests;
 
 #[cfg(test)]
-#[path = "attestations_tests.rs"]
 mod attestations_tests;
 
 #[cfg(test)]
-#[path = "impersonation_tests.rs"]
 mod impersonation_tests;
 
 #[cfg(test)]
-#[path = "legal_tests.rs"]
 mod legal_tests;
 
 #[cfg(test)]
-#[path = "ownership_tests.rs"]
+mod loader_accepts_tests;
+
+#[cfg(test)]
 mod ownership_tests;
 
 #[cfg(test)]
-#[path = "policy_tests.rs"]
 mod policy_tests;
 
 #[cfg(test)]
-#[path = "profile_tests.rs"]
 mod profile_tests;
 
 #[cfg(test)]
-#[path = "views_tests.rs"]
+mod sanctions_tests;
+
+#[cfg(test)]
 mod views_tests;

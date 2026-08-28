@@ -622,6 +622,17 @@ pub(crate) async fn upload_token(application: &Router, email: &str) -> String {
 	scope_token(application, email, "artifacts:write").await
 }
 
+pub(crate) async fn scope_token_with_user(application: &Router, email: &str, scope: &str) -> (String, String) {
+	let token = scope_token(application, email, scope).await;
+	let request = axum::http::Request::get("/v1/auth/me")
+		.header(header::AUTHORIZATION, format!("Bearer {token}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	let user_id = body_json(response).await["user_id"].as_str().expect("user id").to_string();
+	(token, user_id)
+}
+
 pub(crate) async fn scope_token(application: &Router, email: &str, scope: &str) -> String {
 	let (session, csrf) = login(application, email).await;
 	let cookie = format!("moraine_session={session}; moraine_csrf={csrf}");
