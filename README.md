@@ -412,6 +412,12 @@ protocol/
 
 ## License
 
-Not settled yet. The intent is AGPL-3.0-or-later for the server and permissive
-terms for the protocol libraries, so independent clients stay welcome. The
-decision lands before the first release.
+The server and the website are AGPL-3.0-or-later, so a modified hosted service
+has to share its changes. See `LICENSE`.
+
+Everything a client needs to speak the protocol without the server is MIT OR
+Apache-2.0: the `codec`, `crypto`, `model`, `metadata`, `install`, `verify`,
+`publish`, `resolver`, and `launcher` crates. See `LICENSE-MIT` and
+`LICENSE-APACHE`, and take whichever of the two you prefer. That split is on
+purpose. Independent clients should never need our permission, and the
+protocol crates carry no service logic worth hiding.
