@@ -47,7 +47,7 @@ cargo run -p moraine-verify -- key-id --public <ed25519-public-key-hex>
 Verify a signed object you already have:
 
 ```sh
-cargo run -p moraine-verify -- object --kind release --file release.cbor --root <hex> --threshold 1
+cargo run -p moraine-verify -- object --kind release release.cbor --root <hex> --threshold 1
 ```
 
 `--kind` accepts `genesis`, `delegation`, `release`, `feed-entry`, `profile`,

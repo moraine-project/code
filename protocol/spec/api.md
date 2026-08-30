@@ -289,6 +289,14 @@ verifies must fetch the object document instead.
   separate from `compatibility`, which is what the publisher declared: evidence
   is signed by the provider it names and is never merged into the declared
   claim, and neither is a safety guarantee.
+- `GET /v1/projects/{id}/releases/{hex}/bundle` returns a zip containing the
+  signed material needed to check one release offline: the project genesis, the
+  release, the feed entry that published it when one exists, every key
+  delegation that verifies against the genesis, and a `verify.md` naming the
+  project, release, threshold, and root keys with the exact verifier commands.
+  It is a convenience over fetching the same objects by digest, and it changes
+  nothing: the bytes in the zip are the signed bytes, so a client that trusts
+  the verifier output rather than the signatures has gained nothing.
 - `GET /v1/projects/{id}/changelog/{hex}` returns a changelog's locale-tagged
   sections, each with a heading, body, and optional severity. The digest is the
   changelog object's identity digest. It is `404` unless the object was stored

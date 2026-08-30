@@ -111,6 +111,31 @@ impl MetadataStore {
 		}))
 	}
 
+	pub async fn feed_entry_for_object(
+		&self,
+		project_id: &str,
+		object_digest: &[u8],
+	) -> Result<Option<FeedRow>, sqlx::Error> {
+		let row = sqlx::query(
+			"SELECT project_id, seq, previous, entry_digest, kind, object_digest, payload, wire FROM feed_entries
+			 WHERE project_id = $1 AND object_digest = $2 ORDER BY seq DESC LIMIT 1",
+		)
+		.bind(project_id)
+		.bind(object_digest)
+		.fetch_optional(&self.pool)
+		.await?;
+		Ok(row.map(|row| FeedRow {
+			project_id: row.get("project_id"),
+			seq: row.get("seq"),
+			previous: row.get("previous"),
+			entry_digest: row.get("entry_digest"),
+			kind: row.get("kind"),
+			object_digest: row.get("object_digest"),
+			payload: row.get("payload"),
+			wire: row.get("wire"),
+		}))
+	}
+
 	pub async fn objects_of_kind(&self, kind: &str, limit: i64) -> Result<Vec<StoredObject>, sqlx::Error> {
 		let rows = sqlx::query("SELECT digest, kind, payload, wire FROM objects WHERE kind = $1 LIMIT $2")
 			.bind(kind)

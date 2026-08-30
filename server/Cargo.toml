@@ -28,6 +28,7 @@ serde.workspace = true
 serde_json.workspace = true
 object_store = { version = "0.13", default-features = false, features = ["aws"] }
 sha2.workspace = true
+zip = { version = "8", default-features = false, features = ["deflate"] }
 hex.workspace = true
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "any", "sqlite", "postgres"] }
 tracing = "0.1"

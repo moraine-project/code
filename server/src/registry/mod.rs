@@ -1,6 +1,7 @@
 pub mod advisories;
 pub mod artifacts;
 pub mod attestations;
+pub mod bundle;
 pub mod compatibility;
 pub mod definitions;
 pub mod feed;
@@ -45,6 +46,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/projects/{id}/transfer", post(transfer))
 		.merge(crate::registry::views::routes())
 		.merge(profile::routes())
+		.merge(bundle::routes())
 		.merge(policy::routes())
 		.merge(legal::routes())
 		.merge(loader_accepts::routes())
@@ -582,6 +584,9 @@ mod admission_tests;
 
 #[cfg(test)]
 mod attestations_tests;
+
+#[cfg(test)]
+mod bundle_tests;
 
 #[cfg(test)]
 mod impersonation_tests;
