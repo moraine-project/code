@@ -723,3 +723,39 @@ async fn falls_back_to_a_labeled_near_match_for_a_typo() {
 		"an exact match is not labeled approximate"
 	);
 }
+
+#[tokio::test]
+async fn filters_search_by_game_version_channel_and_state() {
+	let (application, _directory) = app().await;
+	let signer = key(35);
+	let (project_id, _release) = publish_project(&application, &signer).await;
+	publish_profile(&application, &signer, &project_id, "Fabric Addon").await;
+
+	let search = |application: axum::Router, query: &str| {
+		let uri = format!("/v1/search?{query}");
+		async move {
+			let request = axum::http::Request::get(uri).body(Body::empty()).expect("request");
+			let response = application.oneshot(request).await.expect("response");
+			body_json(response).await
+		}
+	};
+
+	let page = search(application.clone(), "game_version=1.20.1").await;
+	assert_eq!(page["results"].as_array().expect("results").len(), 1);
+	let page = search(application.clone(), "game_version=1.19.0").await;
+	assert!(page["results"].as_array().expect("results").is_empty());
+
+	let page = search(application.clone(), "channel=release").await;
+	assert_eq!(page["results"].as_array().expect("results").len(), 1);
+	let page = search(application.clone(), "channel=beta").await;
+	assert!(page["results"].as_array().expect("results").is_empty());
+
+	let page = search(application.clone(), "state=listed").await;
+	assert_eq!(page["results"].as_array().expect("results").len(), 1);
+
+	let bad = axum::http::Request::get("/v1/search?state=sideways")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(bad).await.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}

@@ -526,6 +526,42 @@ pub(crate) async fn store_object_record(state: &AppState, object: &verify::Verif
 						.add_search_labels(&release.project_id, "loader", &loaders)
 						.await?;
 				}
+				let versions: Vec<String> = release
+					.compatibility
+					.iter()
+					.filter(|entry| {
+						matches!(
+							entry.game_version_predicate.scheme(),
+							Some(moraine_model::compatibility::Scheme::Exact)
+								| Some(moraine_model::compatibility::Scheme::Set)
+						)
+					})
+					.flat_map(|entry| entry.game_version_predicate.values.iter().cloned())
+					.collect();
+				if !versions.is_empty() {
+					state
+						.metadata
+						.add_search_labels(&release.project_id, "game-version", &versions)
+						.await?;
+				}
+				state
+					.metadata
+					.add_search_labels(&release.project_id, "channel", std::slice::from_ref(&release.channel))
+					.await?;
+				let platforms: Vec<String> = release
+					.artifacts
+					.iter()
+					.filter_map(|artifact| artifact.os_predicate.as_ref())
+					.chain(release.compatibility.iter().filter_map(|entry| entry.os_predicate.as_ref()))
+					.flatten()
+					.cloned()
+					.collect();
+				if !platforms.is_empty() {
+					state
+						.metadata
+						.add_search_labels(&release.project_id, "platform", &platforms)
+						.await?;
+				}
 			}
 			moraine_model::release::ReleaseObject::Location(location) => {
 				for entry in &location.locations {

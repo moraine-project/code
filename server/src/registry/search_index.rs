@@ -97,6 +97,9 @@ pub struct SearchFilter<'a> {
 	pub tag: Option<&'a str>,
 	pub category: Option<&'a str>,
 	pub loader: Option<&'a str>,
+	pub game_version: Option<&'a str>,
+	pub channel: Option<&'a str>,
+	pub platform: Option<&'a str>,
 	pub popularity_since: Option<(i64, i64)>,
 	pub sort: SearchSort,
 	pub cursor: Option<(&'a str, &'a str)>,
@@ -367,6 +370,16 @@ impl MetadataStore {
 			let parameter = query.reserve_bind(category);
 			query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'category' AND l.label_id = ${parameter})"));
 		}
+		for (label_kind, value) in [
+			("game-version", filter.game_version),
+			("channel", filter.channel),
+			("platform", filter.platform),
+		] {
+			if let Some(value) = value {
+				let parameter = query.reserve_bind(value);
+				query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = '{label_kind}' AND l.label_id = ${parameter})"));
+			}
+		}
 		match filter.sort {
 			SearchSort::Updated => {
 				if let Some((value, id)) = filter.cursor {
@@ -593,6 +606,9 @@ mod tests {
 				tag: None,
 				category: None,
 				loader: None,
+				game_version: None,
+				channel: None,
+				platform: None,
 				popularity_since: None,
 				sort: SearchSort::Relevance,
 				cursor: None,
@@ -634,6 +650,9 @@ mod tests {
 				tag: None,
 				category: None,
 				loader: None,
+				game_version: None,
+				channel: None,
+				platform: None,
 				popularity_since: None,
 				sort: SearchSort::Relevance,
 				cursor: None,
@@ -673,6 +692,9 @@ mod tests {
 				tag: None,
 				category: None,
 				loader: None,
+				game_version: None,
+				channel: None,
+				platform: None,
 				popularity_since: None,
 				sort: SearchSort::Relevance,
 				cursor: None,

@@ -26,6 +26,14 @@ struct SearchParams {
 	#[serde(default)]
 	loader: Option<String>,
 	#[serde(default)]
+	game_version: Option<String>,
+	#[serde(default)]
+	channel: Option<String>,
+	#[serde(default)]
+	platform: Option<String>,
+	#[serde(default)]
+	state: Option<String>,
+	#[serde(default)]
 	sort: Option<String>,
 	#[serde(default)]
 	cursor: Option<String>,
@@ -57,6 +65,13 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		SearchSort::Popularity => Some((since_day, since_day * 86_400)),
 		_ => None,
 	};
+	let requested_state = match params.state.as_deref() {
+		None => None,
+		Some(value) => match ListingState::parse(value) {
+			Some(state) => Some(state),
+			None => return (StatusCode::BAD_REQUEST, format!("unknown state `{value}`")).into_response(),
+		},
+	};
 	let cursor = params.cursor.as_deref().and_then(|value| value.rsplit_once(':'));
 	let filter = SearchFilter {
 		text: query_text,
@@ -64,6 +79,9 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		tag: params.tag.as_deref(),
 		category: params.category.as_deref(),
 		loader: params.loader.as_deref(),
+		game_version: params.game_version.as_deref(),
+		channel: params.channel.as_deref(),
+		platform: params.platform.as_deref(),
 		popularity_since,
 		sort,
 		cursor,
@@ -149,6 +167,9 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 				.map(|policy| policy.listing_state)
 				.unwrap_or(ListingState::Listed);
 			if !listing_state.appears_in_search() {
+				return None;
+			}
+			if requested_state.is_some_and(|requested| requested != listing_state) {
 				return None;
 			}
 			let mut annotations = Vec::new();

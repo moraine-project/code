@@ -80,9 +80,16 @@ already fills the page, and it exists precisely because a near match may be a
 lookalike, which is why the annotation tells the reader to compare project IDs
 rather than trust the result.
 
-The facets this implementation serves are `game`, `loader`, `category`, and
-`tag`. A project's loader labels come from the loaders its signed releases
-declare, so a loader filter matches a project that has published for it.
+The facets this implementation serves are `game`, `loader`, `category`, `tag`,
+`game_version`, `channel`, and `platform`, plus a `state` filter over the
+listing states this instance shows. A project's loader, game-version, channel,
+and platform labels come from its signed releases, so a filter matches a
+project that has published for that loader, declared that exact game version,
+released on that channel, or shipped for that platform. Only `exact` and `set`
+game-version predicates contribute concrete versions; a range is left out
+rather than expanded, because a comparator is not a version a facet can offer.
+A project whose state this instance does not list cannot be recovered with
+`state`, because the filter narrows what search already shows.
 
 Impersonation detection begins here: when two results in one game share a
 normalized display name (case and punctuation removed) under different stable
