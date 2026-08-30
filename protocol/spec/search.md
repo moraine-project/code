@@ -62,6 +62,24 @@ name, summary, description, and the text of any changelog this instance holds.
 A changelog is a signed object referenced by a release's `changelog_digest`, so
 its text is indexed only where the object itself was published here.
 
+Matching is case-insensitive and tiered, so a query is a prefix match as well
+as a substring one: an exact field scores above a field that starts with the
+query, which scores above a field that merely contains it, and every tier still
+respects the field weighting above. A query is treated as literal text, so `%`
+and `_` match themselves instead of behaving as wildcards.
+
+When a text query matches fewer rows than the page can hold, the instance also
+offers near matches from a trigram index over the display name and summary: a
+term's three-character windows are looked up, a project must share enough of
+them, and the shared weight orders the candidates. These results are appended
+after the strict ones and every one carries an `approximate-match` annotation,
+so a near match is never silently presented as the project the user typed.
+That is a convenience with real limits. It cannot recover a typo that changes
+most of a short name's trigrams, it does not run at all when the strict match
+already fills the page, and it exists precisely because a near match may be a
+lookalike, which is why the annotation tells the reader to compare project IDs
+rather than trust the result.
+
 The facets this implementation serves are `game`, `loader`, `category`, and
 `tag`. A project's loader labels come from the loaders its signed releases
 declare, so a loader filter matches a project that has published for it.

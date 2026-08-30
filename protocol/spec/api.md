@@ -494,7 +494,11 @@ never from a directory edit. The index is disposable and can be rebuilt from
 stored objects.
 
 `q` matches the display name, summary, description, and any changelog text this
-instance holds, case-insensitively. `game`, `tag`, `category`, and `loader` are
+instance holds, case-insensitively, preferring an exact field over a prefix
+over a substring. A query is literal text, so `%` and `_` match themselves;
+when a query matches fewer rows than the page can hold, near matches from a
+trigram index are appended with an `approximate-match` annotation rather than
+presented as the project the caller typed. `game`, `tag`, `category`, and `loader` are
 exact facet filters. `sort` is one of `relevance`, `updated`, `created`,
 `name`, and `popularity`, and any other value is a `400` rather than silently
 treated as a different order. `limit` is bounded to 100. Pagination uses an

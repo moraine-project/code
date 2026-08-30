@@ -687,3 +687,39 @@ async fn rejects_a_profile_tag_the_game_does_not_declare() {
 	let response = application.oneshot(request).await.expect("response");
 	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn falls_back_to_a_labeled_near_match_for_a_typo() {
+	let (application, _directory) = app().await;
+	let signer = key(33);
+	let (project_id, _release) = publish_project(&application, &signer).await;
+	publish_profile(&application, &signer, &project_id, "Fabric Addon").await;
+
+	let typo = axum::http::Request::get("/v1/search?q=fabrik")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(typo).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let page = body_json(response).await;
+	let results = page["results"].as_array().expect("results");
+	assert_eq!(results.len(), 1);
+	assert_eq!(results[0]["project_id"], project_id);
+	let annotations = results[0]["annotations"].as_array().expect("annotations");
+	assert!(
+		annotations.iter().any(|entry| entry["kind"] == "approximate-match"),
+		"a near match must be labeled: {annotations:?}"
+	);
+
+	let genuine = axum::http::Request::get("/v1/search?q=fabric")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(genuine).await.expect("response");
+	let page = body_json(response).await;
+	let results = page["results"].as_array().expect("results");
+	assert_eq!(results.len(), 1);
+	let annotations = results[0]["annotations"].as_array().expect("annotations");
+	assert!(
+		annotations.iter().all(|entry| entry["kind"] != "approximate-match"),
+		"an exact match is not labeled approximate"
+	);
+}

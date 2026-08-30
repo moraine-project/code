@@ -13,6 +13,7 @@ pub mod profile;
 pub mod review;
 pub mod sanctions;
 pub mod search;
+pub mod search_index;
 pub mod views;
 
 use axum::body::Bytes;
@@ -396,7 +397,7 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 		return Err(Box::new(storage_error(error)));
 	}
 	if row.kind == "profile-updated"
-		&& let Err(error) = crate::registry::search::refresh_search_document(state, &row.object_digest).await
+		&& let Err(error) = crate::registry::search_index::refresh_search_document(state, &row.object_digest).await
 	{
 		return Err(Box::new(storage_error(error)));
 	}
@@ -496,8 +497,8 @@ pub(crate) async fn store_object_record(state: &AppState, object: &verify::Verif
 	state.metadata.put_object(&stored(object)).await?;
 	if object.kind == ObjectKind::Profile
 		&& let Ok(profile) = moraine_model::profile::ProfileRevision::from_canonical_bytes(&object.payload_bytes)
-		&& let Some(game) = crate::registry::search::game_vocabulary(state, &profile.game_id).await?
-		&& let Err(message) = crate::registry::search::validate_profile_vocabulary(&profile, &game)
+		&& let Some(game) = crate::registry::search_index::game_vocabulary(state, &profile.game_id).await?
+		&& let Err(message) = crate::registry::search_index::validate_profile_vocabulary(&profile, &game)
 	{
 		return Err(sqlx::Error::Protocol(message));
 	}

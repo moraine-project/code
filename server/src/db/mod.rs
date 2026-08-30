@@ -375,7 +375,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn popularity_sort_queries() {
-		use crate::registry::search::{SearchDocument, SearchFilter, SearchSort};
+		use crate::registry::search_index::{SearchDocument, SearchFilter, SearchSort};
 
 		let directory = tempfile::tempdir().expect("tempdir");
 		let store = MetadataStore::open(directory.path().join("metadata.sqlite"))
@@ -417,7 +417,7 @@ mod tests {
 mod postgres_tests {
 	use super::*;
 	use crate::registry::review::{ReviewDecisionRow, SubmissionRow};
-	use crate::registry::search::SearchDocument;
+	use crate::registry::search_index::SearchDocument;
 
 	#[tokio::test]
 	async fn round_trips_through_postgres() {
