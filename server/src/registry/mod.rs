@@ -646,4 +646,7 @@ mod profile_tests;
 mod sanctions_tests;
 
 #[cfg(test)]
+mod search_tests;
+
+#[cfg(test)]
 mod views_tests;
