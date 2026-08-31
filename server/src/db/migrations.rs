@@ -87,6 +87,11 @@ const MIGRATIONS: &[Migration] = &[
 		sqlite: include_str!("../../migrations/sqlite/0013_search_trigrams.sql"),
 		postgres: include_str!("../../migrations/postgres/0013_search_trigrams.sql"),
 	},
+	Migration {
+		name: "0014_recovery",
+		sqlite: include_str!("../../migrations/sqlite/0014_recovery.sql"),
+		postgres: include_str!("../../migrations/postgres/0014_recovery.sql"),
+	},
 ];
 
 pub(super) async fn run_migrations(pool: &AnyPool, engine: Engine) -> Result<usize, sqlx::Error> {

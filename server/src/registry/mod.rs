@@ -11,6 +11,7 @@ pub mod loader_accepts;
 pub mod loader_releases;
 pub mod policy;
 pub mod profile;
+pub mod recovery;
 pub mod review;
 pub mod sanctions;
 pub mod search;
@@ -50,6 +51,7 @@ pub fn routes() -> Router<AppState> {
 		.merge(policy::routes())
 		.merge(legal::routes())
 		.merge(loader_accepts::routes())
+		.merge(recovery::routes())
 		.merge(impersonation::routes())
 		.merge(sanctions::routes())
 }
@@ -409,6 +411,9 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	if row.kind == "release-withdrawn" {
 		apply_withdrawal(state, &row.project_id, &row.object_digest).await?;
 	}
+	if row.kind == "recovery" {
+		recovery::apply(state, &row.project_id, &row.object_digest).await?;
+	}
 	if let Err(error) =
 		crate::federation::notifications::notify_followers(state, &row.project_id, &row.kind, &row.object_digest, row.seq)
 			.await
@@ -423,7 +428,7 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	Ok((row.seq, entry_id))
 }
 
-async fn load_root(state: &AppState, project_id: &str) -> Result<RootSet, Box<Response>> {
+pub(crate) async fn load_root(state: &AppState, project_id: &str) -> Result<RootSet, Box<Response>> {
 	let project = match state.metadata.project(project_id).await {
 		Ok(Some(project)) => project,
 		Ok(None) => return Err(Box::new((StatusCode::NOT_FOUND, "no such project").into_response())),
@@ -438,9 +443,31 @@ async fn load_root(state: &AppState, project_id: &str) -> Result<RootSet, Box<Re
 		}
 		Err(error) => return Err(Box::new(storage_error(error))),
 	};
-	verify::verify_genesis(&genesis.wire)
-		.map(|(root, _)| root)
-		.map_err(|error| Box::new(bad_request(state, error)))
+	let parsed = match moraine_model::genesis::Genesis::from_canonical_bytes(&genesis.payload) {
+		Ok(genesis) => genesis,
+		Err(error) => return Err(Box::new(bad_request(state, VerifyError::Decode(error)))),
+	};
+	match state.metadata.project_roots(project_id).await {
+		Ok(Some(row)) => {
+			let Some(keys) = crate::registry::recovery::decode_roots(&row.roots) else {
+				return Err(Box::new(
+					(StatusCode::INTERNAL_SERVER_ERROR, "stored roots do not decode").into_response(),
+				));
+			};
+			let threshold = match usize::try_from(row.threshold) {
+				Ok(threshold) => threshold,
+				Err(_) => {
+					return Err(Box::new(
+						(StatusCode::INTERNAL_SERVER_ERROR, "stored threshold is invalid").into_response(),
+					));
+				}
+			};
+			RootSet::new(&keys, threshold, parsed.authorized_kinds.clone(), parsed.kind)
+				.map_err(|error| Box::new(bad_request(state, VerifyError::Decode(error))))
+		}
+		Ok(None) => RootSet::from_genesis(&parsed).map_err(|error| Box::new(bad_request(state, VerifyError::Decode(error)))),
+		Err(error) => Err(Box::new(storage_error(error))),
+	}
 }
 
 pub(crate) async fn load_delegations(
@@ -586,6 +613,21 @@ pub(crate) async fn store_object_record(state: &AppState, object: &verify::Verif
 	{
 		state.metadata.insert_attestation(&attestation, &object.digest).await?;
 	}
+	if object.kind == ObjectKind::Delegation
+		&& let Ok(signed) = SignedObject::<Delegation>::from_bytes(&object.wire_bytes)
+		&& let Delegation::Recovery(event) = &signed.payload
+	{
+		state
+			.metadata
+			.note_recovery_claim(
+				&event.project_id,
+				&object.digest,
+				i64::try_from(event.valid_from_seq).unwrap_or(i64::MAX),
+				&recovery::encode_roots(&event.replacement_roots),
+				unix_now(),
+			)
+			.await?;
+	}
 	if object.kind == ObjectKind::Changelog
 		&& let Ok(changelog) = moraine_model::changelog::Changelog::from_canonical_bytes(&object.payload_bytes)
 	{
@@ -644,6 +686,9 @@ mod profile_tests;
 
 #[cfg(test)]
 mod sanctions_tests;
+
+#[cfg(test)]
+mod recovery_tests;
 
 #[cfg(test)]
 mod search_tests;

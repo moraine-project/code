@@ -331,6 +331,31 @@ would mean nothing if a publisher could commit straight to the feed. Federation
 ingest is unaffected, because a directory mirroring a home is not publishing to
 its own feed.
 
+## Key recovery
+
+A recovery event is a `delegation` object signed by the project's current root
+threshold. Posting it stores the claim, and a feed entry of kind `recovery`
+that references it installs the event's `replacement_roots` as the project's
+new root set. From then on every object is verified against those roots, so a
+compromised key that was replaced can no longer authorize anything, including
+further feed entries. The replacement set must number at least the current
+threshold, so recovery changes the keys without lowering the project's signing
+policy.
+
+`GET /v1/projects/{id}/recovery` reports the current threshold, the current
+roots, the sequence the current set took effect at, and every claim this
+instance has accepted. A claim whose `valid_from_seq` is not greater than the
+installed one is kept with `applied: false` rather than discarded, so two
+claims that both verified against the same roots are both visible instead of
+one silently replacing the other; a client treats an unapplied claim as a
+conflict to review, not as a rollback. Recovery never rewrites history:
+previously signed releases stay addressable, and an affected release is marked
+by whatever withdrawal or compromise notice the publisher publishes.
+
+The genesis roots are the initial recovery keys. Delegating the `recovery` kind
+to a key that is not already a root is defined by the protocol but not
+implemented here, so only the roots can recover a project today.
+
 ## Admission review
 
 The instance has one setting, `publishing`, chosen on the command line and
