@@ -9,6 +9,7 @@ pub mod impersonation;
 pub mod legal;
 pub mod loader_accepts;
 pub mod loader_releases;
+pub mod migration;
 pub mod policy;
 pub mod profile;
 pub mod recovery;
@@ -29,7 +30,7 @@ use moraine_model::Canonical;
 use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::feed::FeedEntry;
 use moraine_model::signed::SignedObject;
-use moraine_model::trust::{RootSet, verify_key_delegation, verify_ownership_transfer};
+use moraine_model::trust::{RootSet, verify_key_delegation, verify_migration, verify_ownership_transfer};
 use serde::Serialize;
 
 use crate::db::{FeedRow, ProjectRow, StoredObject};
@@ -51,6 +52,7 @@ pub fn routes() -> Router<AppState> {
 		.merge(policy::routes())
 		.merge(legal::routes())
 		.merge(loader_accepts::routes())
+		.merge(migration::routes())
 		.merge(recovery::routes())
 		.merge(impersonation::routes())
 		.merge(sanctions::routes())
@@ -297,9 +299,15 @@ async fn store_object(State(state): State<AppState>, Path((id, kind)): Path<(Str
 		Ok(delegations) => delegations,
 		Err(response) => return *response,
 	};
-	let object = match verify::verify_object_authorized(kind, &body, &root, &delegations, unix_now()) {
-		Ok(object) => object,
-		Err(error) => return bad_request(&state, error),
+	let object = match migration_object(kind, &body, &root) {
+		Some(result) => match result {
+			Ok(object) => object,
+			Err(error) => return bad_request(&state, error),
+		},
+		None => match verify::verify_object_authorized(kind, &body, &root, &delegations, unix_now()) {
+			Ok(object) => object,
+			Err(error) => return bad_request(&state, error),
+		},
 	};
 	if let Err(error) = store_object_record(&state, &object).await {
 		if let sqlx::Error::Protocol(message) = &error {
@@ -312,6 +320,26 @@ async fn store_object(State(state): State<AppState>, Path((id, kind)): Path<(Str
 		kind: kind.as_str().to_string(),
 	};
 	(StatusCode::CREATED, Json(receipt)).into_response()
+}
+
+fn migration_object(kind: ObjectKind, body: &[u8], root: &RootSet) -> Option<Result<verify::VerifiedObject, VerifyError>> {
+	if kind != ObjectKind::Delegation {
+		return None;
+	}
+	let signed = SignedObject::<Delegation>::from_bytes(body).ok()?;
+	if !matches!(signed.payload, Delegation::Migration(_)) {
+		return None;
+	}
+	Some(match verify_migration(&signed, root) {
+		Ok(()) => Ok(verify::VerifiedObject {
+			kind,
+			digest: object_id(kind, &signed.payload_bytes),
+			id: signed.id(kind),
+			payload_bytes: signed.payload_bytes.clone(),
+			wire_bytes: body.to_vec(),
+		}),
+		Err(error) => Err(VerifyError::Decode(error)),
+	})
 }
 
 async fn append_feed(State(state): State<AppState>, Path(id): Path<String>, body: Bytes) -> Response {
@@ -413,6 +441,9 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	}
 	if row.kind == "recovery" {
 		recovery::apply(state, &row.project_id, &row.object_digest).await?;
+	}
+	if row.kind == "migration" {
+		migration::apply(state, &row.project_id, &row.object_digest).await?;
 	}
 	if let Err(error) =
 		crate::federation::notifications::notify_followers(state, &row.project_id, &row.kind, &row.object_digest, row.seq)
@@ -677,6 +708,9 @@ mod loader_accepts_tests;
 
 #[cfg(test)]
 mod ownership_tests;
+
+#[cfg(test)]
+mod migration_tests;
 
 #[cfg(test)]
 mod policy_tests;

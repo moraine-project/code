@@ -331,6 +331,25 @@ would mean nothing if a publisher could commit straight to the feed. Federation
 ingest is unaffected, because a directory mirroring a home is not publishing to
 its own feed.
 
+## Migration
+
+A migration record is a `delegation` object with a `migration` discriminant. It
+names the old and new home URLs and the `cutover_seq` the move takes effect at,
+and it is the homes that make it a fact: the record must be signed by at least
+the project's threshold plus two keys from the project's root set, so the old
+home's publishing identity and the new home must both sign in addition to the
+publisher. A record that does not meet that count is refused with `400` rather
+than stored under-signed.
+
+`GET /v1/projects/{id}/migrations` lists the migrations this instance holds,
+newest first, with the linked object ID, both home URLs, the cutover sequence,
+and any reason. A migration becomes a feed fact when a `migration` entry that
+references it is accepted, and it is then served like any other record. This
+instance does not redirect to the new home on its own: it cannot check that the
+new home advertises the same feed head, so the follower fetches the record,
+verifies it against the old root, checks the new home, and moves when it
+agrees. A redirect is a convenience; the signed record carries authority.
+
 ## Key recovery
 
 A recovery event is a `delegation` object signed by the project's current root
