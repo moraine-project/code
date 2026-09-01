@@ -2,6 +2,7 @@ pub mod advisories;
 pub mod artifacts;
 pub mod attestations;
 pub mod bundle;
+pub mod channels;
 pub mod compatibility;
 pub mod definitions;
 pub mod feed;
@@ -52,6 +53,7 @@ pub fn routes() -> Router<AppState> {
 		.merge(policy::routes())
 		.merge(legal::routes())
 		.merge(loader_accepts::routes())
+		.merge(channels::routes())
 		.merge(migration::routes())
 		.merge(recovery::routes())
 		.merge(impersonation::routes())
@@ -696,6 +698,9 @@ mod attestations_tests;
 
 #[cfg(test)]
 mod bundle_tests;
+
+#[cfg(test)]
+mod channels_tests;
 
 #[cfg(test)]
 mod impersonation_tests;

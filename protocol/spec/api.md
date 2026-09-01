@@ -331,6 +331,17 @@ would mean nothing if a publisher could commit straight to the feed. Federation
 ingest is unaffected, because a directory mirroring a home is not publishing to
 its own feed.
 
+## Channels
+
+`GET /v1/projects/{id}/channels` reports, for each channel the project has
+published on, the most recent release-published entry: its release ID, human
+version, and feed sequence. It is a pointer derived from feed order, not a
+signed object, so it can advance as new releases are published and it never
+changes a release ID or the release bytes. A client that needs a stable claim
+finds the release by its digest; the channel pointer only says which one the
+feed currently puts last. A channel with no releases is absent, and a project
+with none answers with an empty list.
+
 ## Migration
 
 A migration record is a `delegation` object with a `migration` discriminant. It

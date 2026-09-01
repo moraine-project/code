@@ -333,6 +333,54 @@ pub(crate) fn release_wire_for_game_with_loader(
 	(signed.wire_bytes(), digest)
 }
 
+pub(crate) fn release_wire_with_channel(
+	signer: &SigningKey,
+	project_id: &str,
+	nonce: u8,
+	human_version: &str,
+	channel: &str,
+) -> (Vec<u8>, [u8; 32]) {
+	let release = ReleasePayload {
+		protocol: 1,
+		project_id: project_id.to_string(),
+		game_id: sample_id("minecraft"),
+		release_nonce: vec![nonce; 16],
+		human_version: human_version.to_string(),
+		channel: channel.to_string(),
+		kind: "mod".to_string(),
+		declared_time: 1_760_000_000,
+		compatibility: vec![Compatibility {
+			game_version_predicate: Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]),
+			loader_id: None,
+			loader_version_predicate: None,
+			side: Side::Both,
+			runtime_predicate: None,
+			os_predicate: None,
+			arch_predicate: None,
+		}],
+		artifacts: vec![Artifact {
+			digest: vec![0xAB; 32],
+			size: 10,
+			media_type: "application/java-archive".to_string(),
+			filename: "example.jar".to_string(),
+			is_primary: true,
+			os_predicate: None,
+			arch_predicate: None,
+		}],
+		dependencies: Vec::new(),
+		source_reference: None,
+		changelog_digest: None,
+		license_expression: None,
+		rights: None,
+		sbom_digest: None,
+		minimum_verifier_version: 1,
+		critical_extensions: Vec::new(),
+	};
+	let signed = sign_payload(Kind::Release, &release, &[signer]);
+	let digest = object_id(Kind::Release, &signed.payload_bytes);
+	(signed.wire_bytes(), digest)
+}
+
 pub(crate) fn release_wire_with_runtime(
 	signer: &SigningKey,
 	project_id: &str,
