@@ -8,6 +8,7 @@ use crate::canonical::Canonical;
 use crate::changelog::Changelog;
 use crate::definition::{GameDef, LoaderObject, RuntimeDef};
 use crate::delegation::{Delegation, KeyDelegation};
+use crate::deny_list::DenyList;
 use crate::error::ModelError;
 use crate::feed::FeedEntry;
 use crate::genesis::Genesis;
@@ -72,6 +73,7 @@ pub fn verify_object(kind: ObjectKind, wire: &[u8], root: &RootSet) -> Result<Ve
 		ObjectKind::RuntimeDef => verify_typed::<RuntimeDef>(kind, wire, root),
 		ObjectKind::Modpack => verify_typed::<ModpackManifest>(kind, wire, root),
 		ObjectKind::Changelog => verify_typed::<Changelog>(kind, wire, root),
+		ObjectKind::DenyList => verify_typed::<DenyList>(kind, wire, root),
 		other => Err(VerifyError::UnsupportedKind(other)),
 	}
 }
@@ -97,6 +99,7 @@ pub fn verify_object_authorized(
 			ObjectKind::RuntimeDef => verify_delegated::<RuntimeDef>(kind, wire, delegations, now, error),
 			ObjectKind::Modpack => verify_delegated::<ModpackManifest>(kind, wire, delegations, now, error),
 			ObjectKind::Changelog => verify_delegated::<Changelog>(kind, wire, delegations, now, error),
+			ObjectKind::DenyList => verify_delegated::<DenyList>(kind, wire, delegations, now, error),
 			other => Err(VerifyError::UnsupportedKind(other)),
 		},
 		Err(other) => Err(other),

@@ -5,6 +5,7 @@ pub mod bundle;
 pub mod channels;
 pub mod compatibility;
 pub mod definitions;
+pub mod deny_lists;
 pub mod feed;
 pub mod impersonation;
 pub mod legal;
@@ -54,6 +55,7 @@ pub fn routes() -> Router<AppState> {
 		.merge(legal::routes())
 		.merge(loader_accepts::routes())
 		.merge(channels::routes())
+		.merge(deny_lists::routes())
 		.merge(migration::routes())
 		.merge(recovery::routes())
 		.merge(impersonation::routes())
@@ -686,6 +688,9 @@ pub(crate) fn storage_error(error: sqlx::Error) -> Response {
 
 #[cfg(test)]
 mod definition_tests;
+
+#[cfg(test)]
+mod deny_lists_tests;
 
 #[cfg(test)]
 mod feed_tests;

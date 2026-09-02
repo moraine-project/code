@@ -755,6 +755,29 @@ to the affected digest or range, never the project. An advisory is evidence: it
 never alters signed bytes, and a retraction is a later advisory about the same
 target.
 
+## Deny and advisory lists
+
+A deny list is a signed, bounded document an instance publishes so another can
+subscribe to its findings. It is its own object kind, `deny-list`, whose issuer
+is an instance identity rather than a project, so its key is pinned like a
+provider's with `POST /v1/providers/{issuer_id}/keys`.
+
+`POST /v1/deny-lists` accepts a signed list and verifies it against the pinned
+key named by `issuer_id`; an unpinned issuer is `409` and a bad signature is
+`400`. Each entry names a `target_kind` (`project` or `artifact-digest`), the
+`target_id`, a `reason_code` from the moderation taxonomy with its version, a
+`scope_kind` and `scope_id`, and an optional `valid_from` and `valid_until`. A
+list from one issuer replaces that issuer's previous list, so an entry the
+issuer drops stops applying, and an entry past its `valid_until` stops applying
+on its own.
+
+`GET /v1/deny-lists?project=<id>` or `?digest=<sha256>` lists the active entries
+for one target, each naming its issuer, reason, scope, validity window, and the
+list object. In search results, a project that an issuer has listed carries a
+`deny-list` annotation naming the issuer and reason; it is attributed to that
+instance and never presented as this instance's verdict, and it does not change
+the project's listing state, which stays this operator's own decision.
+
 ## Mirrors and locations
 
 Two different things are kept apart, and this is where they are read.

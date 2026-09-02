@@ -6,6 +6,7 @@ pub mod changelog;
 pub mod compatibility;
 pub mod definition;
 pub mod delegation;
+pub mod deny_list;
 pub mod dependency;
 pub mod error;
 pub mod event;

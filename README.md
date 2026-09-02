@@ -33,8 +33,9 @@ the tools that check it.
   takedown, impersonation-claim, and account-sanction records with upload and
   submission enforcement, evidence attestations from pinned providers, key
   recovery that replaces a project's root set and revokes a compromised key,
-  cross-signed migration records, and a pull-based federation sync that
-  fetches, verifies, indexes, and fork-checks a remote home's feed.
+  cross-signed migration records, subscribe-able signed deny and advisory
+  lists, and a pull-based federation sync that fetches, verifies, indexes, and
+  fork-checks a remote home's feed.
 
 ## Try it
 

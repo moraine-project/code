@@ -384,6 +384,7 @@ fn all_kind_strings() -> Vec<String> {
 		ObjectKind::FeedEntry,
 		ObjectKind::Profile,
 		ObjectKind::Changelog,
+		ObjectKind::DenyList,
 		ObjectKind::Modpack,
 		ObjectKind::Advisory,
 		ObjectKind::Attestation,

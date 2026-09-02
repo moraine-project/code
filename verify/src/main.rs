@@ -14,6 +14,7 @@ use moraine_model::attestation::AttestationObject;
 use moraine_model::changelog::Changelog;
 use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
 use moraine_model::delegation::Delegation;
+use moraine_model::deny_list::DenyList;
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::Genesis;
 use moraine_model::modpack::ModpackManifest;
@@ -184,6 +185,7 @@ fn verify_object(kind: &str, file: &PathBuf, roots: &[String], threshold: usize)
 		ObjectKind::RuntimeDef => describe::<RuntimeDef>(kind, &bytes)?,
 		ObjectKind::Modpack => describe::<ModpackManifest>(kind, &bytes)?,
 		ObjectKind::Changelog => describe::<Changelog>(kind, &bytes)?,
+		ObjectKind::DenyList => describe::<DenyList>(kind, &bytes)?,
 	};
 	println!("id: {id}");
 	if trusted.is_empty() {

@@ -148,6 +148,13 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
 		}
 	};
+	let denied = match state.metadata.deny_entries_for_projects(&project_ids, now()).await {
+		Ok(denied) => denied,
+		Err(error) => {
+			tracing::error!(%error, "deny list lookup failed");
+			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
+		}
+	};
 	let keys: Vec<(String, String)> = hits
 		.iter()
 		.map(|hit| (hit.game_id.clone(), normalize_name(&hit.display_name)))
@@ -192,6 +199,16 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 					ref_digest: None,
 					label: "This instance is holding this project pending a report; do not fetch it automatically"
 						.to_string(),
+				});
+			}
+			for entry in denied.get(&hit.project_id).into_iter().flatten() {
+				annotations.push(Annotation {
+					kind: "deny-list".to_string(),
+					ref_digest: None,
+					label: format!(
+						"{} lists this project as `{}`; that is another instance's finding, not a verdict here",
+						entry.issuer_id, entry.entry.reason_code
+					),
 				});
 			}
 			if hit.approximate {
