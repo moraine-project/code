@@ -34,6 +34,7 @@
 	const links = [
 		['/games', 'Browse'],
 		['/search', 'Search'],
+		['/projects', 'Projects'],
 		['/publish', 'Publish'],
 		['/submissions', 'Submissions'],
 		['/notifications', 'Notifications'],
