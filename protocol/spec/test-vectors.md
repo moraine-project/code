@@ -80,9 +80,13 @@ validates and merges by project ID.
 ```sh
 cargo run -p moraine-verify -- gen-vectors
 cargo run -p moraine-verify -- vectors
+python3 interop/verify_vectors.py
 ```
 
-The generator and the verifier share code today, so passing proves regression
-safety, not interoperability. A corpus that only one implementation passes is
-not evidence of anything. The corpus is stable and committed so a second
-implementation, in any language, can consume it.
+The generator and the Rust verifier share code, so those two only prove
+regression safety. Interoperability needs a second implementation that shares
+no code, and `interop/` is one: it decodes the canonical bytes, derives object
+IDs, and verifies Ed25519 signatures in Python, then checks every accept and
+reject, including the reason code. A corpus that only one implementation passes
+is not evidence of anything, so both are expected to agree before a change to
+the signed formats is considered done.

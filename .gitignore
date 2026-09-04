@@ -1,3 +1,4 @@
 local/
 .opencode
 target/
+__pycache__
