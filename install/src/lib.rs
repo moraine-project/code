@@ -47,6 +47,12 @@ impl std::error::Error for InstallError {}
 
 pub const MINECRAFT_ADAPTER: &str = "minecraft/default";
 
+pub const KNOWN_ADAPTERS: &[&str] = &[MINECRAFT_ADAPTER];
+
+pub fn is_known_adapter(adapter: &str) -> bool {
+	KNOWN_ADAPTERS.contains(&adapter)
+}
+
 pub fn plan(adapter: &str, mods: &[ModFile], overrides: &[OverrideFile]) -> Result<InstallPlan, InstallError> {
 	match adapter {
 		MINECRAFT_ADAPTER => plan_minecraft(mods, overrides),

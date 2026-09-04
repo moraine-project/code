@@ -28,6 +28,10 @@ struct SearchParams {
 	#[serde(default)]
 	game_version: Option<String>,
 	#[serde(default)]
+	loader_version: Option<String>,
+	#[serde(default)]
+	runtime_version: Option<String>,
+	#[serde(default)]
 	channel: Option<String>,
 	#[serde(default)]
 	platform: Option<String>,
@@ -72,6 +76,13 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 			None => return (StatusCode::BAD_REQUEST, format!("unknown state `{value}`")).into_response(),
 		},
 	};
+	if params.loader_version.is_some() && params.loader.is_none() {
+		return (
+			StatusCode::BAD_REQUEST,
+			"a loader version only means something with a loader; pass loader=<id> too".to_string(),
+		)
+			.into_response();
+	}
 	let cursor = params.cursor.as_deref().and_then(|value| value.rsplit_once(':'));
 	let filter = SearchFilter {
 		text: query_text,
@@ -80,6 +91,8 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		category: params.category.as_deref(),
 		loader: params.loader.as_deref(),
 		game_version: params.game_version.as_deref(),
+		loader_version: params.loader_version.as_deref(),
+		runtime_version: params.runtime_version.as_deref(),
 		channel: params.channel.as_deref(),
 		platform: params.platform.as_deref(),
 		popularity_since,
@@ -254,7 +267,9 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchParams
 		loader: params.loader.clone(),
 		category: params.category.clone().map(|category| vec![category]),
 		tag: params.tag.clone().map(|tag| vec![tag]),
-		game_version: None,
+		game_version: params.game_version.clone(),
+		loader_version: params.loader_version.clone(),
+		runtime_version: params.runtime_version.clone(),
 		sort: params.sort.clone(),
 		cursor: params.cursor.clone(),
 		limit: limit as u32,

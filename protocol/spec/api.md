@@ -549,8 +549,10 @@ origin; the protocol does not require a particular policy.
 
 ## Search
 
-`GET /v1/search?q=&game=&loader=&tag=&category=&sort=&cursor=&limit=` returns the
-portable search response as JSON. Search runs over a local index built from
+`GET /v1/search?q=&game=&loader=&tag=&category=&game_version=&loader_version=&runtime_version=&channel=&platform=&state=&sort=&cursor=&limit=`
+returns the portable search response as JSON. `loader_version` and
+`runtime_version` match the versions a release declares, and a `loader_version`
+sent without a `loader` is rejected. Search runs over a local index built from
 validated records: a project enters the index when a `profile-updated` entry
 is accepted, so the name and summary come from the publisher's signed profile,
 never from a directory edit. The index is disposable and can be rebuilt from

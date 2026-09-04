@@ -324,6 +324,13 @@ pub(crate) async fn publish_project(application: &Router, signer: &SigningKey) -
 	publish_project_with_kinds(application, signer, PROJECT_KINDS).await
 }
 
+pub(crate) async fn store_release(application: &Router, project_id: &str, wire: Vec<u8>) {
+	let path = format!("/v1/projects/{project_id}/objects/release");
+	let request = axum::http::Request::post(&path).body(Body::from(wire)).expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+}
+
 pub(crate) async fn publish_project_with_kinds(
 	application: &Router,
 	signer: &SigningKey,

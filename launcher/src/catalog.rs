@@ -4,13 +4,14 @@ use std::io::Read;
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
 use moraine_model::compatibility::Side;
+use moraine_model::definition::GameDef;
 use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::dependency::{DependencyKind, TargetKind};
 use moraine_model::genesis::GenesisKind;
 use moraine_model::release::ReleaseObject;
 use moraine_model::signed::SignedObject;
 use moraine_model::trust::{RootSet, verify_key_delegation};
-use moraine_model::verify::{verify_genesis, verify_object_authorized};
+use moraine_model::verify::{verify_genesis, verify_object, verify_object_authorized};
 use moraine_model::version::{OrderingScheme, VersionCatalog};
 use moraine_resolver::{Candidate, Context, LockedFeed, Lockfile, Request, resolve};
 use serde_json::Value;
@@ -108,6 +109,10 @@ pub fn resolve_from_home(
 	request: &Request,
 	previous: Option<&Lockfile>,
 ) -> Result<Lockfile, String> {
+	let game_ordering = game_definition(fetcher, &request.game_id)
+		.ok()
+		.and_then(|game| OrderingScheme::parse(&game.definition.version_ordering))
+		.unwrap_or(OrderingScheme::Semver);
 	let mut queue = vec![request.root_project.clone()];
 	let mut visited = BTreeSet::new();
 	let mut candidates = Vec::new();
@@ -174,13 +179,52 @@ pub fn resolve_from_home(
 	}
 
 	let context = Context {
-		game: VersionCatalog::new(OrderingScheme::Semver, Vec::new()),
+		game: VersionCatalog::new(game_ordering, Vec::new()),
 		loader: None,
 		runtime: None,
 	};
 	let mut lockfile = resolve(request, &context, &candidates).map_err(|error| error.to_string())?;
 	lockfile.feeds = feeds;
 	Ok(lockfile)
+}
+
+pub struct GameDefinition {
+	pub id: String,
+	pub definition: GameDef,
+	pub object_bytes: Vec<u8>,
+}
+
+pub fn game_definition(fetcher: &dyn HomeFetcher, game_id: &str) -> Result<GameDefinition, String> {
+	let view = fetcher.get_json(&format!("/v1/games/{game_id}"))?;
+	let genesis_id = view
+		.get("genesis")
+		.and_then(Value::as_str)
+		.ok_or_else(|| format!("the home did not describe game {game_id}"))?;
+	let current_id = view
+		.get("current")
+		.and_then(Value::as_str)
+		.ok_or_else(|| format!("the home has no definition for game {game_id}"))?;
+	let genesis_wire = fetch_object(fetcher, genesis_id)?;
+	let (root, object) = verify_genesis(&genesis_wire).map_err(|error| format!("{genesis_id} did not verify: {error}"))?;
+	if root.genesis_kind() != GenesisKind::Game || object.id != genesis_id {
+		return Err(format!("{genesis_id} is not that game's genesis"));
+	}
+	let definition_wire = fetch_object(fetcher, current_id)?;
+	let verified = verify_object(ObjectKind::GameDef, &definition_wire, &root)
+		.map_err(|error| format!("{current_id} did not verify: {error}"))?;
+	if verified.id != current_id {
+		return Err(format!("the home served {current_id} but its bytes are {}", verified.id));
+	}
+	let definition =
+		GameDef::from_canonical_bytes(&verified.payload_bytes).map_err(|error| format!("{current_id}: {error}"))?;
+	if definition.game_id != game_id {
+		return Err(format!("`{game_id}` does not match the game definition it resolves to"));
+	}
+	Ok(GameDefinition {
+		id: verified.id,
+		definition,
+		object_bytes: definition_wire,
+	})
 }
 
 struct ProjectTrust {
@@ -454,5 +498,82 @@ mod tests {
 	#[test]
 	fn rejects_a_non_loopback_http_home() {
 		assert!(HttpHome::new("http://example.org", false).is_err());
+	}
+
+	fn signed_game() -> (MemoryHome, String) {
+		use moraine_model::definition::{Category, GameDef, Tag, VersionSyntax};
+
+		let signer = SigningKey::from_seed(&[9u8; 32]);
+		let genesis = Genesis {
+			protocol: 1,
+			kind: GenesisKind::Game,
+			nonce: vec![0x44; 16],
+			roots: vec![RootKey::from_public_key(signer.verifying_key().to_bytes().to_vec()).expect("root")],
+			threshold: 1,
+			authorized_kinds: vec!["delegation".to_string(), "game-def".to_string()],
+			home_hint: None,
+			contacts: None,
+			created_at: 1_760_000_000,
+		};
+		let genesis_signed = sign_payload(ObjectKind::Genesis, &genesis, &[&signer]);
+		let game_id = genesis_signed.id(ObjectKind::Genesis);
+
+		let definition = GameDef {
+			protocol: 1,
+			game_id: game_id.clone(),
+			display_name: "Example".to_string(),
+			version_syntax: VersionSyntax {
+				kind: "semver".to_string(),
+				pattern: None,
+			},
+			version_ordering: "semver".to_string(),
+			loaders_allowed: true,
+			loader_authorities: Vec::new(),
+			categories: vec![Category {
+				id: "gameplay".to_string(),
+				label: "Gameplay".to_string(),
+				parent: None,
+			}],
+			tags: vec![Tag {
+				id: "performance".to_string(),
+				label: "Performance".to_string(),
+			}],
+			metadata_extractor: Some("minecraft/fabric-json".to_string()),
+			install_adapter: Some("minecraft/default".to_string()),
+			declared_time: 1_760_000_000,
+		};
+		let definition_signed = sign_payload(ObjectKind::GameDef, &definition, &[&signer]);
+		let definition_id = definition_signed.id(ObjectKind::GameDef);
+
+		let mut home = MemoryHome {
+			json: BTreeMap::new(),
+			bytes: BTreeMap::new(),
+		};
+		home.json.insert(
+			format!("/v1/games/{game_id}"),
+			serde_json::json!({ "genesis": game_id, "current": definition_id }),
+		);
+		for (id, wire) in [
+			(game_id.clone(), genesis_signed.wire_bytes()),
+			(definition_id, definition_signed.wire_bytes()),
+		] {
+			let hex = id.strip_prefix("gd:sha256:").expect("object id").to_string();
+			home.bytes.insert(format!("/v1/objects/{hex}"), wire);
+		}
+		(home, game_id)
+	}
+
+	#[test]
+	fn reads_the_adapter_and_extractor_a_game_definition_declares() {
+		let (home, game_id) = signed_game();
+		let game = game_definition(&home, &game_id).expect("definition");
+		assert_eq!(game.definition.install_adapter.as_deref(), Some("minecraft/default"));
+		assert_eq!(game.definition.metadata_extractor.as_deref(), Some("minecraft/fabric-json"));
+	}
+
+	#[test]
+	fn refuses_a_game_definition_that_does_not_match_its_id() {
+		let (home, _) = signed_game();
+		assert!(game_definition(&home, "gd:sha256:nothing").is_err());
 	}
 }

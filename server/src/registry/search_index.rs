@@ -6,6 +6,12 @@ use crate::db::MetadataStore;
 use crate::db::sql::SqlBuilder;
 use crate::routes::AppState;
 
+pub(crate) const LOADER_VERSION_SEPARATOR: char = '\u{1f}';
+
+pub(crate) fn loader_version_label(loader_id: &str, version: &str) -> String {
+	format!("{loader_id}{LOADER_VERSION_SEPARATOR}{version}")
+}
+
 pub(crate) fn normalize_name(name: &str) -> String {
 	name.chars()
 		.filter(|character| character.is_alphanumeric())
@@ -98,6 +104,8 @@ pub struct SearchFilter<'a> {
 	pub category: Option<&'a str>,
 	pub loader: Option<&'a str>,
 	pub game_version: Option<&'a str>,
+	pub loader_version: Option<&'a str>,
+	pub runtime_version: Option<&'a str>,
 	pub channel: Option<&'a str>,
 	pub platform: Option<&'a str>,
 	pub popularity_since: Option<(i64, i64)>,
@@ -374,11 +382,16 @@ impl MetadataStore {
 			("game-version", filter.game_version),
 			("channel", filter.channel),
 			("platform", filter.platform),
+			("runtime-version", filter.runtime_version),
 		] {
 			if let Some(value) = value {
 				let parameter = query.reserve_bind(value);
 				query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = '{label_kind}' AND l.label_id = ${parameter})"));
 			}
+		}
+		if let (Some(loader), Some(version)) = (filter.loader, filter.loader_version) {
+			let parameter = query.reserve_bind(loader_version_label(loader, version));
+			query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'loader-version' AND l.label_id = ${parameter})"));
 		}
 		match filter.sort {
 			SearchSort::Updated => {
@@ -607,6 +620,8 @@ mod tests {
 				category: None,
 				loader: None,
 				game_version: None,
+				loader_version: None,
+				runtime_version: None,
 				channel: None,
 				platform: None,
 				popularity_since: None,
@@ -651,6 +666,8 @@ mod tests {
 				category: None,
 				loader: None,
 				game_version: None,
+				loader_version: None,
+				runtime_version: None,
 				channel: None,
 				platform: None,
 				popularity_since: None,
@@ -693,6 +710,8 @@ mod tests {
 				category: None,
 				loader: None,
 				game_version: None,
+				loader_version: None,
+				runtime_version: None,
 				channel: None,
 				platform: None,
 				popularity_since: None,

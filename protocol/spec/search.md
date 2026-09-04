@@ -8,8 +8,8 @@ disposable: it can be rebuilt at any time and never becomes an authority.
 
 A response carries the protocol version, the query that produced it, an array
 of results, an optional opaque `next_cursor`, and an optional total estimate.
-The query records the text, game, loader, category, tag, game version, sort,
-cursor, and limit.
+The query records the text, game, loader, category, tag, game version, loader
+version, runtime version, sort, cursor, and limit.
 
 A result carries the project and game IDs, display name, summary, optional
 icon and release IDs, a listing state, the source instance, annotations, and
@@ -81,13 +81,18 @@ lookalike, which is why the annotation tells the reader to compare project IDs
 rather than trust the result.
 
 The facets this implementation serves are `game`, `loader`, `category`, `tag`,
-`game_version`, `channel`, and `platform`, plus a `state` filter over the
-listing states this instance shows. A project's loader, game-version, channel,
-and platform labels come from its signed releases, so a filter matches a
-project that has published for that loader, declared that exact game version,
-released on that channel, or shipped for that platform. Only `exact` and `set`
-game-version predicates contribute concrete versions; a range is left out
-rather than expanded, because a comparator is not a version a facet can offer.
+`game_version`, `loader_version`, `runtime_version`, `channel`, and `platform`,
+plus a `state` filter over the listing states this instance shows. A project's
+loader, game-version, loader-version, runtime-version, channel, and platform
+labels come from its signed releases, so a filter matches a project that has
+published for that loader, declared that exact game version, bounded that exact
+loader or runtime version, released on that channel, or shipped for that
+platform. A `loader_version` is only meaningful together with a `loader`, and a
+request that supplies one without the other is rejected with `400`. Only
+`exact` and `set` predicates contribute concrete versions; a range is left out
+rather than expanded, because a comparator is not a version a facet can offer,
+and the whole-range evaluation of a compatibility predicate is served by the
+release feed, which can consult the referenced definition's declared ordering.
 A project whose state this instance does not list cannot be recovered with
 `state`, because the filter narrows what search already shows.
 

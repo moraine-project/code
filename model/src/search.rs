@@ -73,6 +73,10 @@ pub struct SearchQuery {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub game_version: Option<String>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub loader_version: Option<String>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub runtime_version: Option<String>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub sort: Option<String>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub cursor: Option<String>,
@@ -217,6 +221,8 @@ mod tests {
 				category: None,
 				tag: None,
 				game_version: None,
+				loader_version: None,
+				runtime_version: None,
 				sort: None,
 				cursor: None,
 				limit: 20,

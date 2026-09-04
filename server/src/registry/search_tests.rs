@@ -237,3 +237,51 @@ async fn filters_search_by_game_version_channel_and_state() {
 	let response = application.oneshot(bad).await.expect("response");
 	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn filters_search_by_declared_loader_and_runtime_versions() {
+	use moraine_model::compatibility::{Predicate, Scheme};
+
+	let (application, _directory) = app().await;
+	let signer = key(36);
+	let (project_id, _release) = publish_project(&application, &signer).await;
+	publish_profile(&application, &signer, &project_id, "Loader Addon").await;
+
+	let (release, _) =
+		release_wire_for_game_with_loader(&signer, &project_id, 0x51, "1.1.0", "1.20.1", Some("fabric"), Some("0.15.0"));
+	store_release(&application, &project_id, release).await;
+	let (runtime_release, _) = release_wire_with_runtime(
+		&signer,
+		&project_id,
+		0x52,
+		"1.2.0",
+		Some(Predicate::new(Scheme::Exact, vec!["21".to_string()])),
+	);
+	store_release(&application, &project_id, runtime_release).await;
+
+	let search = |application: axum::Router, query: &str| {
+		let uri = format!("/v1/search?{query}");
+		async move {
+			let request = axum::http::Request::get(uri).body(Body::empty()).expect("request");
+			let response = application.oneshot(request).await.expect("response");
+			body_json(response).await
+		}
+	};
+	let loader = sample_id("fabric");
+
+	let page = search(application.clone(), &format!("loader={loader}&loader_version=0.15.0")).await;
+	assert_eq!(page["results"].as_array().expect("results").len(), 1);
+	let page = search(application.clone(), &format!("loader={loader}&loader_version=9.9.9")).await;
+	assert!(page["results"].as_array().expect("results").is_empty());
+
+	let page = search(application.clone(), "runtime_version=21").await;
+	assert_eq!(page["results"].as_array().expect("results").len(), 1);
+	let page = search(application.clone(), "runtime_version=17").await;
+	assert!(page["results"].as_array().expect("results").is_empty());
+
+	let bad = axum::http::Request::get("/v1/search?loader_version=0.15.0")
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(bad).await.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}

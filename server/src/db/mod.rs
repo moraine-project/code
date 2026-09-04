@@ -429,6 +429,8 @@ mod tests {
 				category: None,
 				loader: None,
 				game_version: None,
+				loader_version: None,
+				runtime_version: None,
 				channel: None,
 				platform: None,
 				popularity_since: Some((100, 100 * 86_400)),

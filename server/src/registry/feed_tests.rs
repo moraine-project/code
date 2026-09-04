@@ -286,7 +286,6 @@ async fn a_feed_can_be_filtered_by_loader_version() {
 	let response = application.clone().oneshot(request).await.expect("response");
 	let page = body_json(response).await;
 	let entries = page["entries"].as_array().expect("entries");
-	eprintln!("DEBUG page={page}");
 	assert_eq!(entries.len(), 1);
 	assert_eq!(entries[0]["seq"], 2);
 

@@ -19,6 +19,12 @@ the tools that check it.
   ownership transfer, release payloads, profile revisions, and feed entries.
   Each type validates itself on decode and refuses unknown fields.
 - **`verify`** — the `moraine-verify` CLI plus the protocol test-vector corpus.
+  **`interop`** is an independent Python implementation of the same corpus,
+  sharing no code with the Rust one.
+- **`launcher`** — resolves a lockfile against a home, then verifies and
+  installs it. It reads the install adapter and metadata extractor a game
+  definition declares instead of hard-coding a game, and refuses a declared
+  adapter or extractor this build does not implement.
 - **`server`** — an Axum registry with a SQLite metadata store. It serves
   capability discovery, health, digest-addressed blobs with range support, and
   a first signed-object and feed API: import a genesis, store verified
@@ -44,6 +50,15 @@ cargo run -p moraine-verify -- vectors
 cargo run -p moraine-verify -- gen-vectors
 cargo run -p moraine-verify -- hash Cargo.toml
 cargo run -p moraine-verify -- key-id --public <ed25519-public-key-hex>
+```
+
+The corpus is checked by a second implementation written in Python, which uses
+its own canonical decoder and its own Ed25519 code rather than calling into the
+Rust crates. Two implementations agreeing on every verdict is the interoperability
+evidence; a corpus only one implementation passes proves nothing:
+
+```sh
+python3 interop/verify_vectors.py
 ```
 
 Verify a signed object you already have:
@@ -178,6 +193,25 @@ Without `--dry-run` it writes the plan under the root, but only after every
 locked artifact's size and SHA-256 digest have been checked. Use
 `--home https://home.example` instead of `--blobs` to fetch the bytes from a
 registry; plain HTTP is only allowed for loopback with `--allow-http-local`.
+
+When `--adapter` is omitted, the launcher fetches the game definition from
+`--home`, verifies it against the game's own genesis, and uses the adapter that
+definition declares. It refuses a declared adapter this build does not
+implement rather than guessing:
+
+```sh
+cargo run -p moraine-launcher -- install --lockfile lock.json --home https://home.example \
+  --root ./instance
+```
+
+The same definition also names a metadata extractor. Show both and whether this
+launcher implements them, or read an artifact's manifest through the declared
+extractor instead of guessing its format:
+
+```sh
+cargo run -p moraine-launcher -- definition --home https://home.example --game <game-id>
+cargo run -p moraine-launcher -- inspect --home https://home.example --game <game-id> --file mod.jar
+```
 
 Build a lockfile from a home without one:
 
@@ -410,6 +444,7 @@ web/            SvelteKit website with static and Cloudflare build targets
 protocol/
   spec/         notes that pin implementation decisions
   vectors/      the test-vector corpus
+interop/        independent Python checker for the vector corpus
 ```
 
 ## License
@@ -419,7 +454,7 @@ has to share its changes. See `LICENSE`.
 
 Everything a client needs to speak the protocol without the server is MIT OR
 Apache-2.0: the `codec`, `crypto`, `model`, `metadata`, `install`, `verify`,
-`publish`, `resolver`, and `launcher` crates. See `LICENSE-MIT` and
+`publish`, `resolver`, and `launcher` crates, and the `interop/` checker. See `LICENSE-MIT` and
 `LICENSE-APACHE`, and take whichever of the two you prefer. That split is on
 purpose. Independent clients should never need our permission, and the
 protocol crates carry no service logic worth hiding.

@@ -115,10 +115,7 @@ pub(crate) async fn page(State(state): State<AppState>, Path(id): Path<String>, 
 							resolved
 						}
 					};
-					let matched =
-						crate::registry::compatibility::release_matches_loader_version(object, loader, version, ordering);
-					eprintln!("DBG loader={loader} version={version} seq={} matched={matched}", row.seq);
-					if !matched {
+					if !crate::registry::compatibility::release_matches_loader_version(object, loader, version, ordering) {
 						continue;
 					}
 				}

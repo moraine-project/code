@@ -64,6 +64,10 @@ pub fn extract_with(extractor: &str, bytes: &[u8]) -> Result<ModMetadata, Metada
 
 pub const KNOWN_EXTRACTORS: &[&str] = &[FABRIC_EXTRACTOR, QUILT_EXTRACTOR, FORGE_EXTRACTOR];
 
+pub fn is_known_extractor(extractor: &str) -> bool {
+	KNOWN_EXTRACTORS.contains(&extractor)
+}
+
 fn read_entry(archive: &mut ZipArchive<Cursor<&[u8]>>, name: &str) -> Result<Option<Vec<u8>>, MetadataError> {
 	let Ok(mut file) = archive.by_name(name) else {
 		return Ok(None);

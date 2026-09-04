@@ -624,6 +624,40 @@ pub(crate) async fn store_object_record(state: &AppState, object: &verify::Verif
 						.add_search_labels(&release.project_id, "platform", &platforms)
 						.await?;
 				}
+				let mut loader_versions = Vec::new();
+				let mut runtime_versions = Vec::new();
+				for entry in &release.compatibility {
+					if let (Some(loader), Some(predicate)) = (&entry.loader_id, &entry.loader_version_predicate)
+						&& matches!(
+							predicate.scheme(),
+							Some(moraine_model::compatibility::Scheme::Exact)
+								| Some(moraine_model::compatibility::Scheme::Set)
+						) {
+						for version in &predicate.values {
+							loader_versions.push(crate::registry::search_index::loader_version_label(loader, version));
+						}
+					}
+					if let Some(predicate) = &entry.runtime_predicate
+						&& matches!(
+							predicate.scheme(),
+							Some(moraine_model::compatibility::Scheme::Exact)
+								| Some(moraine_model::compatibility::Scheme::Set)
+						) {
+						runtime_versions.extend(predicate.values.iter().cloned());
+					}
+				}
+				if !loader_versions.is_empty() {
+					state
+						.metadata
+						.add_search_labels(&release.project_id, "loader-version", &loader_versions)
+						.await?;
+				}
+				if !runtime_versions.is_empty() {
+					state
+						.metadata
+						.add_search_labels(&release.project_id, "runtime-version", &runtime_versions)
+						.await?;
+				}
 			}
 			moraine_model::release::ReleaseObject::Location(location) => {
 				for entry in &location.locations {

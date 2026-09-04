@@ -1402,6 +1402,7 @@ dependencies = [
  "moraine-codec",
  "moraine-crypto",
  "moraine-install",
+ "moraine-metadata",
  "moraine-model",
  "moraine-resolver",
  "reqwest 0.13.1",
