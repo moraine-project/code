@@ -39,6 +39,21 @@
 		return id.startsWith('gd:sha256:') ? id.slice('gd:sha256:'.length) : id;
 	}
 
+	const changeLabels: Record<string, string> = {
+		'release-published': 'New release',
+		'release-withdrawn': 'Withdrawn',
+		'profile-updated': 'Description update',
+		'key-changed': 'Signing key change',
+		'ownership-transferred': 'New owner',
+		migration: 'Moved home',
+		recovery: 'Key recovery',
+		advisory: 'Security note',
+	};
+
+	function changeLabel(kind: string): string {
+		return changeLabels[kind] ?? kind.replaceAll('-', ' ');
+	}
+
 	function releaseHref(object: string): string {
 		return `/p/${encodeURIComponent(data.projectId)}/release/${objectHex(object)}?home=${encodeURIComponent(data.home)}`;
 	}
@@ -83,7 +98,7 @@
 							{#if gameId}
 								<span class="badge badge-ghost" title={gameId}>Game {shortDigest(gameId, 16)}</span>
 							{/if}
-							<span class="badge badge-ghost">History entry #{data.summary.head_seq}</span>
+							<span class="badge badge-ghost">{data.summary.head_seq} updates</span>
 							{#if data.profile}
 								<span class="badge badge-outline">Profile published</span>
 							{/if}
@@ -232,7 +247,7 @@
 								{#each entries as entry (entry.entry)}
 									<tr>
 										<td class="text-base-content/60">{entry.seq}</td>
-										<td>{entry.kind.replaceAll('-', ' ')}</td>
+										<td>{changeLabel(entry.kind)}</td>
 										<td>
 											{#if entry.kind === 'release-published' || entry.kind === 'release-withdrawn'}
 												<a class="link link-hover" href={releaseHref(entry.object)}>

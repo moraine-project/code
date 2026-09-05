@@ -17,7 +17,7 @@
 	let sort = $state(untrack(() => data.sort || 'relevance'));
 
 	const sorts = [
-		['relevance', 'Relevance'],
+		['relevance', 'Best match'],
 		['updated', 'Recently updated'],
 		['created', 'Recently added'],
 		['popularity', 'Most followed here'],
@@ -38,6 +38,19 @@
 		if (sort && sort !== 'relevance') params.set('sort', sort);
 		if (data.home) params.set('home', data.home);
 		goto(`/search?${params.toString()}`);
+	}
+
+	function reset() {
+		query = '';
+		game = '';
+		loader = '';
+		gameVersion = '';
+		loaderVersion = '';
+		runtimeVersion = '';
+		channel = '';
+		platform = '';
+		sort = 'relevance';
+		submit();
 	}
 
 	function homeParam(): string {
@@ -61,10 +74,11 @@
 			data.platform,
 		].filter((value) => value && value.length > 0).length,
 	);
+	const searched = $derived(Boolean(data.q) || activeFilters > 0);
 </script>
 
 <svelte:head>
-	<title>Search · Moraine</title>
+	<title>Find a mod · Moraine</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">
@@ -86,102 +100,138 @@
 			/>
 			<button class="btn btn-primary join-item" type="submit">Search</button>
 		</div>
-
-		<details class="rounded-box border border-base-300 bg-base-200 p-3">
-			<summary class="cursor-pointer text-sm font-medium">
-				Filters{activeFilters > 0 ? ` (${activeFilters} active)` : ''}
-			</summary>
-			<div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Game</legend>
-					<input class="input input-sm" bind:value={game} placeholder="game id" />
-				</fieldset>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Loader</legend>
-					<input class="input input-sm" bind:value={loader} placeholder="loader id" />
-				</fieldset>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Game version</legend>
-					<input class="input input-sm" bind:value={gameVersion} placeholder="1.20.1" />
-				</fieldset>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Loader version</legend>
-					<input class="input input-sm" bind:value={loaderVersion} placeholder="0.15.0" />
-				</fieldset>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Runtime version</legend>
-					<input class="input input-sm" bind:value={runtimeVersion} placeholder="21" />
-				</fieldset>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Channel</legend>
-					<input class="input input-sm" bind:value={channel} placeholder="release" />
-				</fieldset>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Platform</legend>
-					<input class="input input-sm" bind:value={platform} placeholder="linux" />
-				</fieldset>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Sort</legend>
-					<select class="select select-sm" bind:value={sort} aria-label="Sort results">
-						{#each sorts as [value, label] (value)}
-							<option {value}>{label}</option>
-						{/each}
-					</select>
-				</fieldset>
-			</div>
-			<p class="mt-2 text-xs text-base-content/60">
-				Version filters match the versions a release declares. A loader version only applies when a
-				loader is given.
-			</p>
-		</details>
 	</form>
 
-	{#if data.error}
-		<div role="alert" class="alert alert-error alert-soft"><span>{data.error}</span></div>
-	{:else if data.results.length === 0}
-		<p class="text-base-content/60 text-sm">
-			{data.q || activeFilters > 0
-				? 'No projects match. Try a shorter query or fewer filters.'
-				: 'Type a query or set a filter to start.'}
-		</p>
-	{:else}
-		<ul class="flex flex-col gap-3">
-			{#each data.results as result (result.project_id)}
-				<li class="card card-border bg-base-200">
-					<div class="card-body">
-						<a
-							class="card-title link link-hover"
-							href={`/p/${encodeURIComponent(result.project_id)}${homeParam()}`}
-						>
-							{result.display_name}
-						</a>
-						<p class="text-base-content/80 text-sm">{result.summary}</p>
-						<div class="flex flex-wrap items-center gap-2">
-							<Digest value={result.project_id} label="the project id" length={12} />
-							{#if result.home}
-								<span class="text-xs text-base-content/60">
-									at <a
-										class="link link-hover"
-										href={`/p/${encodeURIComponent(result.project_id)}?home=${encodeURIComponent(result.home)}`}
-										>{result.home}</a
-									>
-								</span>
-							{/if}
-							{#each result.annotations ?? [] as annotation (annotation.kind)}
-								<span class="badge badge-warning badge-sm" role="note">{annotation.label}</span>
-							{/each}
-							{#if result.listing_state === 'withdrawn' || result.listing_state === 'unavailable'}
-								<span class="badge badge-warning badge-sm" role="note">{result.listing_state}</span>
-							{/if}
-							{#if result.instance_popularity}
-								<span class="badge badge-ghost badge-sm">
-									{result.instance_popularity.value} downloads and follows, counted here
-								</span>
-							{/if}
-						</div>
+	<div class="grid gap-6 lg:grid-cols-[16rem_1fr]">
+		<aside class="lg:sticky lg:top-20 lg:self-start">
+			<div class="card card-border bg-base-200">
+				<div class="card-body gap-2">
+					<div class="flex items-center justify-between">
+						<h2 class="card-title text-base">Filters</h2>
+						<button class="btn btn-ghost btn-xs" type="button" onclick={reset}>Reset</button>
 					</div>
-				</li>
-			{/each}
-		</ul>
-	{/if}
+					<label class="fieldset">
+						<span class="label">Game</span>
+						<input class="input input-sm" bind:value={game} placeholder="game id" />
+					</label>
+					<label class="fieldset">
+						<span class="label">Loader</span>
+						<input class="input input-sm" bind:value={loader} placeholder="loader id" />
+					</label>
+					<label class="fieldset">
+						<span class="label">Game version</span>
+						<input class="input input-sm" bind:value={gameVersion} placeholder="1.20.1" />
+					</label>
+					<label class="fieldset">
+						<span class="label">Loader version</span>
+						<input class="input input-sm" bind:value={loaderVersion} placeholder="0.15.0" />
+					</label>
+					<label class="fieldset">
+						<span class="label">Runtime version</span>
+						<input class="input input-sm" bind:value={runtimeVersion} placeholder="21" />
+					</label>
+					<label class="fieldset">
+						<span class="label">Channel</span>
+						<input class="input input-sm" bind:value={channel} placeholder="release" />
+					</label>
+					<label class="fieldset">
+						<span class="label">Platform</span>
+						<input class="input input-sm" bind:value={platform} placeholder="linux" />
+					</label>
+					<label class="fieldset">
+						<span class="label">Sort by</span>
+						<select class="select select-sm" bind:value={sort} aria-label="Sort results">
+							{#each sorts as [value, label] (value)}
+								<option {value}>{label}</option>
+							{/each}
+						</select>
+					</label>
+					<button class="btn btn-sm mt-1" type="button" onclick={() => submit()}>
+						Apply filters
+					</button>
+					<p class="text-xs text-base-content/60">
+						Version filters match the versions a release declares. A loader version only applies
+						when a loader is given.
+					</p>
+				</div>
+			</div>
+		</aside>
+
+		<section class="flex flex-col gap-3">
+			<p class="text-sm text-base-content/70" role="status">
+				{#if data.error}
+					The search could not run.
+				{:else if !searched}
+					Type a query or set a filter to start.
+				{:else if data.results.length === 0}
+					No projects match. Try a shorter query or fewer filters.
+				{:else}
+					Showing {data.results.length}
+					{data.results.length === 1 ? 'project' : 'projects'}{data.q ? ` for “${data.q}”` : ''} from
+					this instance's index.
+				{/if}
+			</p>
+
+			{#if data.error}
+				<div role="alert" class="alert alert-error alert-soft"><span>{data.error}</span></div>
+			{:else}
+				<ul class="flex flex-col gap-3">
+					{#each data.results as result (result.project_id)}
+						<li class="card card-border bg-base-200">
+							<div class="card-body gap-2">
+								<div class="flex flex-wrap items-start justify-between gap-3">
+									<div class="flex flex-col gap-1">
+										<a
+											class="card-title link link-hover"
+											href={`/p/${encodeURIComponent(result.project_id)}${homeParam()}`}
+										>
+											{result.display_name}
+										</a>
+										{#if result.summary}
+											<p class="max-w-2xl text-base-content/80 text-sm">{result.summary}</p>
+										{/if}
+									</div>
+									<div class="flex items-center gap-2">
+										{#if result.listing_state === 'withdrawn' || result.listing_state === 'unavailable'}
+											<span class="badge badge-warning badge-sm" role="note"
+												>{result.listing_state}</span
+											>
+										{/if}
+										<a
+											class="btn btn-primary btn-sm"
+											href={`/p/${encodeURIComponent(result.project_id)}${homeParam()}`}
+										>
+											Open project
+										</a>
+									</div>
+								</div>
+								<div class="flex flex-wrap items-center gap-2">
+									<Digest copyOnly value={result.project_id} label="the project id" />
+									{#if result.home}
+										<span class="text-xs text-base-content/60">
+											hosted at <a
+												class="link link-hover"
+												href={`/p/${encodeURIComponent(result.project_id)}?home=${encodeURIComponent(result.home)}`}
+												>{result.home}</a
+											>
+										</span>
+									{/if}
+									{#if result.instance_popularity}
+										<span class="badge badge-ghost badge-sm">
+											{result.instance_popularity.value} downloads and follows, counted here
+										</span>
+									{/if}
+								</div>
+								{#each result.annotations ?? [] as annotation (annotation.kind)}
+									<div role="note" class="alert alert-warning alert-soft py-2 text-sm">
+										<span>{annotation.label}</span>
+									</div>
+								{/each}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	</div>
 </div>

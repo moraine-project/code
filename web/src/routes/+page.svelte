@@ -53,6 +53,35 @@
 		</div>
 	</section>
 
+	<section class="flex flex-col gap-4">
+		<h2 class="text-lg font-semibold">How it works</h2>
+		<ul class="steps steps-vertical sm:steps-horizontal">
+			<li class="step step-primary">
+				<span class="mt-1 text-left text-sm">
+					<strong class="block">Find a game</strong>
+					Browse the games and loaders this instance knows about.
+				</span>
+			</li>
+			<li class="step step-primary">
+				<span class="mt-1 text-left text-sm">
+					<strong class="block">Open a mod</strong>
+					Read what it does and pick the release that matches your game version.
+				</span>
+			</li>
+			<li class="step step-primary">
+				<span class="mt-1 text-left text-sm">
+					<strong class="block">Check the file</strong>
+					Download it, then confirm the fingerprint matches before you run it.
+				</span>
+			</li>
+		</ul>
+		<p class="text-sm text-base-content/70">
+			New to this? Start with <a class="link link-hover" href="/games">Browse</a>, or read
+			<a class="link link-hover" href="/about">how a home works</a> and
+			<a class="link link-hover" href="/security">what a signature does and does not prove</a>.
+		</p>
+	</section>
+
 	<section class="grid gap-4 sm:grid-cols-3">
 		<div class="card card-border bg-base-200">
 			<div class="card-body">

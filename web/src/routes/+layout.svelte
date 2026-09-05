@@ -172,14 +172,37 @@
 	</main>
 
 	<footer class="border-t border-base-300 bg-base-200">
-		<div
-			class="mx-auto flex w-full max-w-6xl flex-col gap-2 p-4 text-sm text-base-content/70 sm:flex-row sm:items-center sm:justify-between"
-		>
-			<p>Moraine is free software. Anyone can run an instance.</p>
-			<nav class="flex gap-4">
-				<a class="link link-hover" href="/about">How federation works</a>
-				<a class="link link-hover" href="/security">What checks prove</a>
+		<div class="mx-auto grid w-full max-w-6xl gap-8 p-6 sm:grid-cols-2 lg:grid-cols-4">
+			<div class="flex flex-col gap-2">
+				<p class="font-semibold">Moraine</p>
+				<p class="text-sm text-base-content/70">
+					A place to publish and find game mods. Anyone can run an instance.
+				</p>
+			</div>
+			<nav class="flex flex-col gap-2 text-sm">
+				<p class="font-medium text-base-content/60">Find mods</p>
+				<a class="link link-hover w-fit" href="/games">Browse</a>
+				<a class="link link-hover w-fit" href="/search">Search</a>
+				<a class="link link-hover w-fit" href="/projects">Projects you follow</a>
 			</nav>
+			<nav class="flex flex-col gap-2 text-sm">
+				<p class="font-medium text-base-content/60">For authors</p>
+				<a class="link link-hover w-fit" href="/publish">Publish a mod</a>
+				<a class="link link-hover w-fit" href="/submissions">Your submissions</a>
+				<a class="link link-hover w-fit" href="/orgs">Organizations</a>
+			</nav>
+			<nav class="flex flex-col gap-2 text-sm">
+				<p class="font-medium text-base-content/60">How it works</p>
+				<a class="link link-hover w-fit" href="/about">Homes and directories</a>
+				<a class="link link-hover w-fit" href="/security">What checks prove</a>
+				<a class="link link-hover w-fit" href="/settings">Instance settings</a>
+			</nav>
+		</div>
+		<div class="border-t border-base-300">
+			<p class="mx-auto w-full max-w-6xl p-4 text-xs text-base-content/60">
+				Moraine is free software, released under the AGPL-3.0-or-later. Every project stays at a
+				home its publisher controls.
+			</p>
 		</div>
 	</footer>
 </div>

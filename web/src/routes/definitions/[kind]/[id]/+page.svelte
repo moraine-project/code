@@ -35,10 +35,11 @@
 					<span class="badge badge-outline">{data.definition.kind}</span>
 					<Digest value={data.definition.id} label="the identity digest" />
 				</div>
-				<p class="text-base-content/60 text-sm">
-					The identity is the genesis; the definition below is the current signed revision, and its
-					bytes remain the source of truth. A definition is trustworthy because it verifies against
-					this identity's root, not because this instance lists it.
+				<p class="max-w-2xl text-base-content/80 text-sm">
+					This is the current signed description of {data.definition.display_name ?? 'this entry'}.
+					Installers use it to know which versions exist, how they are ordered, and how to set mods
+					up. It is trusted because it verifies against the identity it was created with, not
+					because this instance lists it.
 				</p>
 				<div class="text-base-content/60 flex flex-wrap gap-3 text-sm">
 					<span
@@ -60,21 +61,23 @@
 		</section>
 
 		{#if payload}
-			<section class="card card-border">
+			<section class="card card-border bg-base-200">
 				<div class="card-body">
-					<h2 class="card-title">Definition</h2>
-					<div class="overflow-x-auto">
-						<table class="table table-sm">
-							<tbody>
-								{#each Object.entries(payload) as [key, entry] (key)}
-									<tr>
-										<th scope="row" class="align-top font-mono">{key}</th>
-										<td class="break-all">{value(entry)}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
+					<details>
+						<summary class="cursor-pointer font-medium">Raw signed definition</summary>
+						<div class="mt-3 overflow-x-auto">
+							<table class="table table-sm">
+								<tbody>
+									{#each Object.entries(payload) as [key, entry] (key)}
+										<tr>
+											<th scope="row" class="align-top font-mono">{key}</th>
+											<td class="break-all">{value(entry)}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					</details>
 				</div>
 			</section>
 		{/if}
