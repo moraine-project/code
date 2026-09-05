@@ -111,7 +111,7 @@
 			<div class="flex items-center gap-2">
 				<input
 					type="file"
-					class="file-input file-input-bordered w-full max-w-md"
+					class="file-input w-full max-w-md"
 					onchange={upload}
 					disabled={uploading}
 					aria-label="Artifact to upload"

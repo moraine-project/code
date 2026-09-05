@@ -26,6 +26,10 @@
 	}
 
 	const entries = $derived(data.feed?.entries ?? []);
+	const latest = $derived(entries.find((entry) => entry.kind === 'release-published') ?? null);
+	const gameId = $derived(
+		entries.find((entry) => entry.release?.game_id)?.release?.game_id ?? null,
+	);
 
 	function formatTime(seconds: number): string {
 		return new Date(seconds * 1000).toLocaleString();
@@ -34,61 +38,97 @@
 	function objectHex(id: string): string {
 		return id.startsWith('gd:sha256:') ? id.slice('gd:sha256:'.length) : id;
 	}
+
+	function releaseHref(object: string): string {
+		return `/p/${encodeURIComponent(data.projectId)}/release/${objectHex(object)}?home=${encodeURIComponent(data.home)}`;
+	}
 </script>
 
 <svelte:head>
-	<title>{data.projectId} · Moraine</title>
+	<title>{data.profile?.display_name ?? data.projectId} · Moraine</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">
-	<a class="link link-hover w-fit" href="/">← Resolve another project</a>
+	<a class="link link-hover w-fit" href="/">← Open another project</a>
 
 	{#if data.error}
-		<div role="alert" class="alert alert-error">
+		<div role="alert" class="alert alert-error alert-soft">
 			<span>{data.error}</span>
 		</div>
-		<p class="text-base-content/80 text-sm">Home: <code>{data.home || '(none)'}</code></p>
+		<p class="text-base-content/70 text-sm">Home: <code>{data.home || '(none)'}</code></p>
 	{:else if data.summary && data.feed}
 		{#if data.summary.listing_state && data.summary.listing_state !== 'listed'}
-			<div role="alert" class="alert alert-warning">
+			<div role="alert" class="alert alert-warning alert-soft">
 				<span>
 					This instance lists this project as <strong>{data.summary.listing_state}</strong>{data
 						.summary.reason_code
 						? ` (${data.summary.reason_code})`
-						: ''}. That is this directory's local policy and never a statement about the publisher's
-					signature.
+						: ''}. That is a decision by this one instance, not a statement about the publisher or
+					the files.
 				</span>
 			</div>
 		{/if}
-		<section class="card card-border">
-			<div class="card-body">
-				<h1 class="card-title break-all">
-					{data.profile?.display_name ?? shortDigest(data.summary.project_id, 24)}
-				</h1>
-				{#if data.profile}
-					<p class="text-base-content/80">{data.profile.summary}</p>
-				{/if}
-				<div class="flex flex-wrap gap-2">
-					<span class="badge badge-outline">head #{data.summary.head_seq}</span>
-					{#if data.profile}
-						<span class="badge badge-outline">profile published</span>
+
+		<section class="card card-border bg-base-200">
+			<div class="card-body gap-4">
+				<div class="flex flex-wrap items-start justify-between gap-4">
+					<div class="flex flex-col gap-2">
+						<h1 class="text-2xl font-semibold tracking-tight">
+							{data.profile?.display_name ?? shortDigest(data.summary.project_id, 24)}
+						</h1>
+						{#if data.profile?.summary}
+							<p class="max-w-2xl text-base-content/80">{data.profile.summary}</p>
+						{/if}
+						<div class="flex flex-wrap gap-2">
+							{#if gameId}
+								<span class="badge badge-ghost" title={gameId}>Game {shortDigest(gameId, 16)}</span>
+							{/if}
+							<span class="badge badge-ghost">History entry #{data.summary.head_seq}</span>
+							{#if data.profile}
+								<span class="badge badge-outline">Profile published</span>
+							{/if}
+						</div>
+					</div>
+					{#if latest}
+						<div class="card card-border w-full bg-base-100 sm:w-72">
+							<div class="card-body gap-2">
+								<span class="text-xs uppercase tracking-wide text-base-content/60">
+									Latest release
+								</span>
+								<p class="text-lg font-semibold">{latest.title ?? 'untitled'}</p>
+								<p class="text-sm text-base-content/70">
+									{latest.release?.channel ?? 'release'}
+									{#if latest.release?.loaders.length}
+										· {latest.release.loaders.join(', ')}
+									{/if}
+									· {formatTime(latest.declared_at)}
+								</p>
+								<a class="btn btn-primary btn-sm mt-1 self-start" href={releaseHref(latest.object)}>
+									View and download
+								</a>
+							</div>
+						</div>
 					{/if}
 				</div>
-				<dl class="grid gap-2 text-sm sm:grid-cols-[10rem_1fr]">
-					<dt class="text-base-content/60">Project ID</dt>
-					<dd class="break-all font-mono">{data.summary.project_id}</dd>
-					<dt class="text-base-content/60">Home</dt>
-					<dd class="break-all">{data.home}</dd>
-					<dt class="text-base-content/60">Genesis</dt>
-					<dd class="break-all font-mono">{data.summary.genesis}</dd>
-				</dl>
+
+				<details class="rounded-box border border-base-300 bg-base-100 p-3">
+					<summary class="cursor-pointer text-sm font-medium">Technical details</summary>
+					<dl class="mt-3 grid gap-2 text-sm sm:grid-cols-[9rem_1fr]">
+						<dt class="text-base-content/60">Project ID</dt>
+						<dd class="break-all font-mono">{data.summary.project_id}</dd>
+						<dt class="text-base-content/60">Home</dt>
+						<dd class="break-all">{data.home}</dd>
+						<dt class="text-base-content/60">Genesis</dt>
+						<dd class="break-all font-mono">{data.summary.genesis}</dd>
+					</dl>
+				</details>
 			</div>
 		</section>
 
 		{#if data.profile}
-			<section class="card card-border">
+			<section class="card card-border bg-base-200">
 				<div class="card-body">
-					<h2 class="card-title">About</h2>
+					<h2 class="card-title">About this project</h2>
 					<p class="whitespace-pre-line text-base-content/80">{data.profile.description}</p>
 					{#if data.profile.tags.length > 0 || data.profile.categories.length > 0}
 						<div class="flex flex-wrap gap-2">
@@ -96,7 +136,7 @@
 								<span class="badge badge-outline">{category}</span>
 							{/each}
 							{#each data.profile.tags as tag (tag)}
-								<span class="badge">{tag}</span>
+								<span class="badge badge-ghost">{tag}</span>
 							{/each}
 						</div>
 					{/if}
@@ -121,9 +161,16 @@
 			</section>
 		{/if}
 
-		<section class="card card-border">
-			<div class="card-body">
-				<h2 class="card-title">Feed</h2>
+		<section class="card card-border bg-base-200">
+			<div class="card-body gap-4">
+				<div class="flex flex-col gap-1">
+					<h2 class="card-title">Release history</h2>
+					<p class="text-base-content/70 text-sm">
+						Every published release, newest changes last. The home serves this list; it is signed by
+						the publisher.
+					</p>
+				</div>
+
 				<form
 					class="flex flex-wrap items-end gap-3"
 					onsubmit={(event) => {
@@ -131,74 +178,80 @@
 						applyFilters();
 					}}
 				>
-					<label class="form-control">
-						<span class="label-text">Game version</span>
+					<fieldset class="fieldset">
+						<legend class="fieldset-legend">Game version</legend>
 						<input
-							class="input input-bordered input-sm"
+							class="input input-sm"
 							bind:value={gameVersion}
 							placeholder="1.20.1"
 							aria-label="Filter by game version"
 						/>
-					</label>
-					<button class="btn btn-sm" type="submit">Apply</button>
+					</fieldset>
+					{#if loaders.length > 0}
+						<fieldset class="fieldset">
+							<legend class="fieldset-legend">Loader</legend>
+							<select class="select select-sm" bind:value={loader} aria-label="Filter by loader">
+								<option value="">Any loader</option>
+								{#each loaders as id (id)}
+									<option value={id}>{id}</option>
+								{/each}
+							</select>
+						</fieldset>
+					{/if}
+					<fieldset class="fieldset">
+						<legend class="fieldset-legend">Loader version</legend>
+						<input
+							class="input input-sm"
+							bind:value={loaderVersion}
+							placeholder="0.15.0"
+							aria-label="Filter by loader version"
+						/>
+					</fieldset>
+					<button class="btn btn-sm" type="submit">Apply filters</button>
 				</form>
-				<p class="text-base-content/60 text-sm">
-					Filters run on the home. The game version filter uses the game's declared version
-					ordering; the loader filter matches the loader a release declares.
-				</p>
-				{#if loaders.length > 0}
-					<label class="form-control w-fit">
-						<span class="label-text">Loader</span>
-						<select
-							class="select select-bordered select-sm"
-							bind:value={loader}
-							aria-label="Filter by loader"
-						>
-							<option value="">any</option>
-							{#each loaders as id (id)}
-								<option value={id}>{id}</option>
-							{/each}
-						</select>
-					</label>
-					<p class="text-base-content/60 text-sm">
-						Filtering uses the loaders each release declares; it does not evaluate version ranges.
-					</p>
-				{/if}
+
 				{#if data.feed.entries.length === 0}
-					<p class="text-base-content/80 text-sm">No feed entries yet.</p>
+					<p class="text-base-content/80 text-sm">This project has no releases yet.</p>
 				{:else if entries.length === 0}
-					<p class="text-base-content/80 text-sm">No feed entry matches these filters.</p>
+					<p class="text-base-content/80 text-sm">No release matches these filters.</p>
 				{:else}
 					<div class="overflow-x-auto">
 						<table class="table table-sm">
 							<thead>
 								<tr>
-									<th scope="col">Seq</th>
-									<th scope="col">Kind</th>
-									<th scope="col">Title</th>
-									<th scope="col">Object</th>
-									<th scope="col">Declared</th>
+									<th scope="col">#</th>
+									<th scope="col">Change</th>
+									<th scope="col">Release</th>
+									<th scope="col">Channel</th>
+									<th scope="col">Loaders</th>
+									<th scope="col">Published</th>
+									<th scope="col"><span class="sr-only">Open</span></th>
 								</tr>
 							</thead>
 							<tbody>
 								{#each entries as entry (entry.entry)}
 									<tr>
-										<td>{entry.seq}</td>
-										<td>{entry.kind}</td>
+										<td class="text-base-content/60">{entry.seq}</td>
+										<td>{entry.kind.replaceAll('-', ' ')}</td>
 										<td>
 											{#if entry.kind === 'release-published' || entry.kind === 'release-withdrawn'}
-												<a
-													class="link link-hover"
-													href={`/p/${encodeURIComponent(data.projectId)}/release/${objectHex(entry.object)}?home=${encodeURIComponent(data.home)}`}
-												>
+												<a class="link link-hover" href={releaseHref(entry.object)}>
 													{entry.title ?? '—'}
 												</a>
 											{:else}
 												{entry.title ?? '—'}
 											{/if}
 										</td>
-										<td><Digest value={entry.object} label="the object id" length={12} /></td>
-										<td>{formatTime(entry.declared_at)}</td>
+										<td>{entry.release?.channel ?? '—'}</td>
+										<td>{entry.release?.loaders.join(', ') || '—'}</td>
+										<td class="whitespace-nowrap text-base-content/70">
+											{formatTime(entry.declared_at)}
+										</td>
+										<td>
+											{#if entry.kind === 'release-published' || entry.kind === 'release-withdrawn'}
+												<a class="btn btn-ghost btn-xs" href={releaseHref(entry.object)}>Open</a>
+											{/if}
+										</td>
 									</tr>
 								{/each}
 							</tbody>
@@ -214,12 +267,18 @@
 			</div>
 		</section>
 
-		<div role="alert" class="alert alert-info">
+		<div role="alert" class="alert alert-info alert-soft">
 			<span>
-				This page fetched live data from <strong>{data.home}</strong> and checked that it parses. It did
-				not verify signatures. Run the verifier CLI against the files you download to check the publisher's
-				signature and the artifact digest.
+				This page fetched live data from <strong>{data.home}</strong> and checked that it reads correctly.
+				It did not verify signatures. Use the verifier tool on the files you download to check the publisher's
+				signature and the file fingerprint.
 			</span>
 		</div>
 	{/if}
+
+	<section class="text-sm text-base-content/60">
+		<p>
+			ID checks: <Digest copyOnly value={data.projectId} label="the project id" />
+		</p>
+	</section>
 </div>

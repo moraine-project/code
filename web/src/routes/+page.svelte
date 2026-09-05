@@ -35,111 +35,130 @@
 	}
 </script>
 
-<div class="flex flex-col gap-10">
-	<section class="flex flex-col gap-4">
-		<h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Every project has a home</h1>
-		<p class="text-base-content/80 max-w-2xl">
-			A mod lives at a home its publisher controls. Releases are signed and immutable, and anyone
-			can resolve them directly. Paste a project ID and the home that serves it; this page fetches
-			the signed records from that home and shows exactly what it found.
+<div class="flex flex-col gap-12">
+	<section class="flex flex-col items-start gap-5">
+		<h1 class="max-w-3xl text-3xl font-bold tracking-tight sm:text-4xl">
+			Game mods, published by the people who made them
+		</h1>
+		<p class="max-w-2xl text-base-content/80">
+			Moraine is a registry that any community can run. Every release is signed by its publisher, so
+			you can see who published a file and whether it has changed since. No single company decides
+			what is allowed to exist, and a project stays reachable at its own home even when a site stops
+			recommending it.
 		</p>
-	</section>
-
-	<section class="card card-border bg-base-200">
-		<div class="card-body">
-			<h2 class="card-title">Resolve a project</h2>
-			<form class="join w-full" onsubmit={resolve}>
-				<input
-					class="input join-item w-full max-w-xs"
-					bind:value={home}
-					aria-label="Home registry URL"
-					placeholder="https://home.example"
-				/>
-				<input
-					class="input join-item flex-1"
-					bind:value={projectId}
-					aria-label="Project ID"
-					placeholder="gd:sha256:..."
-				/>
-				<button class="btn join-item" type="submit">Resolve</button>
-			</form>
-		</div>
-	</section>
-
-	<section class="card card-border bg-base-200">
-		<div class="card-body">
-			<h2 class="card-title">Find a release by file digest</h2>
-			<p class="text-base-content/80 text-sm">
-				Have a JAR or ZIP of unknown origin? Its SHA-256 points back to the release that published
-				it.
-			</p>
-			<form class="join w-full" onsubmit={lookup}>
-				<input
-					class="input join-item flex-1"
-					bind:value={digest}
-					aria-label="Artifact SHA-256"
-					placeholder="sha256:..."
-				/>
-				<button class="btn join-item" type="submit" disabled={looking}>
-					{looking ? 'Looking…' : 'Look up'}
-				</button>
-			</form>
-			{#if lookupError}
-				<div role="alert" class="alert alert-error"><span>{lookupError}</span></div>
-			{:else if lookupResult}
-				{#if lookupResult.matches.length === 0}
-					<p class="text-base-content/80 text-sm">No release publishes that digest on this home.</p>
-				{:else}
-					<ul class="flex flex-col gap-2">
-						{#each lookupResult.matches as match (match.release)}
-							<li class="flex flex-wrap items-center gap-2 text-sm">
-								<a
-									class="link link-hover font-mono"
-									href={`/p/${encodeURIComponent(match.project_id)}?home=${encodeURIComponent(home.trim())}`}
-								>
-									{shortDigest(match.project_id)}
-								</a>
-								<Digest copyOnly value={match.project_id} label="the project id" />
-								{#if match.human_version}
-									<span class="badge badge-outline">{match.human_version}</span>
-								{/if}
-								{#if match.filename}
-									<span class="text-base-content/60">{match.filename}</span>
-								{/if}
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			{/if}
+		<div class="flex flex-wrap gap-3">
+			<a class="btn btn-primary" href="/search">Find a mod</a>
+			<a class="btn" href="/publish">Publish a mod</a>
+			<a class="btn btn-ghost" href="/about">How this works</a>
 		</div>
 	</section>
 
 	<section class="grid gap-4 sm:grid-cols-3">
-		<div class="card card-border">
+		<div class="card card-border bg-base-200">
 			<div class="card-body">
-				<h3 class="card-title text-base">Signed by the publisher</h3>
+				<h2 class="card-title text-base">Signed by the publisher</h2>
 				<p class="text-base-content/80 text-sm">
-					A release is addressed by digest and signed by a key the project's root authorized. A home
-					cannot forge it.
+					A release is tied to a key the project controls. An instance can host or hide a project,
+					but it cannot forge a release or quietly change one.
 				</p>
 			</div>
 		</div>
-		<div class="card card-border">
+		<div class="card card-border bg-base-200">
 			<div class="card-body">
-				<h3 class="card-title text-base">Indexed, not owned</h3>
+				<h2 class="card-title text-base">Hosted by your community</h2>
 				<p class="text-base-content/80 text-sm">
-					A directory chooses what it lists. Delisting never erases the project, because the home
-					keeps serving the signed bytes.
+					A directory chooses what it recommends. Removing a project from one list does not erase
+					it, because the publisher's home keeps serving the signed files.
 				</p>
 			</div>
 		</div>
-		<div class="card card-border">
+		<div class="card card-border bg-base-200">
 			<div class="card-body">
-				<h3 class="card-title text-base">Verified on your machine</h3>
+				<h2 class="card-title text-base">You can check it yourself</h2>
 				<p class="text-base-content/80 text-sm">
-					This page shows what the home claims. Independent verification happens with the verifier
-					CLI, on the bytes you actually download.
+					This page shows what a home claims. The verifier tool checks the actual bytes on your
+					machine, so you never have to take a website's word for it.
 				</p>
+			</div>
+		</div>
+	</section>
+
+	<section class="grid gap-6 lg:grid-cols-2">
+		<div class="card card-border bg-base-200">
+			<div class="card-body gap-4">
+				<h2 class="card-title">Open a project you were given</h2>
+				<p class="text-base-content/80 text-sm">
+					Every project has a stable ID and a home address. If someone sent you both, you can open
+					the project here even when no directory lists it.
+				</p>
+				<form class="flex flex-col gap-2" onsubmit={resolve}>
+					<label class="label" for="project-id">Project ID</label>
+					<input
+						id="project-id"
+						class="input w-full font-mono text-sm"
+						bind:value={projectId}
+						placeholder="gd:sha256:…"
+					/>
+					<label class="label" for="project-home">Home address</label>
+					<input
+						id="project-home"
+						class="input w-full"
+						bind:value={home}
+						placeholder="https://home.example"
+					/>
+					<button class="btn btn-primary mt-1 self-start" type="submit">Open project</button>
+				</form>
+			</div>
+		</div>
+
+		<div class="card card-border bg-base-200">
+			<div class="card-body gap-4">
+				<h2 class="card-title">Check a file you already downloaded</h2>
+				<p class="text-base-content/80 text-sm">
+					A file's SHA-256 fingerprint points back to the release that published it. Compute it with
+					your own tools, then paste it here to see where the file came from.
+				</p>
+				<form class="flex flex-col gap-2" onsubmit={lookup}>
+					<label class="label" for="artifact-digest">File fingerprint (SHA-256)</label>
+					<input
+						id="artifact-digest"
+						class="input w-full font-mono text-sm"
+						bind:value={digest}
+						placeholder="sha256:…"
+					/>
+					<button class="btn mt-1 self-start" type="submit" disabled={looking}>
+						{looking ? 'Looking…' : 'Find the release'}
+					</button>
+				</form>
+				{#if lookupError}
+					<div role="alert" class="alert alert-error alert-soft"><span>{lookupError}</span></div>
+				{:else if lookupResult}
+					{#if lookupResult.matches.length === 0}
+						<p class="text-base-content/80 text-sm">
+							No release on this home publishes that fingerprint.
+						</p>
+					{:else}
+						<ul class="flex flex-col gap-2">
+							{#each lookupResult.matches as match (match.release)}
+								<li class="flex flex-wrap items-center gap-2 text-sm">
+									<a
+										class="link link-hover font-mono"
+										href={`/p/${encodeURIComponent(match.project_id)}?home=${encodeURIComponent(home.trim())}`}
+									>
+										{shortDigest(match.project_id)}
+									</a>
+									<Digest copyOnly value={match.project_id} label="the project id" />
+									{#if match.human_version}
+										<span class="badge badge-ghost">{match.human_version}</span>
+									{/if}
+									{#if match.filename}
+										<span class="text-base-content/60">{match.filename}</span>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				{/if}
 			</div>
 		</div>
 	</section>

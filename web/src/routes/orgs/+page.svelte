@@ -84,25 +84,25 @@
 		<div class="card-body">
 			<h2 class="card-title">Create an organization</h2>
 			<form class="flex flex-wrap items-end gap-3" onsubmit={submit}>
-				<label class="form-control">
-					<span class="label-text">Handle</span>
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">Handle</legend>
 					<input
-						class="input input-bordered"
+						class="input"
 						bind:value={handle}
 						required
 						pattern="[a-z0-9-]+"
 						aria-label="Organization handle"
 					/>
-				</label>
-				<label class="form-control">
-					<span class="label-text">Display name</span>
+				</fieldset>
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">Display name</legend>
 					<input
-						class="input input-bordered"
+						class="input"
 						bind:value={displayName}
 						required
 						aria-label="Organization display name"
 					/>
-				</label>
+				</fieldset>
 				<button class="btn" type="submit" disabled={creating}>Create</button>
 			</form>
 			<p class="text-base-content/60 text-sm">

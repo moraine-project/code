@@ -9,92 +9,111 @@
 	<title>Browse games and loaders · Moraine</title>
 </svelte:head>
 
-<div class="flex flex-col gap-6">
-	<h1 class="text-2xl font-bold">Browse</h1>
-	<p class="text-base-content/80 max-w-2xl">
-		These are the game, loader, and runtime identities this directory serves. A definition is
-		trusted only when it verifies against its own pinned identity, not because it is listed here.
-	</p>
+<div class="flex flex-col gap-8">
+	<div class="flex flex-col gap-2">
+		<h1 class="text-2xl font-semibold tracking-tight">Browse</h1>
+		<p class="max-w-2xl text-base-content/80">
+			Games, loaders, and runtimes that this instance knows about. Pick a game to see the mods
+			published for it. A name is never proof of identity; each entry has a stable ID you can check.
+		</p>
+	</div>
 
 	{#if data.error}
-		<div role="alert" class="alert alert-error"><span>{data.error}</span></div>
+		<div role="alert" class="alert alert-error alert-soft"><span>{data.error}</span></div>
 	{:else}
 		<section class="flex flex-col gap-3">
-			<h2 class="text-xl font-semibold">Games</h2>
+			<h2 class="text-lg font-semibold">Games</h2>
 			{#if data.games.length === 0}
 				<p class="text-base-content/60 text-sm">No games are hosted here yet.</p>
 			{:else}
-				<ul class="flex flex-wrap gap-2">
+				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each data.games as game (game.id)}
-						<li>
-							<span class="flex items-center gap-1">
-								<a
-									class="btn btn-outline"
-									href={`/definitions/games/${encodeURIComponent(game.id)}`}
-								>
+						<div class="card card-border bg-base-200">
+							<div class="card-body gap-2">
+								<h3 class="card-title text-base">
 									{game.display_name ?? shortDigest(game.id)}
-									<span class="badge badge-sm">{game.current ? 'defined' : 'no definition'}</span>
-								</a>
-								<a
-									class="btn btn-sm btn-ghost"
-									href={`/search?game=${encodeURIComponent(game.id)}`}
-								>
-									Mods
-								</a>
-							</span>
-						</li>
+								</h3>
+								<span class="badge badge-ghost badge-sm w-fit">
+									{game.current ? 'definition published' : 'no definition yet'}
+								</span>
+								<div class="card-actions mt-1">
+									<a class="btn btn-sm" href={`/search?game=${encodeURIComponent(game.id)}`}>
+										See mods
+									</a>
+									<a
+										class="btn btn-ghost btn-sm"
+										href={`/definitions/games/${encodeURIComponent(game.id)}`}
+									>
+										Details
+									</a>
+								</div>
+							</div>
+						</div>
 					{/each}
-				</ul>
+				</div>
 			{/if}
 		</section>
 
 		<section class="flex flex-col gap-3">
-			<h2 class="text-xl font-semibold">Runtimes</h2>
-			{#if data.runtimes.length === 0}
-				<p class="text-base-content/60 text-sm">No runtimes are hosted here yet.</p>
-			{:else}
-				<ul class="flex flex-wrap gap-2">
-					{#each data.runtimes as runtime (runtime.id)}
-						<li>
-							<a
-								class="btn btn-outline"
-								href={`/definitions/runtimes/${encodeURIComponent(runtime.id)}`}
-							>
-								{runtime.display_name ?? shortDigest(runtime.id)}
-								<span class="badge badge-sm">{runtime.current ? 'defined' : 'no definition'}</span>
-							</a>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</section>
-
-		<section class="flex flex-col gap-3">
-			<h2 class="text-xl font-semibold">Loaders</h2>
+			<h2 class="text-lg font-semibold">Loaders</h2>
 			{#if data.loaders.length === 0}
 				<p class="text-base-content/60 text-sm">No loaders are hosted here yet.</p>
 			{:else}
-				<ul class="flex flex-wrap gap-2">
+				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each data.loaders as loader (loader.id)}
-						<li>
-							<span class="flex items-center gap-1">
-								<a
-									class="btn btn-outline"
-									href={`/definitions/loaders/${encodeURIComponent(loader.id)}`}
-								>
+						<div class="card card-border bg-base-200">
+							<div class="card-body gap-2">
+								<h3 class="card-title text-base">
 									{loader.display_name ?? shortDigest(loader.id)}
-									<span class="badge badge-sm">{loader.current ? 'defined' : 'no definition'}</span>
-								</a>
-								<a
-									class="btn btn-sm btn-ghost"
-									href={`/search?loader=${encodeURIComponent(loader.id)}`}
-								>
-									Mods
-								</a>
-							</span>
-						</li>
+								</h3>
+								<span class="badge badge-ghost badge-sm w-fit">
+									{loader.current ? 'definition published' : 'no definition yet'}
+								</span>
+								<div class="card-actions mt-1">
+									<a class="btn btn-sm" href={`/search?loader=${encodeURIComponent(loader.id)}`}>
+										See mods
+									</a>
+									<a
+										class="btn btn-ghost btn-sm"
+										href={`/definitions/loaders/${encodeURIComponent(loader.id)}`}
+									>
+										Details
+									</a>
+								</div>
+							</div>
+						</div>
 					{/each}
-				</ul>
+				</div>
+			{/if}
+		</section>
+
+		<section class="flex flex-col gap-3">
+			<h2 class="text-lg font-semibold">Runtimes</h2>
+			{#if data.runtimes.length === 0}
+				<p class="text-base-content/60 text-sm">No runtimes are hosted here yet.</p>
+			{:else}
+				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{#each data.runtimes as runtime (runtime.id)}
+						<div class="card card-border bg-base-200">
+							<div class="card-body gap-2">
+								<h3 class="card-title text-base">
+									{runtime.display_name ?? shortDigest(runtime.id)}
+								</h3>
+								<span class="badge badge-ghost badge-sm w-fit">
+									{runtime.current ? 'definition published' : 'no definition yet'}
+								</span>
+								<div class="card-actions mt-1">
+									<a
+										class="btn btn-ghost btn-sm"
+										href={`/definitions/runtimes/${encodeURIComponent(runtime.id)}`}
+									>
+										Details
+									</a>
+								</div>
+							</div>
+						</div>
+					{/each}
+				</div>
 			{/if}
 		</section>
 	{/if}

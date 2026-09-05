@@ -1,2 +1,90 @@
 @import 'tailwindcss';
 @plugin 'daisyui';
+
+@plugin 'daisyui/theme' {
+	name: 'moraine';
+	default: true;
+	prefersdark: false;
+	color-scheme: dark;
+
+	--color-base-100: #10141a;
+	--color-base-200: #181c22;
+	--color-base-300: #262a31;
+	--color-base-content: #dfe2eb;
+	--color-primary: #0ea5e9;
+	--color-primary-content: #04121c;
+	--color-secondary: #f59e0b;
+	--color-secondary-content: #1f1400;
+	--color-accent: #14b8a6;
+	--color-accent-content: #00201c;
+	--color-neutral: #262a31;
+	--color-neutral-content: #dfe2eb;
+	--color-info: #38bdf8;
+	--color-info-content: #04121c;
+	--color-success: #2dd4bf;
+	--color-success-content: #00201c;
+	--color-warning: #fbbf24;
+	--color-warning-content: #241800;
+	--color-error: #f87171;
+	--color-error-content: #2a0806;
+
+	--radius-selector: 0.25rem;
+	--radius-field: 0.25rem;
+	--radius-box: 0.5rem;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 0;
+	--noise: 0;
+}
+
+@plugin 'daisyui/theme' {
+	name: 'moraine-light';
+	default: false;
+	prefersdark: false;
+	color-scheme: light;
+
+	--color-base-100: #f7f9fc;
+	--color-base-200: #eef2f8;
+	--color-base-300: #e0e6ef;
+	--color-base-content: #10141a;
+	--color-primary: #0284c7;
+	--color-primary-content: #ffffff;
+	--color-secondary: #b45309;
+	--color-secondary-content: #ffffff;
+	--color-accent: #0f766e;
+	--color-accent-content: #ffffff;
+	--color-neutral: #334155;
+	--color-neutral-content: #f8fafc;
+	--color-info: #0369a1;
+	--color-info-content: #ffffff;
+	--color-success: #0f766e;
+	--color-success-content: #ffffff;
+	--color-warning: #b45309;
+	--color-warning-content: #ffffff;
+	--color-error: #b91c1c;
+	--color-error-content: #ffffff;
+
+	--radius-selector: 0.25rem;
+	--radius-field: 0.25rem;
+	--radius-box: 0.5rem;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 0;
+	--noise: 0;
+}
+
+@theme {
+	--font-sans:
+		'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+		sans-serif;
+	--font-mono:
+		ui-monospace, 'SFMono-Regular', 'Cascadia Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+@layer base {
+	:where(.mono, .font-mono, table) {
+		font-variant-numeric: tabular-nums;
+	}
+}

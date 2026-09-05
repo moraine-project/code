@@ -166,28 +166,24 @@
 				</div>
 				{#if canManage}
 					<form class="flex flex-wrap items-end gap-3" onsubmit={addMember}>
-						<label class="form-control">
-							<span class="label-text">Account email</span>
+						<fieldset class="fieldset">
+							<legend class="fieldset-legend">Account email</legend>
 							<input
-								class="input input-bordered"
+								class="input"
 								type="email"
 								bind:value={email}
 								required
 								aria-label="Member email"
 							/>
-						</label>
-						<label class="form-control">
-							<span class="label-text">Role</span>
-							<select
-								class="select select-bordered"
-								bind:value={memberRole}
-								aria-label="Member role"
-							>
+						</fieldset>
+						<fieldset class="fieldset">
+							<legend class="fieldset-legend">Role</legend>
+							<select class="select" bind:value={memberRole} aria-label="Member role">
 								<option value="member">member</option>
 								<option value="admin">admin</option>
 								<option value="owner">owner</option>
 							</select>
-						</label>
+						</fieldset>
 						<button class="btn" type="submit" disabled={busy}>Add member</button>
 					</form>
 					<p class="text-base-content/60 text-sm">
@@ -209,7 +205,7 @@
 							<span class="badge badge-outline">{team.display_name}</span>
 							{#if canManage}
 								{#if moving === team.id}
-									<select class="select select-bordered select-xs" bind:value={moveTarget}>
+									<select class="select select-xs" bind:value={moveTarget}>
 										<option value="">top level</option>
 										{#each movableTeams.filter((candidate) => candidate.id !== team.id) as candidate (candidate.id)}
 											<option value={candidate.id}>{candidate.display_name}</option>
@@ -242,28 +238,19 @@
 				{/if}
 				{#if canManage}
 					<form class="flex flex-wrap items-end gap-3" onsubmit={addTeam}>
-						<label class="form-control">
-							<span class="label-text">Team name</span>
-							<input
-								class="input input-bordered"
-								bind:value={teamName}
-								required
-								aria-label="Team name"
-							/>
-						</label>
-						<label class="form-control">
-							<span class="label-text">Parent team</span>
-							<select
-								class="select select-bordered"
-								bind:value={parentTeamId}
-								aria-label="Parent team"
-							>
+						<fieldset class="fieldset">
+							<legend class="fieldset-legend">Team name</legend>
+							<input class="input" bind:value={teamName} required aria-label="Team name" />
+						</fieldset>
+						<fieldset class="fieldset">
+							<legend class="fieldset-legend">Parent team</legend>
+							<select class="select" bind:value={parentTeamId} aria-label="Parent team">
 								<option value="">none</option>
 								{#each detail.teams as team (team.id)}
 									<option value={team.id}>{team.display_name}</option>
 								{/each}
 							</select>
-						</label>
+						</fieldset>
 						<button class="btn" type="submit" disabled={busy}>Create team</button>
 					</form>
 				{/if}

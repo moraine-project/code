@@ -201,27 +201,27 @@
 				</div>
 			{/if}
 			<form class="flex flex-wrap items-end gap-3" onsubmit={startFollowing}>
-				<label class="form-control">
-					<span class="label-text">Home URL</span>
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">Home URL</legend>
 					<input
-						class="input input-bordered"
+						class="input"
 						type="url"
 						bind:value={homeUrl}
 						required
 						placeholder="https://home.example"
 						aria-label="Home URL"
 					/>
-				</label>
-				<label class="form-control">
-					<span class="label-text">Project ID</span>
+				</fieldset>
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">Project ID</legend>
 					<input
-						class="input input-bordered font-mono"
+						class="input font-mono"
 						bind:value={projectId}
 						required
 						placeholder="gd:sha256:…"
 						aria-label="Project ID"
 					/>
-				</label>
+				</fieldset>
 				<button class="btn" type="submit" disabled={busy}>Pull project</button>
 			</form>
 			<p class="text-base-content/60 text-sm">

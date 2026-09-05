@@ -325,6 +325,12 @@ export async function searchProjects(
 		loader?: string;
 		tag?: string;
 		category?: string;
+		gameVersion?: string;
+		loaderVersion?: string;
+		runtimeVersion?: string;
+		channel?: string;
+		platform?: string;
+		state?: string;
 		sort?: string;
 		limit?: number;
 	},
@@ -336,6 +342,12 @@ export async function searchProjects(
 	if (query.loader) params.set('loader', query.loader);
 	if (query.tag) params.set('tag', query.tag);
 	if (query.category) params.set('category', query.category);
+	if (query.gameVersion) params.set('game_version', query.gameVersion);
+	if (query.loaderVersion) params.set('loader_version', query.loaderVersion);
+	if (query.runtimeVersion) params.set('runtime_version', query.runtimeVersion);
+	if (query.channel) params.set('channel', query.channel);
+	if (query.platform) params.set('platform', query.platform);
+	if (query.state) params.set('state', query.state);
 	if (query.sort) params.set('sort', query.sort);
 	params.set('limit', String(query.limit ?? 20));
 	const response = await fetchFn(`${normalizeBase(base)}/v1/search?${params.toString()}`);

@@ -7,21 +7,59 @@ export const load: PageLoad = async ({ url, fetch }) => {
 	const q = url.searchParams.get('q') ?? '';
 	const game = url.searchParams.get('game') ?? '';
 	const loader = url.searchParams.get('loader') ?? '';
+	const gameVersion = url.searchParams.get('game_version') ?? '';
+	const loaderVersion = url.searchParams.get('loader_version') ?? '';
+	const runtimeVersion = url.searchParams.get('runtime_version') ?? '';
+	const channel = url.searchParams.get('channel') ?? '';
+	const platform = url.searchParams.get('platform') ?? '';
 	const sort = url.searchParams.get('sort') ?? '';
-	if (q.trim().length === 0 && game.length === 0 && loader.length === 0) {
-		return { home, q, game, loader, sort, results: [], error: null };
+	const filters = {
+		home,
+		q,
+		game,
+		loader,
+		gameVersion,
+		loaderVersion,
+		runtimeVersion,
+		channel,
+		platform,
+		sort,
+	};
+	const anyFilter = [
+		q,
+		game,
+		loader,
+		gameVersion,
+		loaderVersion,
+		runtimeVersion,
+		channel,
+		platform,
+	].some((value) => value.trim().length > 0);
+	if (!anyFilter) {
+		return { ...filters, results: [], error: null };
 	}
 	try {
 		const base = normalizeBase(home);
-		const results = await searchProjects(base, { q, game, loader, sort, limit: 20 }, fetch);
-		return { home: base, q, game, loader, sort, results, error: null };
+		const results = await searchProjects(
+			base,
+			{
+				q,
+				game,
+				loader,
+				gameVersion,
+				loaderVersion,
+				runtimeVersion,
+				channel,
+				platform,
+				sort,
+				limit: 20,
+			},
+			fetch,
+		);
+		return { ...filters, home: base, results, error: null };
 	} catch (cause) {
 		return {
-			home,
-			q,
-			game,
-			loader,
-			sort,
+			...filters,
 			results: [],
 			error: cause instanceof Error ? cause.message : 'the search failed',
 		};
