@@ -1,5 +1,5 @@
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -9,7 +9,7 @@ use moraine_model::Canonical;
 use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
 use moraine_model::genesis::{Genesis, GenesisKind};
 use moraine_model::signed::SignedObject;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::db::MetadataStore;
@@ -125,8 +125,66 @@ async fn list_games(State(state): State<AppState>) -> Response {
 	list_definitions(&state, GenesisKind::Game).await
 }
 
-async fn list_loaders(State(state): State<AppState>) -> Response {
-	list_definitions(&state, GenesisKind::Loader).await
+async fn list_loaders(State(state): State<AppState>, Query(query): Query<LoaderQuery>) -> Response {
+	list_loader_definitions(&state, &query).await
+}
+
+#[derive(Deserialize, Default)]
+struct LoaderQuery {
+	#[serde(default)]
+	game: Option<String>,
+	#[serde(default)]
+	game_version: Option<String>,
+}
+
+async fn list_loader_definitions(state: &AppState, query: &LoaderQuery) -> Response {
+	let rows = match state.metadata.definitions_by_kind(GenesisKind::Loader.as_str()).await {
+		Ok(rows) => rows,
+		Err(error) => return storage_error(error),
+	};
+	let filtering = query.game.is_some() || query.game_version.is_some();
+	let mut summaries = Vec::with_capacity(rows.len());
+	for row in rows {
+		let Some(current) = row.current_digest.as_deref() else {
+			if !filtering {
+				summaries.push(DefinitionSummary {
+					id: row.id,
+					kind: GenesisKind::Loader.as_str(),
+					current: None,
+					display_name: None,
+				});
+			}
+			continue;
+		};
+		let Some(object) = (match state.metadata.object(current).await {
+			Ok(object) => object,
+			Err(error) => return storage_error(error),
+		}) else {
+			continue;
+		};
+		let Ok(LoaderObject::Definition(definition)) = LoaderObject::from_canonical_bytes(&object.payload) else {
+			continue;
+		};
+		if query.game.as_deref().is_some_and(|game| definition.game_id != game) {
+			continue;
+		}
+		if let Some(version) = query.game_version.as_deref() {
+			let catalog = crate::registry::compatibility::catalog_for_game(state, &definition.game_id).await;
+			let supported = definition.game_versions.as_ref().is_some_and(|predicate| {
+				crate::registry::compatibility::predicate_satisfied(predicate, version, catalog.as_ref())
+			});
+			if !supported {
+				continue;
+			}
+		}
+		summaries.push(DefinitionSummary {
+			id: row.id,
+			kind: GenesisKind::Loader.as_str(),
+			current: Some(id_for(current)),
+			display_name: Some(definition.display_name),
+		});
+	}
+	Json(summaries).into_response()
 }
 
 async fn list_runtimes(State(state): State<AppState>) -> Response {

@@ -868,6 +868,13 @@ the current definition ID or null before one is published, and `display_name`
 comes from that definition's payload so a browser can label an entry without a
 second request.
 
+`GET /v1/loaders?game=&game_version=` narrows that list to loaders for one game
+or to loaders whose family `game_versions` predicate is satisfied by a game
+version. A loader with no family predicate, or whose predicate is unknown under
+the game's ordering, does not match a `game_version` filter: unknown is not
+support. The filter reads the loader definition, not its releases, so a loader
+answers before any loader version is published.
+
 `POST /v1/{games|loaders|runtimes}/{id}/definitions` stores a signed definition
 object, verified against that identity's root. A game takes a `game-def`, a
 loader takes any `loader-def` shape (definition, release, or acceptance
