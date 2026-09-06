@@ -1,20 +1,26 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use moraine_model::Canonical;
 use moraine_model::definition::LoaderObject;
 use moraine_model::genesis::GenesisKind;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
-use super::definitions::{id_for, load_definition};
+use super::definitions::{DefinitionRow, id_for, load_definition};
 use super::storage_error;
 use crate::db::MetadataStore;
 use crate::routes::AppState;
 
 pub(crate) fn routes() -> Router<AppState> {
 	Router::new().route("/v1/loaders/{id}/releases", get(list_loader_releases))
+}
+
+#[derive(Deserialize)]
+struct LoaderReleaseQuery {
+	#[serde(default)]
+	game_version: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -27,13 +33,33 @@ struct LoaderReleaseView {
 	runtime_predicate: Option<serde_json::Value>,
 }
 
-async fn list_loader_releases(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-	if let Err(response) = load_definition(&state, GenesisKind::Loader, &id).await {
-		return *response;
-	}
+async fn list_loader_releases(
+	State(state): State<AppState>,
+	Path(id): Path<String>,
+	Query(query): Query<LoaderReleaseQuery>,
+) -> Response {
+	let definition = match load_definition(&state, GenesisKind::Loader, &id).await {
+		Ok(definition) => definition,
+		Err(response) => return *response,
+	};
 	let rows = match state.metadata.loader_releases_for(&id).await {
 		Ok(rows) => rows,
 		Err(error) => return storage_error(error),
+	};
+	let catalog = match query.game_version.as_deref() {
+		Some(version) => {
+			let game_id = match loader_game(&state, &definition).await {
+				Some(game_id) => game_id,
+				None => return (axum::http::StatusCode::NOT_FOUND, "no definition published yet").into_response(),
+			};
+			let catalog = super::compatibility::catalog_for_game(&state, &game_id).await;
+			if version.trim().is_empty() {
+				None
+			} else {
+				Some((version.to_string(), catalog))
+			}
+		}
+		None => None,
 	};
 	let mut releases = Vec::with_capacity(rows.len());
 	for digest in rows {
@@ -46,6 +72,11 @@ async fn list_loader_releases(State(state): State<AppState>, Path(id): Path<Stri
 		let Ok(LoaderObject::Release(release)) = LoaderObject::from_canonical_bytes(&object.payload) else {
 			continue;
 		};
+		if let Some((version, catalog)) = &catalog
+			&& !super::compatibility::predicate_satisfied(&release.game_version_predicate, version, catalog.as_ref())
+		{
+			continue;
+		}
 		releases.push(LoaderReleaseView {
 			version: release.version_id,
 			release: id_for(&digest),
@@ -56,6 +87,15 @@ async fn list_loader_releases(State(state): State<AppState>, Path(id): Path<Stri
 		});
 	}
 	Json(releases).into_response()
+}
+
+async fn loader_game(state: &AppState, definition: &DefinitionRow) -> Option<String> {
+	let current = definition.current_digest.as_deref()?;
+	let object = state.metadata.object(current).await.ok().flatten()?;
+	match LoaderObject::from_canonical_bytes(&object.payload).ok()? {
+		LoaderObject::Definition(definition) => Some(definition.game_id),
+		_ => None,
+	}
 }
 
 impl MetadataStore {
@@ -195,6 +235,18 @@ mod tests {
 		assert_eq!(releases[0]["version"], "0.15.0");
 		assert_eq!(releases[0]["runtime_id"], "gd:sha256:cd");
 		assert_eq!(releases[0]["runtime_predicate"]["values"][0], "17");
+
+		let filtered = |application: axum::Router, version: &str| {
+			let uri = format!("/v1/loaders/{loader_id}/releases?game_version={version}");
+			async move {
+				let request = axum::http::Request::get(uri).body(Body::empty()).expect("request");
+				body_json(application.oneshot(request).await.expect("response")).await
+			}
+		};
+		let matching = filtered(application.clone(), "1.20.1").await;
+		assert_eq!(matching.as_array().expect("releases").len(), 1);
+		let unrelated = filtered(application.clone(), "1.19.0").await;
+		assert!(unrelated.as_array().expect("releases").is_empty());
 
 		let rewritten = sign_payload(
 			ObjectKind::LoaderDef,

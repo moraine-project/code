@@ -1,0 +1,29 @@
+kind = "game"
+display_name = "The Sims 4"
+version_ordering = "opaque"
+loaders_allowed = false
+install_adapter = "sims4/default"
+
+[[categories]]
+id = "gameplay"
+label = "Gameplay"
+
+[[categories]]
+id = "build-buy"
+label = "Build / Buy"
+
+[[categories]]
+id = "create-a-sim"
+label = "Create a Sim"
+
+[[tags]]
+id = "script-mod"
+label = "Script Mod"
+
+[[tags]]
+id = "override"
+label = "Override"
+
+[[tags]]
+id = "custom-content"
+label = "Custom Content"

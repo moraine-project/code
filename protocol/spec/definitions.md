@@ -32,6 +32,55 @@ before compilation. A definition is signed by whoever authors it, so no
 pre-signed definitions ship with this implementation; an operator authors its
 own and reuses that key.
 
+A loader definition may also declare `game_versions`, the game versions the
+loader family supports as a whole, authored in TOML as `game_versions` with an
+optional `game_version_scheme`. With the default `exact` scheme the list is
+literal versions; with `ordered-list` (or `calendar`) it can hold ranges such as
+`1.14..=26.3`, resolved through the game's version table. It is the cheap way to record the
+game-version-to-loader connection: one list on the loader, instead of a
+per-loader-version table of which game versions each build targets. A loader
+release's own `game_versions` stays authoritative for that exact version when
+it is present, so the family list is a fallback for game versions where no
+per-version record exists, not an override. A loader with no releases at all is
+still useful: a mod can name the loader family, and the family's list answers
+the game-version question. Naming a loader version in a request is optional for
+the same reason.
+
+A game, loader, or runtime definition also carries an optional ordered
+`version_catalog`, authored in TOML as `versions`, listing the versions it
+recognises in ascending order. Loaders need one as much as games do: a loader
+may number its releases in a scheme that is not SemVer, so a loader version
+such as `26.3.0.7-beta` is ordered by the loader's own table. It is what makes the `ordered-list` and `calendar` ordering schemes
+evaluable: a predicate over a range such as `1.19..1.21` walks the table, and a
+version absent from the table is unknown rather than guessed at. A definition
+with no catalog, or one whose scheme needs no table, still evaluates `exact`,
+`set`, `semver`, and `any` predicates. The table is fixed at authoring time, so
+a new game version is a new signed revision of the definition; a duplicate or
+empty entry is refused.
+
+## Revisions are append-only
+
+A definition's identity is its genesis, and that never changes. What changes is
+the current signed revision. Adding a game version, a category, or a tag means
+publishing a new revision: the definition gets a new object digest, but the
+game or loader ID a client already pinned stays the same, and this instance
+serves the newest revision at the same URL. Adding a loader version is even
+lighter — it is a separate `loader-def` object of the release shape, so the
+loader definition is not republished at all.
+
+The catalogue is append-only, and the instance enforces it. A revision that
+drops a version, category, or tag, that changes the version ordering scheme, or
+that names a different identity than the one it is stored under is refused with
+`400`. This is the same rollback rule the feed uses: a client that already saw a
+version can rely on it staying visible, and cannot be fed a definition that
+quietly rewrites what it published.
+
+The same file format authors the other loader shapes: `kind = "loader"` for a
+loader definition, and `kind = "mapping"` for an acceptance mapping, naming
+`accepting_loader`, `accepted_loader`, `game_id`, an optional `qualification`,
+and the `declared_by` source. A mapping file therefore declares the direction
+explicitly and cannot be read as a reverse acceptance.
+
 A game definition's `loader_authorities` and `loaders_allowed` are enforced when
 a loader definition, release, or acceptance mapping is stored, not merely
 declared: a mapping that names a game whose definition this instance holds is

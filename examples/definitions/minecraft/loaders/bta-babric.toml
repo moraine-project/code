@@ -1,0 +1,8 @@
+kind = "loader"
+display_name = "BTA (Babric)"
+version_ordering = "semver"
+game_id = "minecraft"
+game_version_scheme = "ordered-list"
+game_versions = [
+	"b1.7.3",
+]

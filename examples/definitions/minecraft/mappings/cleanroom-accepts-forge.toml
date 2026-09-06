@@ -1,0 +1,6 @@
+kind = "mapping"
+accepting_loader = "cleanroom"
+accepted_loader = "forge"
+game_id = "minecraft"
+qualification = "most"
+declared_by = "loader-authority"

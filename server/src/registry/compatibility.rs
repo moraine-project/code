@@ -4,7 +4,7 @@ use crate::routes::AppState;
 pub(crate) fn release_matches_game_version(
 	object: &StoredObject,
 	version: &str,
-	scheme: Option<moraine_model::version::OrderingScheme>,
+	catalog: Option<&moraine_model::version::VersionCatalog>,
 ) -> bool {
 	use moraine_model::Canonical;
 	let Ok(moraine_model::release::ReleaseObject::Release(release)) =
@@ -15,26 +15,30 @@ pub(crate) fn release_matches_game_version(
 	release
 		.compatibility
 		.iter()
-		.any(|entry| predicate_satisfied(&entry.game_version_predicate, version, scheme))
+		.any(|entry| predicate_satisfied(&entry.game_version_predicate, version, catalog))
 }
 
-fn predicate_satisfied(
+pub(crate) fn predicate_satisfied(
 	predicate: &moraine_model::compatibility::Predicate,
 	version: &str,
-	scheme: Option<moraine_model::version::OrderingScheme>,
+	catalog: Option<&moraine_model::version::VersionCatalog>,
 ) -> bool {
 	use moraine_model::compatibility::{PredicateResult, Scheme};
 	use moraine_model::version::{OrderingScheme, VersionCatalog};
-	let catalog = match predicate.scheme() {
+	let effective = match predicate.scheme() {
 		Some(Scheme::Any) | Some(Scheme::Exact) | Some(Scheme::Set) => {
 			VersionCatalog::new(OrderingScheme::Opaque, Vec::new())
 		}
-		_ => match scheme {
-			Some(scheme) => VersionCatalog::new(scheme, Vec::new()),
+		_ => match catalog {
+			Some(catalog) => catalog.clone(),
 			None => return false,
 		},
 	};
-	catalog.evaluate(predicate, version) == PredicateResult::Satisfied
+	effective.evaluate(predicate, version) == PredicateResult::Satisfied
+}
+
+fn scheme_catalog(scheme: Option<moraine_model::version::OrderingScheme>) -> Option<moraine_model::version::VersionCatalog> {
+	scheme.map(|scheme| moraine_model::version::VersionCatalog::new(scheme, Vec::new()))
 }
 
 pub(crate) fn release_declares_loader(object: &StoredObject, loader_id: &str) -> bool {
@@ -68,7 +72,7 @@ pub(crate) fn release_matches_loader_version(
 		}
 		match &entry.loader_version_predicate {
 			None => true,
-			Some(predicate) => predicate_satisfied(predicate, version, scheme),
+			Some(predicate) => predicate_satisfied(predicate, version, scheme_catalog(scheme).as_ref()),
 		}
 	})
 }
@@ -86,7 +90,7 @@ pub(crate) fn release_matches_runtime(
 	};
 	release.compatibility.iter().any(|entry| match &entry.runtime_predicate {
 		None => false,
-		Some(predicate) => predicate_satisfied(predicate, version, scheme),
+		Some(predicate) => predicate_satisfied(predicate, version, scheme_catalog(scheme).as_ref()),
 	})
 }
 
@@ -115,24 +119,28 @@ fn loader_ordering_of(loader: &moraine_model::definition::LoaderObject) -> Optio
 	}
 }
 
-pub(crate) async fn game_ordering(
+pub(crate) async fn game_catalog(
 	state: &AppState,
 	object: &crate::db::StoredObject,
-) -> Option<moraine_model::version::OrderingScheme> {
+) -> Option<moraine_model::version::VersionCatalog> {
 	use moraine_model::Canonical;
-	use moraine_model::version::OrderingScheme;
 	let release = moraine_model::release::ReleaseObject::from_canonical_bytes(&object.payload)
 		.ok()
 		.and_then(|release| match release {
 			moraine_model::release::ReleaseObject::Release(release) => Some(release),
 			_ => None,
 		})?;
-	let definition = state.metadata.definition(&release.game_id).await.ok().flatten()?;
+	catalog_for_game(state, &release.game_id).await
+}
+
+pub(crate) async fn catalog_for_game(state: &AppState, game_id: &str) -> Option<moraine_model::version::VersionCatalog> {
+	use moraine_model::Canonical;
+	let definition = state.metadata.definition(game_id).await.ok().flatten()?;
 	let current = definition.current_digest?;
 	let object = state.metadata.object(&current).await.ok().flatten()?;
 	moraine_model::definition::GameDef::from_canonical_bytes(&object.payload)
 		.ok()
-		.and_then(|definition| OrderingScheme::parse(&definition.version_ordering))
+		.and_then(|definition| definition.catalog())
 }
 
 #[cfg(test)]
@@ -142,7 +150,7 @@ mod version_tests {
 	use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
 	use moraine_model::release::ReleasePayload;
 	use moraine_model::signed::sign_payload;
-	use moraine_model::version::OrderingScheme;
+	use moraine_model::version::{OrderingScheme, VersionCatalog};
 
 	use super::*;
 
@@ -198,9 +206,10 @@ mod version_tests {
 	#[test]
 	fn a_range_without_a_known_ordering_is_not_evaluated() {
 		let object = release_object(Predicate::new(Scheme::Semver, vec![">=1.0.0".to_string()]), None);
+		let catalog = VersionCatalog::new(OrderingScheme::Semver, Vec::new());
 
 		assert!(!release_matches_game_version(&object, "1.20.1", None));
-		assert!(release_matches_game_version(&object, "1.20.1", Some(OrderingScheme::Semver)));
+		assert!(release_matches_game_version(&object, "1.20.1", Some(&catalog)));
 	}
 
 	#[test]
@@ -209,6 +218,27 @@ mod version_tests {
 
 		assert!(release_matches_game_version(&object, "1.20.1", None));
 		assert!(!release_matches_game_version(&object, "1.19.0", None));
+	}
+
+	#[test]
+	fn an_ordered_range_uses_the_games_version_table() {
+		let object = release_object(Predicate::new(Scheme::OrderedList, vec!["1.19..1.21".to_string()]), None);
+		let catalog = VersionCatalog::new(
+			OrderingScheme::OrderedList,
+			vec![
+				"1.19".to_string(),
+				"1.20".to_string(),
+				"1.20.4".to_string(),
+				"1.21".to_string(),
+			],
+		);
+
+		assert!(release_matches_game_version(&object, "1.20.4", Some(&catalog)));
+		assert!(!release_matches_game_version(&object, "1.21", Some(&catalog)));
+		assert!(
+			!release_matches_game_version(&object, "1.20.4", None),
+			"a range without the game's table is unknown, never a match"
+		);
 	}
 
 	#[test]

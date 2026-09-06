@@ -45,6 +45,7 @@ pub(crate) fn game_definition_wire(key: &SigningKey, game_id: &str) -> Vec<u8> {
 			pattern: None,
 		},
 		version_ordering: "semver".to_string(),
+		version_catalog: Vec::new(),
 		loaders_allowed: true,
 		loader_authorities: Vec::new(),
 		categories: Vec::new(),
@@ -78,6 +79,7 @@ pub(crate) fn runtime_definition_wire(key: &SigningKey, runtime_id: &str) -> Vec
 		kind: "java".to_string(),
 		display_name: "Java".to_string(),
 		version_ordering: "semver".to_string(),
+		version_catalog: Vec::new(),
 		declared_time: 1_760_000_000,
 	};
 	sign_payload(Kind::RuntimeDef, &definition, &[key]).wire_bytes()
@@ -107,6 +109,8 @@ pub(crate) fn loader_definition_wire(key: &SigningKey, loader_id: &str, game_id:
 			game_id: game_id.to_string(),
 			display_name: "Fabric".to_string(),
 			version_ordering: "semver".to_string(),
+			version_catalog: Vec::new(),
+			game_versions: None,
 			bootstrap: None,
 			accepted_artifacts: None,
 			declared_time: 1_760_000_000,

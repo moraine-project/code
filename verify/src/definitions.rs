@@ -49,6 +49,7 @@ fn build_game_def(version_ordering: &str, categories: Vec<Category>) -> GameDef 
 			pattern: None,
 		},
 		version_ordering: version_ordering.to_string(),
+		version_catalog: Vec::new(),
 		loaders_allowed: true,
 		loader_authorities: vec![sample_id("fabric-authority")],
 		categories,
@@ -66,6 +67,7 @@ fn build_runtime_def() -> RuntimeDef {
 		kind: "java".to_string(),
 		display_name: "Java".to_string(),
 		version_ordering: "semver".to_string(),
+		version_catalog: Vec::new(),
 		declared_time: DECLARED_AT,
 	}
 }
@@ -77,6 +79,8 @@ fn build_loader_def() -> LoaderDef {
 		game_id: sample_id("minecraft"),
 		display_name: "Fabric".to_string(),
 		version_ordering: "semver".to_string(),
+		version_catalog: Vec::new(),
+		game_versions: None,
 		bootstrap: Some(ArtifactRef {
 			digest: vec![0x55; 32],
 			size: 4096,

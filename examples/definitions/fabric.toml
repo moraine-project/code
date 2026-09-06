@@ -1,4 +1,0 @@
-kind = "loader"
-display_name = "Fabric"
-version_ordering = "semver"
-game_id = "gd:sha256:REPLACE_WITH_THE_GAME_ID"

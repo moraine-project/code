@@ -1,0 +1,6 @@
+kind = "loader-release"
+loader_id = "neoforge"
+version = "26.3.0.7-beta"
+game_versions = ["26.3"]
+runtime_id = "java"
+runtime_versions = ["21"]

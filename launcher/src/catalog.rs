@@ -3,8 +3,8 @@ use std::io::Read;
 
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
-use moraine_model::compatibility::Side;
-use moraine_model::definition::GameDef;
+use moraine_model::compatibility::{Predicate, Side};
+use moraine_model::definition::{GameDef, LoaderObject};
 use moraine_model::delegation::{Delegation, KeyDelegation};
 use moraine_model::dependency::{DependencyKind, TargetKind};
 use moraine_model::genesis::GenesisKind;
@@ -13,7 +13,7 @@ use moraine_model::signed::SignedObject;
 use moraine_model::trust::{RootSet, verify_key_delegation};
 use moraine_model::verify::{verify_genesis, verify_object, verify_object_authorized};
 use moraine_model::version::{OrderingScheme, VersionCatalog};
-use moraine_resolver::{Candidate, Context, LockedFeed, Lockfile, Request, resolve};
+use moraine_resolver::{Candidate, Context, LoaderSupport, LockedFeed, Lockfile, Request, resolve};
 use serde_json::Value;
 
 const MAX_PROJECTS: usize = 256;
@@ -109,10 +109,14 @@ pub fn resolve_from_home(
 	request: &Request,
 	previous: Option<&Lockfile>,
 ) -> Result<Lockfile, String> {
-	let game_ordering = game_definition(fetcher, &request.game_id)
+	let game_catalog = game_definition(fetcher, &request.game_id)
 		.ok()
-		.and_then(|game| OrderingScheme::parse(&game.definition.version_ordering))
-		.unwrap_or(OrderingScheme::Semver);
+		.and_then(|game| game.definition.catalog())
+		.unwrap_or_else(|| VersionCatalog::new(OrderingScheme::Semver, Vec::new()));
+	let (loader_catalog, loader_support, loader_game_versions) = match request.loader_id.as_deref() {
+		Some(loader_id) => loader_context(fetcher, loader_id),
+		None => (None, Vec::new(), None),
+	};
 	let mut queue = vec![request.root_project.clone()];
 	let mut visited = BTreeSet::new();
 	let mut candidates = Vec::new();
@@ -179,9 +183,11 @@ pub fn resolve_from_home(
 	}
 
 	let context = Context {
-		game: VersionCatalog::new(game_ordering, Vec::new()),
-		loader: None,
+		game: game_catalog,
+		loader: loader_catalog,
 		runtime: None,
+		loader_support,
+		loader_game_versions,
 	};
 	let mut lockfile = resolve(request, &context, &candidates).map_err(|error| error.to_string())?;
 	lockfile.feeds = feeds;
@@ -225,6 +231,79 @@ pub fn game_definition(fetcher: &dyn HomeFetcher, game_id: &str) -> Result<GameD
 		definition,
 		object_bytes: definition_wire,
 	})
+}
+
+struct LoaderTrust {
+	root: RootSet,
+	catalog: Option<VersionCatalog>,
+	game_versions: Option<Predicate>,
+}
+
+fn loader_context(
+	fetcher: &dyn HomeFetcher,
+	loader_id: &str,
+) -> (Option<VersionCatalog>, Vec<LoaderSupport>, Option<Predicate>) {
+	let Ok(trust) = loader_trust(fetcher, loader_id) else {
+		return (None, Vec::new(), None);
+	};
+	let support = loader_support(fetcher, loader_id, &trust.root).unwrap_or_default();
+	(trust.catalog, support, trust.game_versions)
+}
+
+fn loader_trust(fetcher: &dyn HomeFetcher, loader_id: &str) -> Result<LoaderTrust, String> {
+	let view = fetcher.get_json(&format!("/v1/loaders/{loader_id}"))?;
+	let genesis_id = view
+		.get("genesis")
+		.and_then(Value::as_str)
+		.ok_or_else(|| format!("the home did not describe loader {loader_id}"))?;
+	let current_id = view
+		.get("current")
+		.and_then(Value::as_str)
+		.ok_or_else(|| format!("the home has no definition for loader {loader_id}"))?;
+	let genesis_wire = fetch_object(fetcher, genesis_id)?;
+	let (root, object) = verify_genesis(&genesis_wire).map_err(|error| format!("{genesis_id} did not verify: {error}"))?;
+	if root.genesis_kind() != GenesisKind::Loader || object.id != genesis_id {
+		return Err(format!("{genesis_id} is not that loader's genesis"));
+	}
+	let definition_wire = fetch_object(fetcher, current_id)?;
+	let verified = verify_object(ObjectKind::LoaderDef, &definition_wire, &root)
+		.map_err(|error| format!("{current_id} did not verify: {error}"))?;
+	let (catalog, game_versions) = match LoaderObject::from_canonical_bytes(&verified.payload_bytes) {
+		Ok(LoaderObject::Definition(definition)) => (definition.catalog(), definition.game_versions),
+		_ => (None, None),
+	};
+	Ok(LoaderTrust {
+		root,
+		catalog,
+		game_versions,
+	})
+}
+
+fn loader_support(fetcher: &dyn HomeFetcher, loader_id: &str, root: &RootSet) -> Result<Vec<LoaderSupport>, String> {
+	let list = fetcher.get_json(&format!("/v1/loaders/{loader_id}/releases"))?;
+	let Some(items) = list.as_array() else {
+		return Ok(Vec::new());
+	};
+	let mut support = Vec::new();
+	for item in items {
+		let Some(release_id) = item.get("release").and_then(Value::as_str) else {
+			continue;
+		};
+		let Ok(wire) = fetch_object(fetcher, release_id) else {
+			continue;
+		};
+		let Ok(verified) = verify_object(ObjectKind::LoaderDef, &wire, root) else {
+			continue;
+		};
+		let Ok(LoaderObject::Release(release)) = LoaderObject::from_canonical_bytes(&verified.payload_bytes) else {
+			continue;
+		};
+		support.push(LoaderSupport {
+			version: release.version_id,
+			game_version_predicate: release.game_version_predicate,
+		});
+	}
+	Ok(support)
 }
 
 struct ProjectTrust {
@@ -527,6 +606,7 @@ mod tests {
 				pattern: None,
 			},
 			version_ordering: "semver".to_string(),
+			version_catalog: Vec::new(),
 			loaders_allowed: true,
 			loader_authorities: Vec::new(),
 			categories: vec![Category {

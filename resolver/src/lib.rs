@@ -20,10 +20,18 @@ pub struct Request {
 }
 
 #[derive(Debug, Clone)]
+pub struct LoaderSupport {
+	pub version: String,
+	pub game_version_predicate: Predicate,
+}
+
+#[derive(Debug, Clone)]
 pub struct Context {
 	pub game: VersionCatalog,
 	pub loader: Option<VersionCatalog>,
 	pub runtime: Option<VersionCatalog>,
+	pub loader_support: Vec<LoaderSupport>,
+	pub loader_game_versions: Option<Predicate>,
 }
 
 #[derive(Debug, Clone)]
@@ -99,6 +107,11 @@ pub enum ResolveError {
 	MissingArtifact {
 		project_id: String,
 	},
+	LoaderIncompatible {
+		loader_id: String,
+		loader_version: String,
+		game_version: String,
+	},
 	TooDeep,
 }
 
@@ -112,6 +125,14 @@ impl std::fmt::Display for ResolveError {
 				write!(f, "`{project_id}` targets game `{game_id}`, not this one")
 			}
 			Self::MissingArtifact { project_id } => write!(f, "`{project_id}` has no primary artifact"),
+			Self::LoaderIncompatible {
+				loader_id,
+				loader_version,
+				game_version,
+			} => write!(
+				f,
+				"loader `{loader_id}` version `{loader_version}` does not support game version `{game_version}`"
+			),
 			Self::TooDeep => f.write_str("dependency graph is too deep to resolve"),
 		}
 	}
@@ -122,6 +143,7 @@ impl std::error::Error for ResolveError {}
 const MAX_DEPTH: usize = 64;
 
 pub fn resolve<'a>(request: &Request, context: &Context, candidates: &'a [Candidate]) -> Result<Lockfile, ResolveError> {
+	check_loader_support(request, context)?;
 	let mut by_project: BTreeMap<&'a str, Vec<&'a Candidate>> = BTreeMap::new();
 	for candidate in candidates {
 		by_project.entry(candidate.project_id.as_str()).or_default().push(candidate);
@@ -182,6 +204,42 @@ pub fn resolve<'a>(request: &Request, context: &Context, candidates: &'a [Candid
 		releases,
 		feeds: Vec::new(),
 	})
+}
+
+fn check_loader_support(request: &Request, context: &Context) -> Result<(), ResolveError> {
+	let Some(loader_id) = request.loader_id.as_deref() else {
+		return Ok(());
+	};
+	if let Some(loader_version) = request.loader_version.as_deref() {
+		let for_version: Vec<&LoaderSupport> = context
+			.loader_support
+			.iter()
+			.filter(|support| support.version == loader_version)
+			.collect();
+		if !for_version.is_empty() {
+			let supported = for_version.iter().any(|support| {
+				satisfies_catalog(&support.game_version_predicate, &request.game_version, Some(&context.game))
+			});
+			if supported {
+				return Ok(());
+			}
+			return Err(ResolveError::LoaderIncompatible {
+				loader_id: loader_id.to_string(),
+				loader_version: loader_version.to_string(),
+				game_version: request.game_version.clone(),
+			});
+		}
+	}
+	if let Some(family) = &context.loader_game_versions
+		&& !satisfies_catalog(family, &request.game_version, Some(&context.game))
+	{
+		return Err(ResolveError::LoaderIncompatible {
+			loader_id: loader_id.to_string(),
+			loader_version: request.loader_version.clone().unwrap_or_default(),
+			game_version: request.game_version.clone(),
+		});
+	}
+	Ok(())
 }
 
 fn solve<'a>(
@@ -475,7 +533,89 @@ mod tests {
 			game: VersionCatalog::new(OrderingScheme::Semver, Vec::new()),
 			loader: None,
 			runtime: None,
+			loader_support: Vec::new(),
+			loader_game_versions: None,
 		}
+	}
+
+	fn loader_context(game_version_predicate: Predicate) -> Context {
+		Context {
+			game: VersionCatalog::new(OrderingScheme::Semver, Vec::new()),
+			loader: None,
+			runtime: None,
+			loader_support: vec![LoaderSupport {
+				version: "0.15.0".to_string(),
+				game_version_predicate,
+			}],
+			loader_game_versions: None,
+		}
+	}
+
+	#[test]
+	fn refuses_a_loader_version_that_does_not_support_the_game_version() {
+		let mut request = request();
+		request.loader_id = Some("gd:sha256:loader".to_string());
+		request.loader_version = Some("0.15.0".to_string());
+		let context = loader_context(Predicate::new(Scheme::Exact, vec!["1.19.0".to_string()]));
+
+		let error = resolve(&request, &context, &[]).expect_err("incompatible loader");
+		assert!(matches!(error, ResolveError::LoaderIncompatible { .. }), "{error}");
+	}
+
+	#[test]
+	fn accepts_a_loader_version_that_supports_the_game_version() {
+		let mut request = request();
+		request.loader_id = Some("gd:sha256:loader".to_string());
+		request.loader_version = Some("0.15.0".to_string());
+		let context = loader_context(Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]));
+
+		let error = resolve(&request, &context, &[]).expect_err("no candidates");
+		assert!(matches!(error, ResolveError::NoCandidate { .. }), "{error}");
+	}
+
+	#[test]
+	fn an_unknown_loader_version_is_not_treated_as_incompatible() {
+		let mut request = request();
+		request.loader_id = Some("gd:sha256:loader".to_string());
+		request.loader_version = Some("9.9.9".to_string());
+		let context = loader_context(Predicate::new(Scheme::Exact, vec!["1.19.0".to_string()]));
+
+		let error = resolve(&request, &context, &[]).expect_err("no candidates");
+		assert!(matches!(error, ResolveError::NoCandidate { .. }), "{error}");
+	}
+
+	#[test]
+	fn refuses_a_loader_family_that_does_not_support_the_game_version() {
+		let mut request = request();
+		request.loader_id = Some("gd:sha256:loader".to_string());
+		let mut context = context();
+		context.loader_game_versions = Some(Predicate::new(Scheme::Exact, vec!["1.19.0".to_string()]));
+
+		let error = resolve(&request, &context, &[]).expect_err("incompatible loader family");
+		assert!(matches!(error, ResolveError::LoaderIncompatible { .. }), "{error}");
+	}
+
+	#[test]
+	fn accepts_a_loader_family_that_supports_the_game_version() {
+		let mut request = request();
+		request.loader_id = Some("gd:sha256:loader".to_string());
+		let mut context = context();
+		context.loader_game_versions = Some(Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]));
+
+		let error = resolve(&request, &context, &[]).expect_err("no candidates");
+		assert!(matches!(error, ResolveError::NoCandidate { .. }), "{error}");
+	}
+
+	#[test]
+	fn a_known_loader_version_outranks_the_family_declaration() {
+		let mut request = request();
+		request.loader_id = Some("gd:sha256:loader".to_string());
+		request.loader_version = Some("0.15.0".to_string());
+		let mut context = loader_context(Predicate::new(Scheme::Exact, vec!["1.19.0".to_string()]));
+		context.loader_game_versions = Some(Predicate::new(Scheme::Exact, vec!["1.20.1".to_string()]));
+
+		let error = resolve(&request, &context, &[]).expect_err("the release does not support 1.20.1");
+		assert!(matches!(error, ResolveError::LoaderIncompatible { .. }), "{error}");
 	}
 
 	#[test]

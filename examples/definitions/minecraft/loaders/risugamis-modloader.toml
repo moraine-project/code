@@ -1,0 +1,8 @@
+kind = "loader"
+display_name = "Risugami's ModLoader"
+version_ordering = "opaque"
+game_id = "minecraft"
+game_version_scheme = "ordered-list"
+game_versions = [
+	"1.0..1.7.2",
+]

@@ -1,0 +1,5 @@
+kind = "loader"
+display_name = "Java Agent"
+version_ordering = "semver"
+game_id = "minecraft"
+game_version_scheme = "any"

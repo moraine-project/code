@@ -74,7 +74,9 @@ enum Command {
 		#[arg(long)]
 		key: PathBuf,
 		#[arg(long)]
-		file: PathBuf,
+		file: Option<PathBuf>,
+		#[arg(long)]
+		dir: Option<PathBuf>,
 		#[arg(long, default_value = "definitions")]
 		out: PathBuf,
 	},
@@ -88,6 +90,12 @@ enum Command {
 		version_ordering: String,
 		#[arg(long, default_value_t = true)]
 		loaders_allowed: bool,
+		#[arg(long = "version-list", value_name = "VERSION")]
+		version_list: Vec<String>,
+		#[arg(long)]
+		metadata_extractor: Option<String>,
+		#[arg(long)]
+		install_adapter: Option<String>,
 		#[arg(long, default_value = "definitions")]
 		out: PathBuf,
 	},
@@ -364,14 +372,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			locale,
 			file,
 		} => commands::changelog(&key, &home, &project, release, &locale, &file).await,
-		Command::Define { key, file, out } => definitions::from_file(&key, &file, &out),
+		Command::Define { key, file, dir, out } => match (file, dir) {
+			(Some(file), None) => definitions::from_file(&key, &file, &out),
+			(None, Some(dir)) => definitions::from_directory(&key, &dir, &out),
+			_ => Err("pass exactly one of --file or --dir".to_string()),
+		},
 		Command::DefineGame {
 			key,
 			name,
 			version_ordering,
 			loaders_allowed,
+			version_list,
+			metadata_extractor,
+			install_adapter,
 			out,
-		} => definitions::game(&key, &name, &version_ordering, loaders_allowed, &out),
+		} => definitions::game(
+			&key,
+			&name,
+			&version_ordering,
+			&version_list,
+			loaders_allowed,
+			metadata_extractor.as_deref(),
+			install_adapter.as_deref(),
+			&out,
+		),
 		Command::DefineLoader {
 			key,
 			game,

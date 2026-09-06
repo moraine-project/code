@@ -244,6 +244,54 @@ async fn import_definition(
 	}
 }
 
+fn loader_names_identity(payload: &[u8], id: &str) -> Result<(), String> {
+	let Ok(loader) = LoaderObject::from_canonical_bytes(payload) else {
+		return Ok(());
+	};
+	let named = match &loader {
+		LoaderObject::Definition(definition) => &definition.loader_id,
+		LoaderObject::Release(release) => &release.loader_id,
+		LoaderObject::Acceptance(acceptance) => &acceptance.accepting_loader_id,
+	};
+	if named != id {
+		return Err("the definition names a different loader than the identity it is stored under".to_string());
+	}
+	Ok(())
+}
+
+fn game_revision_is_forward_only(id: &str, previous: Option<&GameDef>, next: &GameDef) -> Result<(), String> {
+	if next.game_id != id {
+		return Err("the definition names a different game than the identity it is stored under".to_string());
+	}
+	let Some(previous) = previous else {
+		return Ok(());
+	};
+	if previous.version_ordering != next.version_ordering {
+		return Err("the version ordering scheme is fixed by the identity and cannot change".to_string());
+	}
+	for version in &previous.version_catalog {
+		if !next.version_catalog.contains(version) {
+			return Err(format!(
+				"version `{version}` was removed; a definition catalogue is append-only"
+			));
+		}
+	}
+	for category in &previous.categories {
+		if !next.categories.iter().any(|candidate| candidate.id == category.id) {
+			return Err(format!(
+				"category `{}` was removed; a definition catalogue is append-only",
+				category.id
+			));
+		}
+	}
+	for tag in &previous.tags {
+		if !next.tags.iter().any(|candidate| candidate.id == tag.id) {
+			return Err(format!("tag `{}` was removed; a definition catalogue is append-only", tag.id));
+		}
+	}
+	Ok(())
+}
+
 fn loader_game_id(payload: &[u8]) -> Option<String> {
 	match LoaderObject::from_canonical_bytes(payload).ok()? {
 		LoaderObject::Definition(definition) => Some(definition.game_id),
@@ -395,10 +443,40 @@ async fn store_definition_version(
 	let (root, _) =
 		verify::verify_genesis(&genesis.wire).map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
 	let object = verify::verify_object(kind, body, &root).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+	if expected == GenesisKind::Game
+		&& let Ok(next) = GameDef::from_canonical_bytes(&object.payload_bytes)
+	{
+		let previous = match definition.current_digest.as_deref() {
+			Some(digest) => state
+				.metadata
+				.object(digest)
+				.await
+				.map_err(store_failure)?
+				.and_then(|object| GameDef::from_canonical_bytes(&object.payload).ok()),
+			None => None,
+		};
+		if let Err(message) = game_revision_is_forward_only(id, previous.as_ref(), &next) {
+			return Err((StatusCode::BAD_REQUEST, message));
+		}
+	}
 	if expected == GenesisKind::Loader
 		&& let Some(game_id) = loader_game_id(&object.payload_bytes)
 	{
 		ensure_game_permits_loader(state, id, &game_id).await?;
+	}
+	if expected == GenesisKind::Loader
+		&& let Err(message) = loader_names_identity(&object.payload_bytes, id)
+	{
+		return Err((StatusCode::BAD_REQUEST, message));
+	}
+	if expected == GenesisKind::Runtime
+		&& let Ok(definition) = RuntimeDef::from_canonical_bytes(&object.payload_bytes)
+		&& definition.runtime_id != id
+	{
+		return Err((
+			StatusCode::BAD_REQUEST,
+			"the definition names a different runtime than the identity it is stored under".to_string(),
+		));
 	}
 	state.metadata.put_object(&stored(&object)).await.map_err(store_failure)?;
 	if expected == GenesisKind::Loader

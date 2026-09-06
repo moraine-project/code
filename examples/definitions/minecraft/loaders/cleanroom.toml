@@ -1,0 +1,7 @@
+kind = "loader"
+display_name = "Cleanroom"
+version_ordering = "semver"
+game_id = "minecraft"
+game_versions = [
+	"1.12.2",
+]

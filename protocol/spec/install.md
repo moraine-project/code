@@ -47,3 +47,23 @@ launcher's digest check proves byte identity, not authorship.
 
 Adding a game means adding an adapter and a game definition. It must not change
 the resolver, the verifier, the signed schema, or the server.
+
+## Shipped adapters
+
+An adapter identifier resolves against the adapters a build implements. A
+consumer that is asked to install for an identifier it does not implement
+refuses rather than guessing, so two games with the same-looking layout are
+still told apart by their identifier. Two adapters ship today:
+
+- `minecraft/default` places release files under `mods/` and a modpack's
+  overrides at their declared relative paths.
+- `sims4/default` places release files and overrides under `Mods/`, the folder
+  The Sims 4 loads from, because the game has no loader layer and its overrides
+  are additional packages rather than configuration files.
+
+The Sims 4 adapter exists as much to test the boundary as to serve the game: it
+shares the containment rules and the plan shape but differs in the root it may
+write under, and adding it changed neither the core nor the signed formats. A
+game definition names its adapter; the launcher reads that name, so a build
+that lacks the adapter reports that plainly instead of placing files somewhere
+plausible-looking.

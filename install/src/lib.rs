@@ -46,21 +46,27 @@ impl std::fmt::Display for InstallError {
 impl std::error::Error for InstallError {}
 
 pub const MINECRAFT_ADAPTER: &str = "minecraft/default";
+pub const SIMS4_ADAPTER: &str = "sims4/default";
 
-pub const KNOWN_ADAPTERS: &[&str] = &[MINECRAFT_ADAPTER];
+pub const KNOWN_ADAPTERS: &[&str] = &[MINECRAFT_ADAPTER, SIMS4_ADAPTER];
 
 pub fn is_known_adapter(adapter: &str) -> bool {
 	KNOWN_ADAPTERS.contains(&adapter)
 }
 
 pub fn plan(adapter: &str, mods: &[ModFile], overrides: &[OverrideFile]) -> Result<InstallPlan, InstallError> {
-	match adapter {
-		MINECRAFT_ADAPTER => plan_minecraft(mods, overrides),
-		other => Err(InstallError::UnknownAdapter(other.to_string())),
-	}
+	let placements = match adapter {
+		MINECRAFT_ADAPTER => plan_minecraft(mods, overrides)?,
+		SIMS4_ADAPTER => plan_sims4(mods, overrides)?,
+		other => return Err(InstallError::UnknownAdapter(other.to_string())),
+	};
+	Ok(InstallPlan {
+		adapter: adapter.to_string(),
+		placements,
+	})
 }
 
-fn plan_minecraft(mods: &[ModFile], overrides: &[OverrideFile]) -> Result<InstallPlan, InstallError> {
+fn plan_minecraft(mods: &[ModFile], overrides: &[OverrideFile]) -> Result<Vec<Placement>, InstallError> {
 	let mut placements = Vec::with_capacity(mods.len() + overrides.len());
 	for file in mods {
 		let name = safe_filename(&file.filename).ok_or_else(|| InstallError::UnsafeFilename(file.filename.clone()))?;
@@ -78,10 +84,28 @@ fn plan_minecraft(mods: &[ModFile], overrides: &[OverrideFile]) -> Result<Instal
 			relative_path: PathBuf::from(&file.target_path),
 		});
 	}
-	Ok(InstallPlan {
-		adapter: MINECRAFT_ADAPTER.to_string(),
-		placements,
-	})
+	Ok(placements)
+}
+
+fn plan_sims4(mods: &[ModFile], overrides: &[OverrideFile]) -> Result<Vec<Placement>, InstallError> {
+	let mut placements = Vec::with_capacity(mods.len() + overrides.len());
+	for file in mods {
+		let name = safe_filename(&file.filename).ok_or_else(|| InstallError::UnsafeFilename(file.filename.clone()))?;
+		placements.push(Placement {
+			digest: file.digest,
+			relative_path: PathBuf::from("Mods").join(name),
+		});
+	}
+	for file in overrides {
+		if !valid_override_path(&file.target_path) {
+			return Err(InstallError::UnsafePath(file.target_path.clone()));
+		}
+		placements.push(Placement {
+			digest: file.digest,
+			relative_path: PathBuf::from("Mods").join(&file.target_path),
+		});
+	}
+	Ok(placements)
 }
 
 pub fn safe_join(root: &Path, relative: &Path) -> Option<PathBuf> {
@@ -146,6 +170,46 @@ mod tests {
 		}];
 		assert!(matches!(
 			plan(MINECRAFT_ADAPTER, &[], &unsafe_override),
+			Err(InstallError::UnsafePath(_))
+		));
+	}
+
+	#[test]
+	fn places_packages_under_the_mods_folder_for_the_sims() {
+		let mods = vec![ModFile {
+			digest: [3u8; 32],
+			filename: "example.package".to_string(),
+		}];
+		let overrides = vec![OverrideFile {
+			digest: [4u8; 32],
+			target_path: "overrides/example.package".to_string(),
+		}];
+		let plan = plan(SIMS4_ADAPTER, &mods, &overrides).expect("plan");
+		assert_eq!(plan.adapter, SIMS4_ADAPTER);
+		assert_eq!(plan.placements[0].relative_path, PathBuf::from("Mods/example.package"));
+		assert_eq!(
+			plan.placements[1].relative_path,
+			PathBuf::from("Mods/overrides/example.package")
+		);
+	}
+
+	#[test]
+	fn the_sims_adapter_still_refuses_to_escape_its_root() {
+		let unsafe_mod = vec![ModFile {
+			digest: [3u8; 32],
+			filename: "../../Documents/evil.package".to_string(),
+		}];
+		assert!(matches!(
+			plan(SIMS4_ADAPTER, &unsafe_mod, &[]),
+			Err(InstallError::UnsafeFilename(_))
+		));
+
+		let unsafe_override = vec![OverrideFile {
+			digest: [4u8; 32],
+			target_path: "../../escape.package".to_string(),
+		}];
+		assert!(matches!(
+			plan(SIMS4_ADAPTER, &[], &unsafe_override),
 			Err(InstallError::UnsafePath(_))
 		));
 	}

@@ -1,0 +1,6 @@
+kind = "loader-release"
+loader_id = "fabric"
+version = "0.16.0"
+game_versions = ["1.21.1"]
+runtime_id = "java"
+runtime_versions = ["21"]

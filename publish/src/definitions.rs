@@ -1,102 +1,35 @@
-use std::path::Path;
+mod signing;
 
-use moraine_crypto::{ObjectKind, SigningKey};
-use moraine_model::Canonical;
-use moraine_model::compatibility::{Predicate, Scheme};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use moraine_crypto::ObjectKind;
+use moraine_model::compatibility::Predicate;
 use moraine_model::definition::{
 	Category as GameCategory, DeclaredBy, GameDef, LoaderAcceptance, LoaderDef, LoaderObject, LoaderRelease, Qualification,
 	RuntimeDef, Tag as GameTag, VersionSyntax,
 };
-use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
+use moraine_model::genesis::GenesisKind;
 use moraine_model::signed::sign_payload;
 use serde::Deserialize;
+use signing::{emit, now, write_object};
+pub use signing::{game, loader, loader_acceptance, loader_release, runtime};
 
 use crate::keyfile;
 
-pub fn game(
-	key_path: &Path,
-	display_name: &str,
-	version_ordering: &str,
-	loaders_allowed: bool,
-	out: &Path,
-) -> Result<(), String> {
-	let key = keyfile::load(key_path)?;
-	emit(
-		&key,
-		GenesisKind::Game,
-		&["delegation", "game-def"],
-		ObjectKind::GameDef,
-		|game_id| GameDef {
-			protocol: 1,
-			game_id: game_id.to_string(),
-			display_name: display_name.to_string(),
-			version_syntax: VersionSyntax {
-				kind: version_ordering.to_string(),
-				pattern: None,
-			},
-			version_ordering: version_ordering.to_string(),
-			loaders_allowed,
-			loader_authorities: Vec::new(),
-			categories: Vec::new(),
-			tags: Vec::new(),
-			metadata_extractor: None,
-			install_adapter: None,
-			declared_time: now(),
-		},
-		out,
-		"game_id",
-	)
-}
-
-pub fn loader(key_path: &Path, game_id: &str, display_name: &str, version_ordering: &str, out: &Path) -> Result<(), String> {
-	let key = keyfile::load(key_path)?;
-	emit(
-		&key,
-		GenesisKind::Loader,
-		&["delegation", "loader-def"],
-		ObjectKind::LoaderDef,
-		|loader_id| {
-			LoaderObject::Definition(LoaderDef {
-				protocol: 1,
-				loader_id: loader_id.to_string(),
-				game_id: game_id.to_string(),
-				display_name: display_name.to_string(),
-				version_ordering: version_ordering.to_string(),
-				bootstrap: None,
-				accepted_artifacts: None,
-				declared_time: now(),
-			})
-		},
-		out,
-		"loader_id",
-	)
-}
-
-pub fn runtime(key_path: &Path, kind: &str, display_name: &str, version_ordering: &str, out: &Path) -> Result<(), String> {
-	let key = keyfile::load(key_path)?;
-	emit(
-		&key,
-		GenesisKind::Runtime,
-		&["delegation", "runtime-def"],
-		ObjectKind::RuntimeDef,
-		|runtime_id| RuntimeDef {
-			protocol: 1,
-			runtime_id: runtime_id.to_string(),
-			kind: kind.to_string(),
-			display_name: display_name.to_string(),
-			version_ordering: version_ordering.to_string(),
-			declared_time: now(),
-		},
-		out,
-		"runtime_id",
-	)
+fn trimmed(value: Option<&str>) -> Option<String> {
+	value.map(str::trim).filter(|text| !text.is_empty()).map(str::to_string)
 }
 
 #[derive(Deserialize)]
 struct DefinitionFile {
 	kind: String,
-	display_name: String,
-	version_ordering: String,
+	#[serde(default)]
+	name: Option<String>,
+	#[serde(default)]
+	display_name: Option<String>,
+	#[serde(default)]
+	version_ordering: Option<String>,
 	#[serde(default)]
 	loaders_allowed: Option<bool>,
 	#[serde(default)]
@@ -109,6 +42,36 @@ struct DefinitionFile {
 	game_id: Option<String>,
 	#[serde(default)]
 	runtime_kind: Option<String>,
+	#[serde(default)]
+	metadata_extractor: Option<String>,
+	#[serde(default)]
+	install_adapter: Option<String>,
+	#[serde(default)]
+	versions: Vec<String>,
+	#[serde(default)]
+	game_versions: Vec<String>,
+	#[serde(default)]
+	game_version_scheme: Option<String>,
+	#[serde(default)]
+	runtime_versions: Vec<String>,
+	#[serde(default)]
+	loader_id: Option<String>,
+	#[serde(default)]
+	version: Option<String>,
+	#[serde(default)]
+	runtime_id: Option<String>,
+	#[serde(default)]
+	accepting_loader: Option<String>,
+	#[serde(default)]
+	accepted_loader: Option<String>,
+	#[serde(default)]
+	accepted_versions: Vec<String>,
+	#[serde(default)]
+	qualification: Option<String>,
+	#[serde(default)]
+	declared_by: Option<String>,
+	#[serde(default)]
+	declared_by_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -128,60 +91,140 @@ struct TagFile {
 pub fn from_file(key_path: &Path, file: &Path, out: &Path) -> Result<(), String> {
 	let text = std::fs::read_to_string(file).map_err(|error| format!("{}: {error}", file.display()))?;
 	let source: DefinitionFile = toml::from_str(&text).map_err(|error| format!("{}: {error}", file.display()))?;
+	let stem = file
+		.file_stem()
+		.and_then(|stem| stem.to_str())
+		.unwrap_or_default()
+		.to_string();
+	let mut names = BTreeMap::new();
+	compile(key_path, &source, &stem, out, &mut names).map(|_| ())
+}
+
+pub fn from_directory(key_path: &Path, directory: &Path, out: &Path) -> Result<(), String> {
+	let mut entries = Vec::new();
+	collect_definition_files(directory, &mut entries)?;
+	entries.sort_by_key(|(_, source)| compile_order(&source.kind));
+	let mut names = BTreeMap::new();
+	for (path, source) in &entries {
+		let stem = path
+			.file_stem()
+			.and_then(|stem| stem.to_str())
+			.unwrap_or_default()
+			.to_string();
+		compile(key_path, source, &stem, out, &mut names)?;
+	}
+	Ok(())
+}
+
+fn compile_order(kind: &str) -> u8 {
+	match kind {
+		"game" => 0,
+		"runtime" => 1,
+		"loader" => 2,
+		"loader-release" | "release" => 3,
+		"mapping" => 4,
+		_ => 5,
+	}
+}
+
+fn collect_definition_files(directory: &Path, out: &mut Vec<(PathBuf, DefinitionFile)>) -> Result<(), String> {
+	let entries = std::fs::read_dir(directory).map_err(|error| format!("{}: {error}", directory.display()))?;
+	let mut subdirectories = Vec::new();
+	for entry in entries {
+		let entry = entry.map_err(|error| error.to_string())?;
+		let path = entry.path();
+		if path.is_dir() {
+			subdirectories.push(path);
+			continue;
+		}
+		if !path.extension().is_some_and(|extension| extension == "toml") {
+			continue;
+		}
+		let text = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+		let source: DefinitionFile = toml::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
+		out.push((path, source));
+	}
+	for subdirectory in subdirectories {
+		collect_definition_files(&subdirectory, out)?;
+	}
+	out.sort_by(|left, right| left.0.cmp(&right.0));
+	Ok(())
+}
+
+fn resolve_ref(names: &BTreeMap<String, String>, value: &str) -> Result<String, String> {
+	if value.starts_with("gd:sha256:") {
+		return Ok(value.to_string());
+	}
+	names
+		.get(value)
+		.cloned()
+		.ok_or_else(|| format!("`{value}` is not a definition name defined earlier in this directory"))
+}
+
+fn compile(
+	key_path: &Path,
+	source: &DefinitionFile,
+	default_name: &str,
+	out: &Path,
+	names: &mut BTreeMap<String, String>,
+) -> Result<String, String> {
 	let key = keyfile::load(key_path)?;
-	let display_name = source.display_name.trim().to_string();
-	let ordering = source.version_ordering.trim().to_string();
-	if display_name.is_empty() || ordering.is_empty() {
+	let display_name = source.display_name.as_deref().unwrap_or_default().trim().to_string();
+	let ordering = source.version_ordering.as_deref().unwrap_or_default().trim().to_string();
+	if matches!(source.kind.as_str(), "game" | "loader" | "runtime") && (display_name.is_empty() || ordering.is_empty()) {
 		return Err("display_name and version_ordering are required".to_string());
 	}
-	match source.kind.as_str() {
-		"game" => emit(
-			&key,
-			GenesisKind::Game,
-			&["delegation", "game-def"],
-			ObjectKind::GameDef,
-			|game_id| GameDef {
-				protocol: 1,
-				game_id: game_id.to_string(),
-				display_name: display_name.clone(),
-				version_syntax: VersionSyntax {
-					kind: ordering.clone(),
-					pattern: None,
+	let definition_id = match source.kind.as_str() {
+		"game" => {
+			let authorities = source
+				.loader_authorities
+				.iter()
+				.map(|authority| resolve_ref(names, authority))
+				.collect::<Result<Vec<_>, _>>()?;
+			emit(
+				&key,
+				GenesisKind::Game,
+				&["delegation", "game-def"],
+				ObjectKind::GameDef,
+				|game_id| GameDef {
+					protocol: 1,
+					game_id: game_id.to_string(),
+					display_name: display_name.clone(),
+					version_syntax: VersionSyntax {
+						kind: ordering.clone(),
+						pattern: None,
+					},
+					version_ordering: ordering.clone(),
+					version_catalog: source.versions.clone(),
+					loaders_allowed: source.loaders_allowed.unwrap_or(true),
+					loader_authorities: authorities,
+					categories: source
+						.categories
+						.iter()
+						.map(|category| GameCategory {
+							id: category.id.clone(),
+							label: category.label.clone(),
+							parent: category.parent.clone(),
+						})
+						.collect(),
+					tags: source
+						.tags
+						.iter()
+						.map(|tag| GameTag {
+							id: tag.id.clone(),
+							label: tag.label.clone(),
+						})
+						.collect(),
+					metadata_extractor: trimmed(source.metadata_extractor.as_deref()),
+					install_adapter: trimmed(source.install_adapter.as_deref()),
+					declared_time: now(),
 				},
-				version_ordering: ordering.clone(),
-				loaders_allowed: source.loaders_allowed.unwrap_or(true),
-				loader_authorities: source.loader_authorities.clone(),
-				categories: source
-					.categories
-					.iter()
-					.map(|category| GameCategory {
-						id: category.id.clone(),
-						label: category.label.clone(),
-						parent: category.parent.clone(),
-					})
-					.collect(),
-				tags: source
-					.tags
-					.iter()
-					.map(|tag| GameTag {
-						id: tag.id.clone(),
-						label: tag.label.clone(),
-					})
-					.collect(),
-				metadata_extractor: None,
-				install_adapter: None,
-				declared_time: now(),
-			},
-			out,
-			"game_id",
-		),
+				out,
+				"game_id",
+			)?
+		}
 		"loader" => {
-			let game_id = source
-				.game_id
-				.as_deref()
-				.map(str::trim)
-				.filter(|value| !value.is_empty())
-				.ok_or_else(|| "a loader definition needs game_id".to_string())?;
+			let game_id = resolve_ref(names, required_field(source.game_id.as_deref(), "game_id")?)?;
 			emit(
 				&key,
 				GenesisKind::Loader,
@@ -191,9 +234,11 @@ pub fn from_file(key_path: &Path, file: &Path, out: &Path) -> Result<(), String>
 					LoaderObject::Definition(LoaderDef {
 						protocol: 1,
 						loader_id: loader_id.to_string(),
-						game_id: game_id.to_string(),
+						game_id: game_id.clone(),
 						display_name: display_name.clone(),
 						version_ordering: ordering.clone(),
+						version_catalog: source.versions.clone(),
+						game_versions: predicate_or_none(&source.game_versions, source.game_version_scheme.as_deref()),
 						bootstrap: None,
 						accepted_artifacts: None,
 						declared_time: now(),
@@ -201,7 +246,7 @@ pub fn from_file(key_path: &Path, file: &Path, out: &Path) -> Result<(), String>
 				},
 				out,
 				"loader_id",
-			)
+			)?
 		}
 		"runtime" => {
 			let runtime_kind = source.runtime_kind.as_deref().unwrap_or("java");
@@ -216,326 +261,115 @@ pub fn from_file(key_path: &Path, file: &Path, out: &Path) -> Result<(), String>
 					kind: runtime_kind.to_string(),
 					display_name: display_name.clone(),
 					version_ordering: ordering.clone(),
+					version_catalog: source.versions.clone(),
 					declared_time: now(),
 				},
 				out,
 				"runtime_id",
-			)
+			)?
 		}
-		other => Err(format!("unknown `kind = \"{other}\"`; expected game, loader, or runtime")),
+		"loader-release" | "release" => {
+			let loader_id = resolve_ref(names, required_field(source.loader_id.as_deref(), "loader_id")?)?;
+			let version = required_field(source.version.as_deref(), "version")?;
+			if source.game_versions.is_empty() {
+				return Err("a loader release needs at least one game_version".to_string());
+			}
+			let runtime_id = match source.runtime_id.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+				Some(value) => Some(resolve_ref(names, value)?),
+				None => None,
+			};
+			let release = LoaderObject::Release(LoaderRelease {
+				protocol: 1,
+				loader_id,
+				version_id: version.to_string(),
+				game_version_predicate: Predicate {
+					scheme: source
+						.game_version_scheme
+						.as_deref()
+						.map(str::trim)
+						.filter(|text| !text.is_empty())
+						.unwrap_or("exact")
+						.to_string(),
+					values: source.game_versions.clone(),
+				},
+				runtime_id,
+				runtime_predicate: predicate_or_none(&source.runtime_versions, None),
+				bootstrap: None,
+				declared_time: now(),
+			});
+			let signed = sign_payload(ObjectKind::LoaderDef, &release, &[&key]);
+			let id = signed.id(ObjectKind::LoaderDef);
+			write_object(out, &id, &signed.wire_bytes())?;
+			println!("loader_release: {id}");
+			String::new()
+		}
+		"mapping" => {
+			let accepting_loader =
+				resolve_ref(names, required_field(source.accepting_loader.as_deref(), "accepting_loader")?)?;
+			let accepted_loader = resolve_ref(names, required_field(source.accepted_loader.as_deref(), "accepted_loader")?)?;
+			let game_id = resolve_ref(names, required_field(source.game_id.as_deref(), "game_id")?)?;
+			let qualification_text = source.qualification.as_deref().unwrap_or("most");
+			let qualification = Qualification::parse(qualification_text)
+				.ok_or_else(|| format!("unknown qualification `{qualification_text}`"))?;
+			let declared_by_kind = source.declared_by.as_deref().unwrap_or("loader-authority");
+			if !matches!(declared_by_kind, "loader-authority" | "project" | "tester") {
+				return Err(format!("unknown declared_by `{declared_by_kind}`"));
+			}
+			let acceptance = LoaderObject::Acceptance(LoaderAcceptance {
+				protocol: 1,
+				accepting_loader_id: accepting_loader.clone(),
+				accepted_loader_id: accepted_loader,
+				game_id,
+				game_version_predicate: predicate_or_none(&source.game_versions, source.game_version_scheme.as_deref()),
+				loader_version_predicate: None,
+				accepted_version_predicate: predicate_or_none(
+					&source.accepted_versions,
+					source.game_version_scheme.as_deref(),
+				),
+				qualification,
+				declared_by: DeclaredBy {
+					kind: declared_by_kind.to_string(),
+					id: source.declared_by_id.as_deref().unwrap_or(&accepting_loader).to_string(),
+				},
+				evidence_digest: None,
+				declared_time: now(),
+			});
+			let signed = sign_payload(ObjectKind::LoaderDef, &acceptance, &[&key]);
+			let id = signed.id(ObjectKind::LoaderDef);
+			write_object(out, &id, &signed.wire_bytes())?;
+			println!("loader_acceptance: {id}");
+			String::new()
+		}
+		other => {
+			return Err(format!(
+				"unknown `kind = \"{other}\"`; expected game, loader, loader-release, runtime, or mapping"
+			));
+		}
+	};
+	if !definition_id.is_empty() {
+		let name = source.name.clone().unwrap_or_else(|| default_name.to_string());
+		names.insert(name, definition_id.clone());
 	}
+	Ok(definition_id)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn loader_release(
-	key_path: &Path,
-	loader_id: &str,
-	version: &str,
-	game_versions: &[String],
-	runtime_id: Option<String>,
-	runtime_versions: &[String],
-	out: &Path,
-) -> Result<(), String> {
-	if game_versions.is_empty() {
-		return Err("at least one --game-version is required".to_string());
+fn required_field<'a>(value: Option<&'a str>, name: &str) -> Result<&'a str, String> {
+	value
+		.map(str::trim)
+		.filter(|text| !text.is_empty())
+		.ok_or_else(|| format!("a {name} is required"))
+}
+
+fn predicate_or_none(values: &[String], scheme: Option<&str>) -> Option<Predicate> {
+	let scheme = scheme.map(str::trim).filter(|text| !text.is_empty()).unwrap_or("exact");
+	if values.is_empty() && scheme != "any" {
+		return None;
 	}
-	let key = keyfile::load(key_path)?;
-	let release = LoaderObject::Release(LoaderRelease {
-		protocol: 1,
-		loader_id: loader_id.to_string(),
-		version_id: version.to_string(),
-		game_version_predicate: Predicate::new(Scheme::Exact, game_versions.to_vec()),
-		runtime_predicate: (!runtime_versions.is_empty()).then(|| Predicate::new(Scheme::Exact, runtime_versions.to_vec())),
-		runtime_id,
-		bootstrap: None,
-		declared_time: now(),
-	});
-	let signed = sign_payload(ObjectKind::LoaderDef, &release, &[&key]);
-	write_object(out, &signed.id(ObjectKind::LoaderDef), &signed.wire_bytes())?;
-	println!("loader_release: {}", signed.id(ObjectKind::LoaderDef));
-	Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn loader_acceptance(
-	key_path: &Path,
-	accepting_loader_id: &str,
-	accepted_loader_id: &str,
-	game_id: &str,
-	qualification: &str,
-	game_versions: &[String],
-	accepted_versions: &[String],
-	declared_by_kind: &str,
-	declared_by_id: Option<&str>,
-	out: &Path,
-) -> Result<(), String> {
-	let key = keyfile::load(key_path)?;
-	let qualification =
-		Qualification::parse(qualification).ok_or_else(|| format!("unknown qualification `{qualification}`"))?;
-	let acceptance = LoaderObject::Acceptance(LoaderAcceptance {
-		protocol: 1,
-		accepting_loader_id: accepting_loader_id.to_string(),
-		accepted_loader_id: accepted_loader_id.to_string(),
-		game_id: game_id.to_string(),
-		game_version_predicate: (!game_versions.is_empty()).then(|| Predicate::new(Scheme::Exact, game_versions.to_vec())),
-		loader_version_predicate: None,
-		accepted_version_predicate: (!accepted_versions.is_empty())
-			.then(|| Predicate::new(Scheme::Exact, accepted_versions.to_vec())),
-		qualification,
-		declared_by: DeclaredBy {
-			kind: declared_by_kind.to_string(),
-			id: declared_by_id.unwrap_or(accepting_loader_id).to_string(),
-		},
-		evidence_digest: None,
-		declared_time: now(),
-	});
-	let signed = sign_payload(ObjectKind::LoaderDef, &acceptance, &[&key]);
-	write_object(out, &signed.id(ObjectKind::LoaderDef), &signed.wire_bytes())?;
-	println!("loader_acceptance: {}", signed.id(ObjectKind::LoaderDef));
-	Ok(())
-}
-
-fn emit<T: Canonical + Clone>(
-	key: &SigningKey,
-	genesis_kind: GenesisKind,
-	authorized: &[&str],
-	definition_kind: ObjectKind,
-	definition: impl FnOnce(&str) -> T,
-	out: &Path,
-	label: &str,
-) -> Result<(), String> {
-	let signed_genesis = sign_payload(ObjectKind::Genesis, &genesis(key, genesis_kind, authorized)?, &[key]);
-	let id = signed_genesis.id(ObjectKind::Genesis);
-	let signed_definition = sign_payload(definition_kind, &definition(&id), &[key]);
-	write_pair(out, &id, &signed_genesis.wire_bytes(), &signed_definition.wire_bytes())?;
-	println!("{label}: {id}");
-	println!("definition: {}", signed_definition.id(definition_kind));
-	Ok(())
-}
-
-fn genesis(key: &SigningKey, kind: GenesisKind, kinds: &[&str]) -> Result<Genesis, String> {
-	Ok(Genesis {
-		protocol: 1,
-		kind,
-		nonce: random_nonce(),
-		roots: vec![RootKey::from_public_key(key.verifying_key().to_bytes().to_vec()).map_err(|error| error.to_string())?],
-		threshold: 1,
-		authorized_kinds: kinds.iter().map(|kind| kind.to_string()).collect(),
-		home_hint: None,
-		contacts: None,
-		created_at: now(),
+	Some(Predicate {
+		scheme: scheme.to_string(),
+		values: values.to_vec(),
 	})
 }
 
-fn write_object(directory: &Path, id: &str, object: &[u8]) -> Result<(), String> {
-	std::fs::create_dir_all(directory).map_err(|error| format!("{}: {error}", directory.display()))?;
-	let stem = id.strip_prefix("gd:sha256:").unwrap_or(id);
-	let path = directory.join(format!("{stem}.loader-def"));
-	std::fs::write(&path, object).map_err(|error| format!("{}: {error}", path.display()))?;
-	println!("written to {}", directory.display());
-	Ok(())
-}
-
-fn write_pair(directory: &Path, id: &str, genesis: &[u8], definition: &[u8]) -> Result<(), String> {
-	std::fs::create_dir_all(directory).map_err(|error| format!("{}: {error}", directory.display()))?;
-	let stem = id.strip_prefix("gd:sha256:").unwrap_or(id);
-	let genesis_path = directory.join(format!("{stem}.genesis"));
-	let definition_path = directory.join(format!("{stem}.definition"));
-	std::fs::write(&genesis_path, genesis).map_err(|error| format!("{}: {error}", genesis_path.display()))?;
-	std::fs::write(&definition_path, definition).map_err(|error| format!("{}: {error}", definition_path.display()))?;
-	println!("written to {}", directory.display());
-	Ok(())
-}
-
-fn random_nonce() -> Vec<u8> {
-	let mut nonce = vec![0u8; 16];
-	if getrandom::fill(&mut nonce).is_err() {
-		panic!("operating system randomness is unavailable");
-	}
-	nonce
-}
-
-fn now() -> i64 {
-	std::time::SystemTime::now()
-		.duration_since(std::time::UNIX_EPOCH)
-		.map(|duration| duration.as_secs() as i64)
-		.unwrap_or(0)
-}
-
 #[cfg(test)]
-mod tests {
-	use moraine_model::Canonical;
-
-	use super::*;
-
-	#[test]
-	fn writes_a_game_genesis_and_definition_pair() {
-		let directory = tempfile::tempdir().expect("tempdir");
-		let key_path = directory.path().join("game.key");
-		keyfile::create(&key_path).expect("key");
-		let out = directory.path().join("definitions");
-
-		game(&key_path, "Example Game", "semver", true, &out).expect("game");
-
-		let files: Vec<String> = std::fs::read_dir(&out)
-			.expect("read")
-			.filter_map(|entry| Some(entry.ok()?.file_name().to_string_lossy().to_string()))
-			.collect();
-		assert_eq!(files.len(), 2);
-		assert!(files.iter().any(|name| name.ends_with(".genesis")));
-		assert!(files.iter().any(|name| name.ends_with(".definition")));
-	}
-
-	#[test]
-	fn writes_a_loader_release_referencing_the_given_loader() {
-		use moraine_model::signed::SignedObject;
-
-		let directory = tempfile::tempdir().expect("tempdir");
-		let key_path = directory.path().join("loader.key");
-		keyfile::create(&key_path).expect("key");
-		let out = directory.path().join("definitions");
-		loader_release(
-			&key_path,
-			"gd:sha256:ab",
-			"0.15.0",
-			&["1.20.1".to_string()],
-			Some("gd:sha256:cd".to_string()),
-			&["17".to_string()],
-			&out,
-		)
-		.expect("loader release");
-
-		let path = std::fs::read_dir(&out)
-			.expect("read")
-			.filter_map(|entry| Some(entry.ok()?.path()))
-			.find(|path| path.extension().is_some_and(|extension| extension == "loader-def"))
-			.expect("loader release file");
-		let signed = SignedObject::<LoaderObject>::from_bytes(&std::fs::read(&path).expect("read")).expect("decode");
-		let LoaderObject::Release(release) = signed.payload else {
-			panic!("expected a loader release");
-		};
-		assert_eq!(release.loader_id, "gd:sha256:ab");
-		assert_eq!(release.version_id, "0.15.0");
-		assert_eq!(release.runtime_id.as_deref(), Some("gd:sha256:cd"));
-	}
-
-	#[test]
-	fn the_definition_id_matches_the_genesis_id() {
-		let directory = tempfile::tempdir().expect("tempdir");
-		let key_path = directory.path().join("game.key");
-		keyfile::create(&key_path).expect("key");
-		let out = directory.path().join("definitions");
-		game(&key_path, "Example Game", "semver", true, &out).expect("game");
-
-		let genesis_path = std::fs::read_dir(&out)
-			.expect("read")
-			.filter_map(|entry| Some(entry.ok()?.path()))
-			.find(|path| path.extension().is_some_and(|extension| extension == "genesis"))
-			.expect("genesis file");
-		let definition_path = genesis_path.with_extension("definition");
-		let (_, genesis) =
-			moraine_model::verify::verify_genesis(&std::fs::read(&genesis_path).expect("read")).expect("genesis");
-		let definition = GameDef::from_canonical_bytes(
-			&moraine_model::signed::SignedObject::<GameDef>::from_bytes(&std::fs::read(&definition_path).expect("read"))
-				.expect("decode")
-				.payload_bytes,
-		)
-		.expect("game def");
-		assert_eq!(definition.game_id, genesis.id);
-	}
-
-	#[test]
-	fn reads_a_game_from_a_readable_file() {
-		let directory = tempfile::tempdir().expect("tempdir");
-		let key_path = directory.path().join("game.key");
-		keyfile::create(&key_path).expect("key");
-		let source = directory.path().join("minecraft.toml");
-		std::fs::write(
-			&source,
-			r#"kind = "game"
-display_name = "Minecraft"
-version_ordering = "semver"
-loaders_allowed = true
-
-[[categories]]
-id = "utility"
-label = "Utility"
-
-[[tags]]
-id = "client"
-label = "Client"
-"#,
-		)
-		.expect("write");
-		let out = directory.path().join("definitions");
-
-		from_file(&key_path, &source, &out).expect("compile");
-
-		let definition_path = std::fs::read_dir(&out)
-			.expect("read")
-			.filter_map(|entry| Some(entry.ok()?.path()))
-			.find(|path| path.extension().is_some_and(|extension| extension == "definition"))
-			.expect("definition file");
-		let definition = GameDef::from_canonical_bytes(
-			&moraine_model::signed::SignedObject::<GameDef>::from_bytes(&std::fs::read(&definition_path).expect("read"))
-				.expect("decode")
-				.payload_bytes,
-		)
-		.expect("game def");
-		assert_eq!(definition.display_name, "Minecraft");
-		assert_eq!(definition.categories[0].id, "utility");
-		assert_eq!(definition.tags[0].label, "Client");
-	}
-
-	#[test]
-	fn writes_an_acceptance_mapping() {
-		use moraine_model::signed::SignedObject;
-
-		let directory = tempfile::tempdir().expect("tempdir");
-		let key_path = directory.path().join("loader.key");
-		keyfile::create(&key_path).expect("key");
-		let out = directory.path().join("definitions");
-		loader_acceptance(
-			&key_path,
-			"gd:sha256:accepting",
-			"gd:sha256:accepted",
-			"gd:sha256:game",
-			"most",
-			&["1.20.1".to_string()],
-			&[],
-			"loader-authority",
-			None,
-			&out,
-		)
-		.expect("acceptance");
-
-		let path = std::fs::read_dir(&out)
-			.expect("read")
-			.filter_map(|entry| Some(entry.ok()?.path()))
-			.next()
-			.expect("file");
-		let signed = SignedObject::<LoaderObject>::from_bytes(&std::fs::read(&path).expect("read")).expect("decode");
-		let LoaderObject::Acceptance(acceptance) = signed.payload else {
-			panic!("expected an acceptance mapping");
-		};
-		assert_eq!(acceptance.accepting_loader_id, "gd:sha256:accepting");
-		assert_eq!(acceptance.accepted_loader_id, "gd:sha256:accepted");
-		assert_eq!(acceptance.qualification.as_str(), "most");
-		assert_eq!(acceptance.declared_by.id, "gd:sha256:accepting");
-	}
-
-	#[test]
-	fn rejects_a_file_with_an_unknown_kind() {
-		let directory = tempfile::tempdir().expect("tempdir");
-		let key_path = directory.path().join("key");
-		keyfile::create(&key_path).expect("key");
-		let source = directory.path().join("bad.toml");
-		std::fs::write(
-			&source,
-			"kind = \"widget\"\ndisplay_name = \"X\"\nversion_ordering = \"semver\"\n",
-		)
-		.expect("write");
-		let error = from_file(&key_path, &source, &directory.path().join("out")).expect_err("error");
-		assert!(error.contains("unknown `kind"));
-	}
-}
+mod tests;

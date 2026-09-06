@@ -1,0 +1,6 @@
+kind = "loader-release"
+loader_id = "neoforge"
+version = "20.4.237"
+game_versions = ["1.20.4"]
+runtime_id = "java"
+runtime_versions = ["17"]

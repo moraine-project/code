@@ -123,6 +123,8 @@ fn loader_definition_for(key: &SigningKey, loader_id: &str, game_id: &str) -> Ve
 			game_id: game_id.to_string(),
 			display_name: "Fabric".to_string(),
 			version_ordering: "semver".to_string(),
+			version_catalog: Vec::new(),
+			game_versions: None,
 			bootstrap: None,
 			accepted_artifacts: None,
 			declared_time: 1_760_000_000,
@@ -137,15 +139,27 @@ fn game_definition(key: &SigningKey, game_id: &str) -> Vec<u8> {
 }
 
 fn game_definition_with(key: &SigningKey, game_id: &str, loaders_allowed: bool, loader_authorities: Vec<String>) -> Vec<u8> {
+	game_definition_catalog(key, game_id, "semver", Vec::new(), loaders_allowed, loader_authorities)
+}
+
+fn game_definition_catalog(
+	key: &SigningKey,
+	game_id: &str,
+	ordering: &str,
+	versions: Vec<&str>,
+	loaders_allowed: bool,
+	loader_authorities: Vec<String>,
+) -> Vec<u8> {
 	let definition = GameDef {
 		protocol: 1,
 		game_id: game_id.to_string(),
 		display_name: "Minecraft".to_string(),
 		version_syntax: VersionSyntax {
-			kind: "semver".to_string(),
+			kind: ordering.to_string(),
 			pattern: None,
 		},
-		version_ordering: "semver".to_string(),
+		version_ordering: ordering.to_string(),
+		version_catalog: versions.into_iter().map(str::to_string).collect(),
 		loaders_allowed,
 		loader_authorities,
 		categories: Vec::new(),
@@ -341,4 +355,50 @@ async fn loads_a_definition_file_from_the_data_directory() {
 	assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
 	let view: serde_json::Value = serde_json::from_slice(&body).expect("json");
 	assert_eq!(view["payload"]["display_name"], "Minecraft");
+}
+
+#[tokio::test]
+async fn keeps_a_game_definition_catalogue_append_only() {
+	let (application, _directory) = app().await;
+	let key = SigningKey::from_seed(&[0x83; 32]);
+
+	let genesis = axum::http::Request::post("/v1/games")
+		.body(Body::from(game_genesis(&key)))
+		.expect("request");
+	let response = application.clone().oneshot(genesis).await.expect("response");
+	let game_id = body_json(response).await["id"].as_str().expect("game id").to_string();
+
+	let put = |application: Router, ordering: &str, versions: Vec<&str>, game: &str| {
+		let body = game_definition_catalog(&key, game, ordering, versions, true, Vec::new());
+		let uri = format!("/v1/games/{game_id}/definitions");
+		async move {
+			let request = axum::http::Request::post(uri).body(Body::from(body)).expect("request");
+			application.oneshot(request).await.expect("response").status()
+		}
+	};
+
+	assert_eq!(
+		put(application.clone(), "ordered-list", vec!["1.20", "1.20.1"], &game_id).await,
+		StatusCode::CREATED
+	);
+	assert_eq!(
+		put(application.clone(), "ordered-list", vec!["1.20", "1.20.1", "1.21"], &game_id).await,
+		StatusCode::CREATED,
+		"adding a version is a normal revision"
+	);
+	assert_eq!(
+		put(application.clone(), "ordered-list", vec!["1.20.1", "1.21"], &game_id).await,
+		StatusCode::BAD_REQUEST,
+		"dropping a version is a rollback"
+	);
+	assert_eq!(
+		put(application.clone(), "semver", vec!["1.20", "1.20.1", "1.21"], &game_id).await,
+		StatusCode::BAD_REQUEST,
+		"the ordering scheme is fixed by the identity"
+	);
+	assert_eq!(
+		put(application.clone(), "ordered-list", vec!["1.20", "1.20.1", "1.21"], "other").await,
+		StatusCode::BAD_REQUEST,
+		"the definition cannot name a different game than it is stored under"
+	);
 }

@@ -1,0 +1,8 @@
+kind = "loader"
+display_name = "Legacy Fabric"
+version_ordering = "semver"
+game_id = "minecraft"
+game_version_scheme = "ordered-list"
+game_versions = [
+	"1.3.2..1.14",
+]

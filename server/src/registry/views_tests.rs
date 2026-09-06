@@ -462,6 +462,7 @@ async fn rejects_a_profile_tag_the_game_does_not_declare() {
 			pattern: None,
 		},
 		version_ordering: "semver".to_string(),
+		version_catalog: Vec::new(),
 		loaders_allowed: true,
 		loader_authorities: Vec::new(),
 		categories: vec![GameCategory {

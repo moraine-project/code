@@ -324,15 +324,50 @@ signed bytes, which keeps a definition reviewable and diffable. `examples/`
 holds starting points:
 
 ```sh
-cargo run -p moraine-publish -- keygen --key game.key
-cargo run -p moraine-publish -- define --key game.key \
-  --file examples/definitions/minecraft.toml --out data/definitions
-# the game ID is now printed; use it in a loader file
-cargo run -p moraine-publish -- define --key loader.key \
-  --file examples/definitions/fabric.toml --out data/definitions
-cargo run -p moraine-publish -- define --key runtime.key \
-  --file examples/definitions/java.toml --out data/definitions
+cargo run -p moraine-publish -- keygen --key definitions.key
+cargo run -p moraine-publish -- define --key definitions.key \
+  --dir examples/definitions/minecraft --out data/definitions
 ```
+
+`--dir` compiles every file under a directory, signing the whole set with one
+key. Files refer to each other by name, not by ID: `game.toml` sets
+`name = "minecraft"`, and a loader says `game_id = "minecraft"`. The tool
+resolves those as it goes — game and runtime first, then loaders, then loader
+versions and mappings — so a bundle is one command with no IDs to paste. Use
+`--file` instead to define a single file when the referenced IDs already exist.
+
+`examples/definitions/minecraft/` is a worked set for one game, laid out the way
+the data is: the game definition with Minecraft's version table and category
+vocabulary, a runtime, one file per loader under `loaders/`, each loader's
+versions under `loaders/<loader>/<version>.toml`, and a `mapping` that says
+Cleanroom accepts Forge mods in one direction.
+
+Declaring loader versions is optional. The loader file itself can list
+`game_versions` — the game versions the loader family supports — so the
+game-to-loader connection is recorded once instead of once per build. With
+`game_version_scheme = "ordered-list"` the list holds ranges like `1.14..=26.3`
+resolved through the game's version table; `loaders/fabric.toml` does that, and
+`loaders/neoforge.toml` lists the exact versions. Either way you do not have to
+hunt down every loader build and work out which Minecraft version each one
+targets.
+
+When you do want precision, a loader's *versions* are separate
+`kind = "loader-release"` files, each naming the `game_versions` it supports
+and, optionally, the `runtime_id` and `runtime_versions` it needs. So
+`loaders/neoforge/21.1.72.toml` says NeoForge 21.1.72 runs on Minecraft 1.21 and
+1.21.1 while `loaders/neoforge/20.4.237.toml` says 20.4.237 runs on 1.20.4 — the
+loader ID is the same for both, and the loader definition is not republished to
+add a version. A per-version `game_versions` is used when present; the loader's
+family list answers for game versions where no per-version record exists. A
+loader whose versions are not SemVer, like NeoForge's `26.3.0.7-beta`, lists
+them in its `versions` table so ranges can be ordered.
+
+A loader's game versions must exist in the game's table to be ranged over, so
+`game.toml` includes Minecraft's alpha/beta line. That lets `babric` cover
+`b1.0..=b1.7.3` and `bta-babric` name `b1.7.3`, the Minecraft version Better
+Than Adventure is built on. BTA's own release numbers are not Minecraft
+versions; they would belong to a BTA game definition, so `bta-babric` is a
+loader identity here rather than a full game declaration.
 
 The same definitions can be authored from flags instead:
 
@@ -349,6 +384,26 @@ cargo run -p moraine-publish -- define-loader-acceptance --key loader.key \
 cargo run -p moraine-publish -- define-runtime --key runtime.key --kind java \
   --name "Java" --out data/definitions
 ```
+
+A game definition can also name the adapter identifiers a launcher needs, so a
+client does not hard-code a game:
+
+```toml
+kind = "game"
+display_name = "The Sims 4"
+version_ordering = "opaque"
+loaders_allowed = false
+install_adapter = "sims4/default"
+```
+
+`metadata_extractor` names how to read a mod archive's own manifest, and
+`install_adapter` names where its files go. Both are identifiers resolved by
+the consuming tool, not code in signed bytes, so publishing a definition that
+names an adapter does not execute it. Two install adapters ship:
+`minecraft/default` places files under `mods/`, and `sims4/default` places them
+under `Mods/`, the folder The Sims 4 loads from. A launcher reads the name from
+the definition and refuses an adapter this build does not implement rather than
+placing files somewhere plausible-looking.
 
 A definition is signed by the operator who authors it, so this repository ships
 no pre-signed seed: a shipped definition would need a shipped private key, and
@@ -371,7 +426,17 @@ version history cannot be silently rewritten. An acceptance mapping is the
 `mapping` shape: it says the accepting loader may run another loader's
 artifacts in one direction only, is never followed transitively, and is listed
 at `GET /v1/loaders/{id}/accepts`. Auto-selection through a mapping stays off
-unless a client chooses to act on the label.
+unless a client chooses to act on the label. The canonical example is
+Cleanroom, which runs many Forge mods: a mapping from Cleanroom to Forge means
+an instance running Cleanroom may offer a Forge-declared mod as a labelled
+candidate, while an instance running Forge never offers a Cleanroom-only mod,
+because no mapping authorizes that direction.
+
+```
+cargo run -p moraine-publish -- define-loader-acceptance --key cleanroom.key \
+  --loader <cleanroom-id> --accepts <forge-id> --game <game-id> \
+  --qualification most --out data/definitions
+```
 
 `publish` and `submit` take `--kind` and default to `release-published`. The
 key is your project's root. Keep it safe: losing it means losing the project

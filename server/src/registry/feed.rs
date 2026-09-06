@@ -59,7 +59,7 @@ pub(crate) async fn page(State(state): State<AppState>, Path(id): Path<String>, 
 		.unwrap_or(state.capability.max_feed_page_entries as i64)
 		.clamp(1, state.capability.max_feed_page_entries as i64);
 	let mut entries = Vec::with_capacity(limit as usize);
-	let mut scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
+	let mut catalog: Option<Option<moraine_model::version::VersionCatalog>> = None;
 	let mut loader_scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
 	let mut runtime_scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
 	let mut scanned = query.after;
@@ -89,15 +89,15 @@ pub(crate) async fn page(State(state): State<AppState>, Path(id): Path<String>, 
 				&& object.kind == "release"
 			{
 				if let Some(version) = query.game_version.as_deref() {
-					let ordering = match scheme {
-						Some(ordering) => ordering,
+					let resolved = match &catalog {
+						Some(cached) => cached.clone(),
 						None => {
-							let resolved = crate::registry::compatibility::game_ordering(&state, object).await;
-							scheme = Some(resolved);
-							resolved
+							let value = crate::registry::compatibility::game_catalog(&state, object).await;
+							catalog = Some(value.clone());
+							value
 						}
 					};
-					if !crate::registry::compatibility::release_matches_game_version(object, version, ordering) {
+					if !crate::registry::compatibility::release_matches_game_version(object, version, resolved.as_ref()) {
 						continue;
 					}
 				}
