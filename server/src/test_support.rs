@@ -264,12 +264,22 @@ pub(crate) async fn publish_profile(
 	project_id: &str,
 	display_name: &str,
 ) -> String {
+	publish_profile_for_game(application, signer, project_id, display_name, "minecraft").await
+}
+
+pub(crate) async fn publish_profile_for_game(
+	application: &Router,
+	signer: &SigningKey,
+	project_id: &str,
+	display_name: &str,
+	game_id: &str,
+) -> String {
 	use moraine_model::profile::ProfileRevision;
 
 	let profile = ProfileRevision {
 		protocol: 1,
 		project_id: project_id.to_string(),
-		game_id: sample_id("minecraft"),
+		game_id: sample_id(game_id),
 		revision_nonce: vec![0x41; 16],
 		display_name: display_name.to_string(),
 		summary: "A summary".to_string(),

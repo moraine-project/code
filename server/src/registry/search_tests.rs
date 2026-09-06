@@ -285,3 +285,50 @@ async fn filters_search_by_declared_loader_and_runtime_versions() {
 	let response = application.oneshot(bad).await.expect("response");
 	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn counts_facets_with_every_other_filter_applied() {
+	let (application, _directory) = app().await;
+	let signer = key(37);
+	let (project_id, _release) = publish_project(&application, &signer).await;
+	publish_profile(&application, &signer, &project_id, "Fabric Physics Addon").await;
+
+	let other = key(38);
+	let (other_project, _release) = publish_project(&application, &other).await;
+	publish_profile_for_game(&application, &other, &other_project, "Racing Aero Addon", "quake").await;
+	let (release, _) = release_wire_for_game_id(&other, &other_project, 0x61, "1.1.0", "1.20.1", "quake", Some("rtx"), None);
+	store_release(&application, &other_project, release).await;
+
+	let facets = |application: axum::Router, query: &str| {
+		let uri = format!("/v1/search/facets?{query}");
+		async move {
+			let request = axum::http::Request::get(uri).body(Body::empty()).expect("request");
+			let response = application.oneshot(request).await.expect("response");
+			assert_eq!(response.status(), StatusCode::OK);
+			body_json(response).await
+		}
+	};
+	let count = |page: &serde_json::Value, dimension: &str, value: &str| {
+		page["facets"][dimension]
+			.as_array()
+			.expect("facet list")
+			.iter()
+			.find(|entry| entry["value"] == value)
+			.map(|entry| entry["count"].as_i64().unwrap_or(0))
+	};
+
+	let page = facets(application.clone(), "").await;
+	assert_eq!(count(&page, "game", &sample_id("minecraft")), Some(1));
+	assert_eq!(count(&page, "game", &sample_id("quake")), Some(1));
+	assert_eq!(count(&page, "loader", &sample_id("fabric")), Some(2));
+	assert_eq!(count(&page, "loader", &sample_id("rtx")), Some(1));
+
+	let page = facets(application.clone(), &format!("game={}", sample_id("minecraft"))).await;
+	assert_eq!(
+		count(&page, "game", &sample_id("quake")),
+		Some(1),
+		"the game facet ignores its own filter so alternatives stay visible"
+	);
+	assert_eq!(count(&page, "loader", &sample_id("rtx")), None);
+	assert_eq!(count(&page, "loader", &sample_id("fabric")), Some(1));
+}

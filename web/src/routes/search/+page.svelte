@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 
+	import { shortDigest } from '$lib/api/registry';
 	import Digest from '$lib/components/Digest.svelte';
 	import type { PageProps } from './$types';
 
@@ -9,6 +10,8 @@
 	let query = $state(untrack(() => data.q));
 	let game = $state(untrack(() => data.game));
 	let loader = $state(untrack(() => data.loader));
+	let category = $state(untrack(() => data.category));
+	let tag = $state(untrack(() => data.tag));
 	let gameVersion = $state(untrack(() => data.gameVersion));
 	let loaderVersion = $state(untrack(() => data.loaderVersion));
 	let runtimeVersion = $state(untrack(() => data.runtimeVersion));
@@ -24,12 +27,13 @@
 		['name', 'Name'],
 	] as const;
 
-	function submit(event?: Event) {
-		event?.preventDefault();
+	function submit() {
 		const params = new URLSearchParams();
 		if (query.trim()) params.set('q', query.trim());
 		if (game.trim()) params.set('game', game.trim());
 		if (loader.trim()) params.set('loader', loader.trim());
+		if (category.trim()) params.set('category', category.trim());
+		if (tag.trim()) params.set('tag', tag.trim());
 		if (gameVersion.trim()) params.set('game_version', gameVersion.trim());
 		if (loaderVersion.trim()) params.set('loader_version', loaderVersion.trim());
 		if (runtimeVersion.trim()) params.set('runtime_version', runtimeVersion.trim());
@@ -44,12 +48,95 @@
 		query = '';
 		game = '';
 		loader = '';
+		category = '';
+		tag = '';
 		gameVersion = '';
 		loaderVersion = '';
 		runtimeVersion = '';
 		channel = '';
 		platform = '';
 		sort = 'relevance';
+		submit();
+	}
+
+	const current = $derived<Record<string, string>>({
+		game,
+		loader,
+		category,
+		tag,
+		game_version: gameVersion,
+		loader_version: loaderVersion,
+		runtime_version: runtimeVersion,
+		channel,
+		platform,
+	});
+
+	const facetGroups = $derived(
+		[
+			{ title: 'Game', dimension: 'game', values: data.facets.game },
+			{ title: 'Loader', dimension: 'loader', values: data.facets.loader },
+			{ title: 'Category', dimension: 'category', values: data.facets.category },
+			{ title: 'Tag', dimension: 'tag', values: data.facets.tag },
+			{ title: 'Game version', dimension: 'game_version', values: data.facets.game_version },
+			{ title: 'Loader version', dimension: 'loader_version', values: data.facets.loader_version },
+			{
+				title: 'Runtime version',
+				dimension: 'runtime_version',
+				values: data.facets.runtime_version,
+			},
+			{ title: 'Channel', dimension: 'channel', values: data.facets.channel },
+			{ title: 'Platform', dimension: 'platform', values: data.facets.platform },
+		].filter((group) => group.values.length > 0),
+	);
+
+	const gameNames = $derived(
+		new Map(data.games.map((entry) => [entry.id, entry.display_name ?? entry.id])),
+	);
+	const loaderNames = $derived(
+		new Map(data.loaders.map((entry) => [entry.id, entry.display_name ?? entry.id])),
+	);
+
+	function labelFor(dimension: string, value: string): string {
+		if (dimension === 'game') return gameNames.get(value) ?? shortDigest(value, 18);
+		if (dimension === 'loader') return loaderNames.get(value) ?? shortDigest(value, 18);
+		if (dimension === 'loader_version') {
+			const [id, version] = value.split('\u001f');
+			return `${labelFor('loader', id)} ${version}`;
+		}
+		return value;
+	}
+
+	function applyFacet(dimension: string, value: string) {
+		const next = current[dimension] === value ? '' : value;
+		switch (dimension) {
+			case 'game':
+				game = next;
+				break;
+			case 'loader':
+				loader = next;
+				break;
+			case 'category':
+				category = next;
+				break;
+			case 'tag':
+				tag = next;
+				break;
+			case 'game_version':
+				gameVersion = next;
+				break;
+			case 'loader_version':
+				loaderVersion = next;
+				break;
+			case 'runtime_version':
+				runtimeVersion = next;
+				break;
+			case 'channel':
+				channel = next;
+				break;
+			case 'platform':
+				platform = next;
+				break;
+		}
 		submit();
 	}
 
@@ -63,18 +150,9 @@
 		return encoded ? `?${encoded}` : '';
 	}
 
-	const activeFilters = $derived(
-		[
-			data.game,
-			data.loader,
-			data.gameVersion,
-			data.loaderVersion,
-			data.runtimeVersion,
-			data.channel,
-			data.platform,
-		].filter((value) => value && value.length > 0).length,
+	const searched = $derived(
+		Boolean(data.q) || Object.values(current).some((value) => value.length > 0),
 	);
-	const searched = $derived(Boolean(data.q) || activeFilters > 0);
 </script>
 
 <svelte:head>
@@ -90,7 +168,13 @@
 		</p>
 	</div>
 
-	<form class="flex w-full max-w-2xl flex-col gap-3" onsubmit={submit}>
+	<form
+		class="flex w-full max-w-2xl flex-col gap-3"
+		onsubmit={(event) => {
+			event.preventDefault();
+			submit();
+		}}
+	>
 		<div class="join w-full">
 			<input
 				class="input join-item flex-1"
@@ -113,66 +197,106 @@
 		{/each}
 	</datalist>
 
-	<div class="grid gap-6 lg:grid-cols-[16rem_1fr]">
+	<div class="grid gap-6 lg:grid-cols-[18rem_1fr]">
 		<aside class="lg:sticky lg:top-20 lg:self-start">
 			<div class="card card-border bg-base-200">
-				<div class="card-body gap-2">
+				<div class="card-body gap-4">
 					<div class="flex items-center justify-between">
 						<h2 class="card-title text-base">Filters</h2>
 						<button class="btn btn-ghost btn-xs" type="button" onclick={reset}>Reset</button>
 					</div>
-					<label class="fieldset">
-						<span class="label">Game</span>
-						<input
-							class="input input-sm"
-							bind:value={game}
-							list="game-options"
-							placeholder="Pick or type a game"
-						/>
-					</label>
-					<label class="fieldset">
-						<span class="label">Loader</span>
-						<input
-							class="input input-sm"
-							bind:value={loader}
-							list="loader-options"
-							placeholder="Pick or type a loader"
-						/>
-					</label>
-					<label class="fieldset">
-						<span class="label">Game version</span>
-						<input class="input input-sm" bind:value={gameVersion} placeholder="1.20.1" />
-					</label>
-					<label class="fieldset">
-						<span class="label">Loader version</span>
-						<input class="input input-sm" bind:value={loaderVersion} placeholder="0.15.0" />
-					</label>
-					<label class="fieldset">
-						<span class="label">Runtime version</span>
-						<input class="input input-sm" bind:value={runtimeVersion} placeholder="21" />
-					</label>
-					<label class="fieldset">
-						<span class="label">Channel</span>
-						<input class="input input-sm" bind:value={channel} placeholder="release" />
-					</label>
-					<label class="fieldset">
-						<span class="label">Platform</span>
-						<input class="input input-sm" bind:value={platform} placeholder="linux" />
-					</label>
-					<label class="fieldset">
-						<span class="label">Sort by</span>
-						<select class="select select-sm" bind:value={sort} aria-label="Sort results">
-							{#each sorts as [value, label] (value)}
-								<option {value}>{label}</option>
-							{/each}
-						</select>
-					</label>
-					<button class="btn btn-sm mt-1" type="button" onclick={() => submit()}>
-						Apply filters
-					</button>
+
+					{#each facetGroups as group (group.dimension)}
+						<div class="flex flex-col gap-1">
+							<p class="text-xs font-medium uppercase tracking-wide text-base-content/60">
+								{group.title}
+							</p>
+							<div class="flex flex-wrap gap-1">
+								{#each group.values as entry (entry.value)}
+									<button
+										class="btn btn-xs gap-1 {current[group.dimension] === entry.value
+											? 'btn-primary'
+											: 'btn-ghost border-base-300'}"
+										type="button"
+										aria-pressed={current[group.dimension] === entry.value}
+										onclick={() => applyFacet(group.dimension, entry.value)}
+									>
+										{labelFor(group.dimension, entry.value)}
+										<span class="badge badge-xs">{entry.count}</span>
+									</button>
+								{/each}
+							</div>
+						</div>
+					{/each}
+
+					{#if facetGroups.length === 0}
+						<p class="text-sm text-base-content/60">No filters are available from this instance.</p>
+					{/if}
+
+					<details class="rounded-box border border-base-300 bg-base-100 p-2">
+						<summary class="cursor-pointer text-sm font-medium">Type a value</summary>
+						<div class="mt-2 flex flex-col gap-2">
+							<label class="fieldset">
+								<span class="label">Game</span>
+								<input
+									class="input input-sm"
+									bind:value={game}
+									list="game-options"
+									placeholder="game id"
+								/>
+							</label>
+							<label class="fieldset">
+								<span class="label">Loader</span>
+								<input
+									class="input input-sm"
+									bind:value={loader}
+									list="loader-options"
+									placeholder="loader id"
+								/>
+							</label>
+							<label class="fieldset">
+								<span class="label">Category</span>
+								<input class="input input-sm" bind:value={category} placeholder="category id" />
+							</label>
+							<label class="fieldset">
+								<span class="label">Tag</span>
+								<input class="input input-sm" bind:value={tag} placeholder="tag id" />
+							</label>
+							<label class="fieldset">
+								<span class="label">Game version</span>
+								<input class="input input-sm" bind:value={gameVersion} placeholder="1.20.1" />
+							</label>
+							<label class="fieldset">
+								<span class="label">Loader version</span>
+								<input class="input input-sm" bind:value={loaderVersion} placeholder="0.15.0" />
+							</label>
+							<label class="fieldset">
+								<span class="label">Runtime version</span>
+								<input class="input input-sm" bind:value={runtimeVersion} placeholder="21" />
+							</label>
+							<label class="fieldset">
+								<span class="label">Channel</span>
+								<input class="input input-sm" bind:value={channel} placeholder="release" />
+							</label>
+							<label class="fieldset">
+								<span class="label">Platform</span>
+								<input class="input input-sm" bind:value={platform} placeholder="linux" />
+							</label>
+							<label class="fieldset">
+								<span class="label">Sort by</span>
+								<select class="select select-sm" bind:value={sort} aria-label="Sort results">
+									{#each sorts as [value, label] (value)}
+										<option {value}>{label}</option>
+									{/each}
+								</select>
+							</label>
+							<button class="btn btn-sm" type="button" onclick={submit}>Apply filters</button>
+						</div>
+					</details>
+
 					<p class="text-xs text-base-content/60">
-						Version filters match the versions a release declares. A loader version only applies
-						when a loader is given.
+						Counts describe this instance's own index, with the other filters applied. A version
+						range is matched on the release feed, not here.
 					</p>
 				</div>
 			</div>

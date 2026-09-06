@@ -96,6 +96,28 @@ release feed, which can consult the referenced definition's declared ordering.
 A project whose state this instance does not list cannot be recovered with
 `state`, because the filter narrows what search already shows.
 
+## Facet counts
+
+`GET /v1/search/facets` takes the same filters as `/v1/search` and returns, for
+each facet dimension, the values present and how many projects carry them. It is
+an aid to narrowing a search, not a second result set: counts are computed over
+the same validated records and local policy the results use, and they are not
+signed or portable.
+
+Each dimension's count is computed with every *other* filter applied and its own
+filter ignored, so the numbers show what selecting a value would add rather than
+restating the current choice. A filter already selected therefore still appears
+in its own dimension's list with the count it would have if cleared, and the
+alternatives in that dimension remain visible. The response lists at most fifty
+values per dimension, ordered by count and then by value, so a long tail is
+truncated rather than unbounded. A `loader_version` facet is only populated when
+a `loader` filter is present, because a loader version is meaningless without
+its loader.
+
+Counts are an opinion of the same kind as rank: they describe this instance's
+index under the current filters, and they are never evidence that a project is
+safe.
+
 Impersonation detection begins here: when two results in one game share a
 normalized display name (case and punctuation removed) under different stable
 IDs, both carry a `name-collision` annotation telling the reader to compare

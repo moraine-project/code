@@ -552,7 +552,12 @@ origin; the protocol does not require a particular policy.
 `GET /v1/search?q=&game=&loader=&tag=&category=&game_version=&loader_version=&runtime_version=&channel=&platform=&state=&sort=&cursor=&limit=`
 returns the portable search response as JSON. `loader_version` and
 `runtime_version` match the versions a release declares, and a `loader_version`
-sent without a `loader` is rejected. Search runs over a local index built from
+sent without a `loader` is rejected.
+
+`GET /v1/search/facets` takes the same filters and returns each dimension's
+values with the number of projects that carry them, computed with the other
+filters applied and the dimension's own filter ignored so the counts describe
+what adding a value would do. The counts are instance-local and unsigned. Search runs over a local index built from
 validated records: a project enters the index when a `profile-updated` entry
 is accepted, so the name and summary come from the publisher's signed profile,
 never from a directory edit. The index is disposable and can be rebuilt from

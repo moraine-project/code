@@ -4,13 +4,8 @@ use sqlx::Row;
 
 use crate::db::MetadataStore;
 use crate::db::sql::SqlBuilder;
+use crate::registry::search_labels::loader_version_label;
 use crate::routes::AppState;
-
-pub(crate) const LOADER_VERSION_SEPARATOR: char = '\u{1f}';
-
-pub(crate) fn loader_version_label(loader_id: &str, version: &str) -> String {
-	format!("{loader_id}{LOADER_VERSION_SEPARATOR}{version}")
-}
 
 pub(crate) fn normalize_name(name: &str) -> String {
 	name.chars()
@@ -84,6 +79,49 @@ fn escape_like(text: &str) -> String {
 		escaped.push(character);
 	}
 	escaped
+}
+
+pub(crate) fn push_match_clauses(query: &mut SqlBuilder, filter: &SearchFilter<'_>, skip: Option<&str>, include_text: bool) {
+	if include_text
+		&& let Some(escaped) = filter
+			.text
+			.map(|text| escape_like(text.trim().to_lowercase().as_str()))
+			.filter(|text| !text.is_empty())
+	{
+		let substring = query.reserve_bind(format!("%{escaped}%"));
+		query.push(&format!(
+			" AND (lower(display_name) LIKE ${substring} ESCAPE '\\' OR lower(summary) LIKE ${substring} ESCAPE '\\' OR lower(description) LIKE ${substring} ESCAPE '\\' OR EXISTS (SELECT 1 FROM search_changelog_text c WHERE c.project_id = search_documents.project_id AND lower(c.text) LIKE ${substring} ESCAPE '\\'))"
+		));
+	}
+	if skip != Some("game")
+		&& let Some(game) = filter.game_id
+	{
+		let parameter = query.reserve_bind(game);
+		query.push(&format!(" AND game_id = ${parameter}"));
+	}
+	for (label_kind, value) in [
+		("tag", filter.tag),
+		("loader", filter.loader),
+		("category", filter.category),
+		("game-version", filter.game_version),
+		("channel", filter.channel),
+		("platform", filter.platform),
+		("runtime-version", filter.runtime_version),
+	] {
+		if skip == Some(label_kind) {
+			continue;
+		}
+		if let Some(value) = value {
+			let parameter = query.reserve_bind(value);
+			query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = '{label_kind}' AND l.label_id = ${parameter})"));
+		}
+	}
+	if skip != Some("loader-version")
+		&& let (Some(loader), Some(version)) = (filter.loader, filter.loader_version)
+	{
+		let parameter = query.reserve_bind(loader_version_label(loader, version));
+		query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'loader-version' AND l.label_id = ${parameter})"));
+	}
 }
 
 pub struct SearchDocument<'a> {
@@ -295,20 +333,6 @@ impl MetadataStore {
 		Ok(())
 	}
 
-	pub async fn add_search_labels(&self, project_id: &str, label_kind: &str, labels: &[String]) -> Result<(), sqlx::Error> {
-		for label in labels {
-			sqlx::query(
-				"INSERT INTO search_labels (project_id, label_kind, label_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-			)
-			.bind(project_id)
-			.bind(label_kind)
-			.bind(label)
-			.execute(&self.pool)
-			.await?;
-		}
-		Ok(())
-	}
-
 	pub async fn search_documents(&self, filter: SearchFilter<'_>) -> Result<Vec<SearchHit>, sqlx::Error> {
 		let escaped = filter
 			.text
@@ -351,48 +375,10 @@ impl MetadataStore {
 			}
 		}
 		query.push(&select);
-		match (&score, patterns) {
-			(Some(expression), _) => {
-				query.push(&format!(" AND {expression} > 0"));
-			}
-			(None, Some((_, _, substring))) => {
-				query.push(&format!(
-					" AND (lower(display_name) LIKE ${substring} ESCAPE '\\' OR lower(summary) LIKE ${substring} ESCAPE '\\' OR lower(description) LIKE ${substring} ESCAPE '\\' OR EXISTS (SELECT 1 FROM search_changelog_text c WHERE c.project_id = search_documents.project_id AND lower(c.text) LIKE ${substring} ESCAPE '\\'))"
-				));
-			}
-			(None, None) => {}
+		if let Some(expression) = &score {
+			query.push(&format!(" AND {expression} > 0"));
 		}
-		if let Some(game) = filter.game_id {
-			let parameter = query.reserve_bind(game);
-			query.push(&format!(" AND game_id = ${parameter}"));
-		}
-		if let Some(tag) = filter.tag {
-			let parameter = query.reserve_bind(tag);
-			query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'tag' AND l.label_id = ${parameter})"));
-		}
-		if let Some(loader) = filter.loader {
-			let parameter = query.reserve_bind(loader);
-			query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'loader' AND l.label_id = ${parameter})"));
-		}
-		if let Some(category) = filter.category {
-			let parameter = query.reserve_bind(category);
-			query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'category' AND l.label_id = ${parameter})"));
-		}
-		for (label_kind, value) in [
-			("game-version", filter.game_version),
-			("channel", filter.channel),
-			("platform", filter.platform),
-			("runtime-version", filter.runtime_version),
-		] {
-			if let Some(value) = value {
-				let parameter = query.reserve_bind(value);
-				query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = '{label_kind}' AND l.label_id = ${parameter})"));
-			}
-		}
-		if let (Some(loader), Some(version)) = (filter.loader, filter.loader_version) {
-			let parameter = query.reserve_bind(loader_version_label(loader, version));
-			query.push(&format!(" AND EXISTS (SELECT 1 FROM search_labels l WHERE l.project_id = search_documents.project_id AND l.label_kind = 'loader-version' AND l.label_id = ${parameter})"));
-		}
+		push_match_clauses(&mut query, &filter, None, score.is_none());
 		match filter.sort {
 			SearchSort::Updated => {
 				if let Some((value, id)) = filter.cursor {

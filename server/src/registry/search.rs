@@ -4,13 +4,48 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use moraine_model::search::{Annotation, InstancePopularity, ListingState, SearchQuery, SearchResponse, SearchResult};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
+use super::search_facets::Facets;
 use super::search_index::{SearchFilter, SearchSort, normalize_name, now, query_trigrams};
 use crate::routes::AppState;
 
 pub fn routes() -> Router<AppState> {
-	Router::new().route("/v1/search", get(search))
+	Router::new()
+		.route("/v1/search", get(search))
+		.route("/v1/search/facets", get(facets))
+}
+
+#[derive(Serialize)]
+struct FacetResponse {
+	protocol: u32,
+	facets: Facets,
+}
+
+async fn facets(State(state): State<AppState>, Query(params): Query<SearchParams>) -> Response {
+	let filter = SearchFilter {
+		text: params.q.as_deref().filter(|text| !text.trim().is_empty()),
+		game_id: params.game.as_deref(),
+		tag: params.tag.as_deref(),
+		category: params.category.as_deref(),
+		loader: params.loader.as_deref(),
+		game_version: params.game_version.as_deref(),
+		loader_version: params.loader_version.as_deref(),
+		runtime_version: params.runtime_version.as_deref(),
+		channel: params.channel.as_deref(),
+		platform: params.platform.as_deref(),
+		popularity_since: None,
+		sort: SearchSort::Updated,
+		cursor: None,
+		limit: 1,
+	};
+	match state.metadata.search_facets(&filter).await {
+		Ok(facets) => Json(FacetResponse { protocol: 1, facets }).into_response(),
+		Err(error) => {
+			tracing::error!(%error, "facet search failed");
+			(StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response()
+		}
+	}
 }
 
 #[derive(Deserialize)]

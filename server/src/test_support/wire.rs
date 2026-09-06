@@ -219,10 +219,33 @@ pub(crate) fn release_wire_for_game_with_loader(
 	loader: Option<&str>,
 	loader_version: Option<&str>,
 ) -> (Vec<u8>, [u8; 32]) {
+	release_wire_for_game_id(
+		signer,
+		project_id,
+		nonce,
+		human_version,
+		game_version,
+		"minecraft",
+		loader,
+		loader_version,
+	)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn release_wire_for_game_id(
+	signer: &SigningKey,
+	project_id: &str,
+	nonce: u8,
+	human_version: &str,
+	game_version: &str,
+	game_id: &str,
+	loader: Option<&str>,
+	loader_version: Option<&str>,
+) -> (Vec<u8>, [u8; 32]) {
 	let release = ReleasePayload {
 		protocol: 1,
 		project_id: project_id.to_string(),
-		game_id: sample_id("minecraft"),
+		game_id: sample_id(game_id),
 		release_nonce: vec![nonce; 16],
 		human_version: human_version.to_string(),
 		channel: "release".to_string(),
