@@ -102,6 +102,17 @@
 		</div>
 	</form>
 
+	<datalist id="game-options">
+		{#each data.games as option (option.id)}
+			<option value={option.id}>{option.display_name ?? option.id}</option>
+		{/each}
+	</datalist>
+	<datalist id="loader-options">
+		{#each data.loaders as option (option.id)}
+			<option value={option.id}>{option.display_name ?? option.id}</option>
+		{/each}
+	</datalist>
+
 	<div class="grid gap-6 lg:grid-cols-[16rem_1fr]">
 		<aside class="lg:sticky lg:top-20 lg:self-start">
 			<div class="card card-border bg-base-200">
@@ -112,11 +123,21 @@
 					</div>
 					<label class="fieldset">
 						<span class="label">Game</span>
-						<input class="input input-sm" bind:value={game} placeholder="game id" />
+						<input
+							class="input input-sm"
+							bind:value={game}
+							list="game-options"
+							placeholder="Pick or type a game"
+						/>
 					</label>
 					<label class="fieldset">
 						<span class="label">Loader</span>
-						<input class="input input-sm" bind:value={loader} placeholder="loader id" />
+						<input
+							class="input input-sm"
+							bind:value={loader}
+							list="loader-options"
+							placeholder="Pick or type a loader"
+						/>
 					</label>
 					<label class="fieldset">
 						<span class="label">Game version</span>

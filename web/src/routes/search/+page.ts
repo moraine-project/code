@@ -1,5 +1,5 @@
 import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
-import { normalizeBase, searchProjects } from '$lib/api/registry';
+import { listDefinitions, normalizeBase, searchProjects } from '$lib/api/registry';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ url, fetch }) => {
@@ -35,11 +35,15 @@ export const load: PageLoad = async ({ url, fetch }) => {
 		channel,
 		platform,
 	].some((value) => value.trim().length > 0);
-	if (!anyFilter) {
-		return { ...filters, results: [], error: null };
-	}
 	try {
 		const base = normalizeBase(home);
+		const [games, loaders] = await Promise.all([
+			listDefinitions(base, 'games', fetch).catch(() => []),
+			listDefinitions(base, 'loaders', fetch).catch(() => []),
+		]);
+		if (!anyFilter) {
+			return { ...filters, home: base, games, loaders, results: [], error: null };
+		}
 		const results = await searchProjects(
 			base,
 			{
@@ -56,10 +60,12 @@ export const load: PageLoad = async ({ url, fetch }) => {
 			},
 			fetch,
 		);
-		return { ...filters, home: base, results, error: null };
+		return { ...filters, home: base, games, loaders, results, error: null };
 	} catch (cause) {
 		return {
 			...filters,
+			games: [],
+			loaders: [],
 			results: [],
 			error: cause instanceof Error ? cause.message : 'the search failed',
 		};
