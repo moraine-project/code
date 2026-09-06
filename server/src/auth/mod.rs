@@ -230,6 +230,7 @@ async fn login(State(state): State<AppState>, Json(credentials): Json<Credential
 	if let Err(error) = state.metadata.create_session(&session).await {
 		return storage_error(error);
 	}
+	state.metrics.record_session_created();
 	let mut response = Json(LoginReceipt {
 		user_id: user.id,
 		expires_at: session.absolute_expires_at,
@@ -241,10 +242,11 @@ async fn login(State(state): State<AppState>, Json(credentials): Json<Credential
 }
 
 async fn logout(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
-	if let Some(session_id) = &user.session_id
-		&& let Err(error) = state.metadata.revoke_session(session_id, now()).await
-	{
-		return storage_error(error);
+	if let Some(session_id) = &user.session_id {
+		if let Err(error) = state.metadata.revoke_session(session_id, now()).await {
+			return storage_error(error);
+		}
+		state.metrics.record_session_revoked();
 	}
 	let mut response = StatusCode::NO_CONTENT.into_response();
 	append_cookie(&mut response, &clear_cookie(SESSION_COOKIE, true));
@@ -357,6 +359,7 @@ async fn create_key(State(state): State<AppState>, user: AuthenticatedUser, Json
 	if let Err(error) = state.metadata.create_api_key(&key).await {
 		return storage_error(error);
 	}
+	state.metrics.record_api_key_created();
 	let response = CreatedKey {
 		id: key.id,
 		name: key.name,
@@ -373,7 +376,10 @@ async fn revoke_key(State(state): State<AppState>, user: AuthenticatedUser, Path
 		return forbidden();
 	}
 	match state.metadata.revoke_api_key(&user.user_id, &id, now()).await {
-		Ok(true) => StatusCode::NO_CONTENT.into_response(),
+		Ok(true) => {
+			state.metrics.record_api_key_revoked();
+			StatusCode::NO_CONTENT.into_response()
+		}
 		Ok(false) => (StatusCode::NOT_FOUND, "no such key").into_response(),
 		Err(error) => storage_error(error),
 	}

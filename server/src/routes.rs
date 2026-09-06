@@ -223,6 +223,7 @@ async fn serve_blob(state: &AppState, digest_hex: &str, headers: &HeaderMap, hea
 			return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
 		}
 	}) else {
+		state.metrics.record_blob_serve_failure();
 		return (StatusCode::NOT_FOUND, "no such blob").into_response();
 	};
 
@@ -257,9 +258,13 @@ async fn serve_blob(state: &AppState, digest_hex: &str, headers: &HeaderMap, hea
 		let range = (status == StatusCode::PARTIAL_CONTENT).then_some((start, end));
 		match state.store.read(&digest, range).await {
 			Ok(Some(stream)) => Body::from_stream(stream),
-			Ok(None) => return (StatusCode::NOT_FOUND, "no such blob").into_response(),
+			Ok(None) => {
+				state.metrics.record_blob_serve_failure();
+				return (StatusCode::NOT_FOUND, "no such blob").into_response();
+			}
 			Err(error) => {
 				tracing::error!(%error, "blob read failed");
+				state.metrics.record_blob_serve_failure();
 				return (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response();
 			}
 		}

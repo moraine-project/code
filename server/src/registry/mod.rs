@@ -445,7 +445,11 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	if row.kind == "release-withdrawn" {
 		apply_withdrawal(state, &row.project_id, &row.object_digest).await?;
 	}
+	if row.kind == "key-changed" {
+		state.metrics.record_key_change();
+	}
 	if row.kind == "recovery" {
+		state.metrics.record_key_change();
 		recovery::apply(state, &row.project_id, &row.object_digest).await?;
 	}
 	if row.kind == "migration" {

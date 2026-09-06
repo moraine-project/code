@@ -492,6 +492,34 @@ exact `moraine-publish` command to run locally, filled in with what you entered
 and the origin you are on. Signing stays on your machine; the browser never
 holds a release key.
 
+## Metrics and observability
+
+`GET /metrics` serves Prometheus text: request counts, request duration, server
+errors, signature failures split out from federation network and protocol
+failures, forks and key changes, admission queue depth and age, review
+decisions, webhook backlog, subscription lag, blob collection, sessions and API
+keys created and revoked, and failures to serve a committed artifact. Scrape it
+with any Prometheus-compatible agent, or point a local collector at it.
+
+Nothing is pushed. That is deliberate: the registry has no outbound telemetry,
+so an instance that exports nothing sends nothing, and a backend you have not
+chosen costs no egress. To ship the metrics to Grafana or SigNoz, run an
+OpenTelemetry Collector next to the server and pick one profile:
+
+```sh
+docker run --rm -p 4317:4317 \
+  -e MORAINE_METRICS_TARGET=host.docker.internal:8080 \
+  -e GRAFANA_OTLP_ENDPOINT=https://otlp-gateway.example/otlp \
+  -e GRAFANA_AUTH=<base64 instance:token> \
+  -v "$PWD/deploy/otel/collector-grafana.yaml":/etc/otelcol/config.yaml \
+  otel/opentelemetry-collector-contrib --config=/etc/otelcol/config.yaml
+```
+
+`deploy/otel/collector-signoz.yaml` is the same scrape with a SigNoz OTLP
+exporter instead, so choosing a stack is choosing which config the collector
+runs. Only the chosen exporter is in the pipeline; the other backend is not
+contacted at all. Set `MORAINE_METRICS_TARGET` to the server's host and port.
+
 ## Layout
 
 ```
@@ -510,6 +538,8 @@ protocol/
   spec/         notes that pin implementation decisions
   vectors/      the test-vector corpus
 interop/        independent Python checker for the vector corpus
+deploy/
+  otel/         collector profiles for a Grafana or SigNoz metrics backend
 ```
 
 ## License

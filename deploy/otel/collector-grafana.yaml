@@ -1,0 +1,20 @@
+receivers:
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: moraine
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["${env:MORAINE_METRICS_TARGET}"]
+
+exporters:
+  otlphttp/grafana:
+    endpoint: ${env:GRAFANA_OTLP_ENDPOINT}
+    headers:
+      authorization: "Basic ${env:GRAFANA_AUTH}"
+
+service:
+  pipelines:
+    metrics:
+      receivers: [prometheus]
+      exporters: [otlphttp/grafana]

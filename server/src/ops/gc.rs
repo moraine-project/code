@@ -45,6 +45,7 @@ pub async fn collect(
 			.map_err(|error| error.to_string())?;
 		blobs += 1;
 	}
+	state.metrics.record_collected(staging, blobs);
 	Ok(Collected { staging, blobs })
 }
 

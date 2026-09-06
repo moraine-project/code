@@ -14,7 +14,16 @@ use crate::routes::AppState;
 pub struct Metrics {
 	started: Instant,
 	requests: AtomicU64,
+	request_micros: AtomicU64,
 	server_errors: AtomicU64,
+	sessions_created: AtomicU64,
+	sessions_revoked: AtomicU64,
+	api_keys_created: AtomicU64,
+	api_keys_revoked: AtomicU64,
+	staging_collected: AtomicU64,
+	blobs_collected: AtomicU64,
+	blob_serve_failures: AtomicU64,
+	key_changes: AtomicU64,
 	signature_failures: AtomicU64,
 	federation_network_failures: AtomicU64,
 	federation_protocol_failures: AtomicU64,
@@ -29,7 +38,16 @@ impl Metrics {
 		Self {
 			started: Instant::now(),
 			requests: AtomicU64::new(0),
+			request_micros: AtomicU64::new(0),
 			server_errors: AtomicU64::new(0),
+			sessions_created: AtomicU64::new(0),
+			sessions_revoked: AtomicU64::new(0),
+			api_keys_created: AtomicU64::new(0),
+			api_keys_revoked: AtomicU64::new(0),
+			staging_collected: AtomicU64::new(0),
+			blobs_collected: AtomicU64::new(0),
+			blob_serve_failures: AtomicU64::new(0),
+			key_changes: AtomicU64::new(0),
 			signature_failures: AtomicU64::new(0),
 			federation_network_failures: AtomicU64::new(0),
 			federation_protocol_failures: AtomicU64::new(0),
@@ -42,6 +60,39 @@ impl Metrics {
 
 	pub fn record_signature_failure(&self) {
 		self.signature_failures.fetch_add(1, Ordering::Relaxed);
+	}
+
+	pub fn record_request_micros(&self, micros: u64) {
+		self.request_micros.fetch_add(micros, Ordering::Relaxed);
+	}
+
+	pub fn record_session_created(&self) {
+		self.sessions_created.fetch_add(1, Ordering::Relaxed);
+	}
+
+	pub fn record_session_revoked(&self) {
+		self.sessions_revoked.fetch_add(1, Ordering::Relaxed);
+	}
+
+	pub fn record_api_key_created(&self) {
+		self.api_keys_created.fetch_add(1, Ordering::Relaxed);
+	}
+
+	pub fn record_api_key_revoked(&self) {
+		self.api_keys_revoked.fetch_add(1, Ordering::Relaxed);
+	}
+
+	pub fn record_collected(&self, staging: u64, blobs: u64) {
+		self.staging_collected.fetch_add(staging, Ordering::Relaxed);
+		self.blobs_collected.fetch_add(blobs, Ordering::Relaxed);
+	}
+
+	pub fn record_blob_serve_failure(&self) {
+		self.blob_serve_failures.fetch_add(1, Ordering::Relaxed);
+	}
+
+	pub fn record_key_change(&self) {
+		self.key_changes.fetch_add(1, Ordering::Relaxed);
 	}
 
 	pub fn record_federation_failure(&self, error: &crate::federation::FederationError) {
@@ -76,8 +127,10 @@ pub fn routes() -> Router<AppState> {
 }
 
 pub async fn track(State(state): State<AppState>, request: Request, next: Next) -> Response {
+	let started = Instant::now();
 	let response = next.run(request).await;
 	state.metrics.observe(response.status().as_u16());
+	state.metrics.record_request_micros(started.elapsed().as_micros() as u64);
 	response
 }
 
@@ -134,6 +187,35 @@ async fn render(State(state): State<AppState>) -> Response {
 			"moraine_federation_forks_total",
 			state.metrics.federation_forks.load(Ordering::Relaxed),
 		),
+		(
+			"moraine_sessions_created_total",
+			state.metrics.sessions_created.load(Ordering::Relaxed),
+		),
+		(
+			"moraine_sessions_revoked_total",
+			state.metrics.sessions_revoked.load(Ordering::Relaxed),
+		),
+		(
+			"moraine_api_keys_created_total",
+			state.metrics.api_keys_created.load(Ordering::Relaxed),
+		),
+		(
+			"moraine_api_keys_revoked_total",
+			state.metrics.api_keys_revoked.load(Ordering::Relaxed),
+		),
+		(
+			"moraine_staging_collected_total",
+			state.metrics.staging_collected.load(Ordering::Relaxed),
+		),
+		(
+			"moraine_blobs_collected_total",
+			state.metrics.blobs_collected.load(Ordering::Relaxed),
+		),
+		(
+			"moraine_blob_serve_failures_total",
+			state.metrics.blob_serve_failures.load(Ordering::Relaxed),
+		),
+		("moraine_key_changes_total", state.metrics.key_changes.load(Ordering::Relaxed)),
 	] {
 		body.push_str("# TYPE ");
 		body.push_str(name);
@@ -143,6 +225,14 @@ async fn render(State(state): State<AppState>) -> Response {
 		body.push_str(&value.to_string());
 		body.push('\n');
 	}
+	let requests = state.metrics.requests.load(Ordering::Relaxed);
+	let micros = state.metrics.request_micros.load(Ordering::Relaxed);
+	body.push_str("# TYPE moraine_request_duration_seconds summary\n");
+	body.push_str(&format!(
+		"moraine_request_duration_seconds_sum {}\n",
+		micros as f64 / 1_000_000.0
+	));
+	body.push_str(&format!("moraine_request_duration_seconds_count {requests}\n"));
 	let current = unix_now();
 	for (name, since) in [
 		("moraine_admission_oldest_seconds", snapshot.oldest_pending_submission),
@@ -225,6 +315,13 @@ mod tests {
 			"moraine_webhook_backlog_oldest_seconds",
 			"moraine_subscription_lag_entries",
 			"moraine_subscription_resets",
+			"moraine_request_duration_seconds_sum",
+			"moraine_request_duration_seconds_count",
+			"moraine_sessions_created_total",
+			"moraine_api_keys_revoked_total",
+			"moraine_blobs_collected_total",
+			"moraine_blob_serve_failures_total",
+			"moraine_key_changes_total",
 		] {
 			assert!(text.contains(name), "missing {name}");
 		}
