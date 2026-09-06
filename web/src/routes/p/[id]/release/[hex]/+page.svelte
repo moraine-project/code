@@ -7,6 +7,12 @@
 	let checking = $state(false);
 	let checkResult = $state<{ file: string; match: boolean } | null>(null);
 
+	const primary = $derived(
+		data.release?.artifacts.find((artifact) => artifact.is_primary) ??
+			data.release?.artifacts[0] ??
+			null,
+	);
+
 	function formatTime(seconds: number): string {
 		return new Date(seconds * 1000).toLocaleString();
 	}
@@ -15,6 +21,16 @@
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
 		return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+	}
+
+	function describeVersions(scheme: string, values: string[]): string {
+		if (scheme === 'any' || values.length === 0) {
+			return 'any version';
+		}
+		if (scheme === 'semver') {
+			return values.join(' and ');
+		}
+		return values.join(', ');
 	}
 
 	async function checkFile(event: Event) {
@@ -53,7 +69,7 @@
 		<div role="alert" class="alert alert-error"><span>{data.error}</span></div>
 	{:else if data.release}
 		{#each data.release.advisories ?? [] as advisory (advisory.advisory)}
-			<div role="alert" class="alert alert-warning">
+			<div role="alert" class="alert alert-warning alert-soft">
 				<span>
 					<strong>{advisory.provider_id}</strong>
 					reports {advisory.severity}
@@ -64,7 +80,7 @@
 		{/each}
 
 		{#if data.release.withdrawal}
-			<div role="alert" class="alert alert-error">
+			<div role="alert" class="alert alert-error alert-soft">
 				<span>
 					<strong>Withdrawn by the publisher</strong>
 					— {data.release.withdrawal.reason}{data.release.withdrawal.note
@@ -76,25 +92,42 @@
 			</div>
 		{/if}
 
-		<section class="card card-border">
-			<div class="card-body">
-				<h1 class="card-title">{data.release.human_version}</h1>
-				<div class="flex flex-wrap gap-2">
-					<span class="badge badge-outline">{data.release.channel}</span>
-					<span class="badge badge-outline">{data.release.kind}</span>
-					{#if data.release.license_expression}
-						<span class="badge">{data.release.license_expression}</span>
+		<section class="card card-border bg-base-200">
+			<div class="card-body gap-4">
+				<div class="flex flex-wrap items-start justify-between gap-4">
+					<div class="flex flex-col gap-2">
+						<p class="text-sm text-base-content/70">
+							<a
+								class="link link-hover"
+								href={`/p/${encodeURIComponent(data.projectId)}?home=${encodeURIComponent(data.home)}`}
+							>
+								{data.profile?.display_name ?? 'This project'}
+							</a>
+						</p>
+						<h1 class="text-2xl font-semibold tracking-tight">{data.release.human_version}</h1>
+						<div class="flex flex-wrap gap-2">
+							<span class="badge badge-outline">{data.release.channel}</span>
+							<span class="badge badge-outline">{data.release.kind}</span>
+							{#if data.release.license_expression}
+								<span class="badge badge-ghost">{data.release.license_expression}</span>
+							{/if}
+						</div>
+						<p class="text-sm text-base-content/60">
+							Declared {formatTime(data.release.declared_time)}
+						</p>
+					</div>
+					{#if primary && !data.release.withdrawal}
+						<a class="btn btn-primary" href={blobUrl(data.home, primary.digest)}>
+							Download {primary.filename}
+						</a>
 					{/if}
 				</div>
-				<p class="text-base-content/60 text-sm">
-					Declared {formatTime(data.release.declared_time)}
-				</p>
 			</div>
 		</section>
 
 		<section class="card card-border">
 			<div class="card-body">
-				<h2 class="card-title">Artifacts</h2>
+				<h2 class="card-title">Files in this release</h2>
 				<div class="overflow-x-auto">
 					<table class="table table-sm">
 						<thead>
@@ -130,8 +163,8 @@
 					</table>
 				</div>
 				<p class="text-base-content/60 text-sm">
-					A download delivers bytes; it does not prove the file is safe. Use the verifier CLI to
-					check the signature and digest.
+					Downloading gets you the bytes. It does not prove the file is safe; use the verifier tool
+					to check the publisher's signature and the file fingerprint.
 				</p>
 			</div>
 		</section>
@@ -175,17 +208,24 @@
 		</section>
 
 		{#if data.release.compatibility.length > 0}
-			<section class="card card-border">
-				<div class="card-body">
-					<h2 class="card-title">Compatibility</h2>
+			<section class="card card-border bg-base-200">
+				<div class="card-body gap-2">
+					<h2 class="card-title">Works with</h2>
+					<p class="text-sm text-base-content/70">
+						Declared by the publisher for this release. A declaration is a claim by the author, not
+						a test result.
+					</p>
 					<ul class="flex flex-col gap-1 text-sm">
 						{#each data.release.compatibility as entry, index (index)}
-							<li>
-								<span class="text-base-content/60">{entry.side}</span>
+							<li class="flex flex-wrap items-center gap-2">
+								<span>Game {describeVersions(entry.scheme, entry.values)}</span>
 								{#if entry.loader_id}
+									<span class="text-base-content/60">with loader</span>
 									<Digest value={entry.loader_id} label="the loader id" length={12} />
 								{/if}
-								<span class="font-mono">{entry.scheme}: {entry.values.join(', ')}</span>
+								<span class="badge badge-ghost badge-sm">
+									{entry.side === 'both' ? 'client and server' : entry.side}
+								</span>
 							</li>
 						{/each}
 					</ul>
@@ -255,8 +295,8 @@
 						</div>
 					{/each}
 					<p class="text-base-content/60 text-sm">
-						Signed notes, referenced by digest from the release. A directory renders them; it cannot
-						change them.
+						These notes are signed by the publisher and referenced from the release. A directory can
+						show them, but it cannot change them.
 					</p>
 				</div>
 			</section>

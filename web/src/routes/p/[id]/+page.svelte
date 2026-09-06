@@ -26,7 +26,8 @@
 	}
 
 	const entries = $derived(data.feed?.entries ?? []);
-	const latest = $derived(entries.find((entry) => entry.kind === 'release-published') ?? null);
+	const releases = $derived(entries.filter((entry) => entry.kind === 'release-published'));
+	const latest = $derived(releases[0] ?? null);
 	const gameId = $derived(
 		entries.find((entry) => entry.release?.game_id)?.release?.game_id ?? null,
 	);
@@ -105,8 +106,8 @@
 						</div>
 					</div>
 					{#if latest}
-						<div class="card card-border w-full bg-base-100 sm:w-72">
-							<div class="card-body gap-2">
+						<div class="card card-border w-full bg-base-100 sm:w-80">
+							<div class="card-body gap-3">
 								<span class="text-xs uppercase tracking-wide text-base-content/60">
 									Latest release
 								</span>
@@ -118,7 +119,25 @@
 									{/if}
 									· {formatTime(latest.declared_at)}
 								</p>
-								<a class="btn btn-primary btn-sm mt-1 self-start" href={releaseHref(latest.object)}>
+								{#if releases.length > 1}
+									<label class="fieldset">
+										<span class="label">Choose a version</span>
+										<select
+											class="select select-sm"
+											aria-label="Choose a release version"
+											onchange={(event) => goto(releaseHref(event.currentTarget.value))}
+										>
+											{#each releases as release (release.object)}
+												<option value={release.object} selected={release.object === latest.object}>
+													{release.title ?? 'untitled'} · {release.release?.channel ?? 'release'} · {formatTime(
+														release.declared_at,
+													)}
+												</option>
+											{/each}
+										</select>
+									</label>
+								{/if}
+								<a class="btn btn-primary btn-sm self-start" href={releaseHref(latest.object)}>
 									View and download
 								</a>
 							</div>
