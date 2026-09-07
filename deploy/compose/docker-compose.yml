@@ -1,0 +1,176 @@
+# Moraine registry: one process, one data directory, one database.
+#
+# The image's CMD already runs the server with container-sane defaults
+# (see Dockerfile). The `command:` below repeats the four flags that matter
+# in a container, and flags always win over the matching MORAINE_* variable,
+# so those four are set as flags rather than environment. Everything else the
+# server understands is listed under `environment:`, commented out with its
+# built-in default. Uncomment what you need; a bare `docker compose up` needs
+# no changes.
+#
+# Docs: docs/operations.md (full settings table) and README.md ("Running an
+# instance").
+
+services:
+  moraine:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: moraine/server
+    restart: unless-stopped
+    command:
+      - --data-dir
+      - /data
+      - --bind
+      - 0.0.0.0:8080
+      - --web-dir
+      - /srv/web
+      - --tls-terminated
+    environment:
+      # ---- Identity and modes ---------------------------------------------
+      # review gates new projects behind an operator; open commits them.
+      MORAINE_PUBLISHING: review
+      # closed keeps registration to accounts the operator creates.
+      # MORAINE_REGISTRATION: closed
+      # Used by `moraine-server bootstrap` to create the first operator.
+      # MORAINE_OPERATOR_EMAIL: you@example.org
+
+      # ---- Serving ---------------------------------------------------------
+      # Origins allowed to write with a session cookie (comma separated).
+      # MORAINE_WEB_ORIGINS: https://mods.example,https://preview.mods.example
+      # Extra PEM roots trusted for outbound federation TLS.
+      # MORAINE_TLS_EXTRA_ROOTS: /data/extra-roots.pem
+      # Refuse to start while a migration is pending instead of running it.
+      # MORAINE_SKIP_MIGRATE_ON_START: "false"
+      # Only for a throwaway test: serve plain HTTP on a public bind.
+      # MORAINE_ALLOW_INSECURE_HTTP: "false"
+
+      # ---- Email (optional; off without SMTP_URL) --------------------------
+      # MORAINE_SMTP_URL: smtp://user:pass@host:587
+      # MORAINE_MAIL_FROM: moraine@example.org
+      # MORAINE_PUBLIC_URL: https://mods.example
+      # MORAINE_REQUIRE_VERIFIED_EMAIL: "false"
+
+      # ---- Storage ---------------------------------------------------------
+      # PostgreSQL instead of the SQLite file under the data directory.
+      # Run `docker compose run --rm moraine migrate` after switching, and
+      # use `pg_dump` for backups (the built-in backup covers SQLite only).
+      # MORAINE_DATABASE_URL: postgres://moraine:secret@postgres:5432/moraine
+      # S3-compatible blobs instead of the local blobs/ directory. Uploads
+      # still stage on local disk, so /data needs room for one upload.
+      # MORAINE_S3_BUCKET: moraine
+      # MORAINE_S3_ENDPOINT: https://s3.us-west-004.backblazeb2.com
+      # MORAINE_S3_REGION: us-west-004
+      # MORAINE_S3_ACCESS_KEY_ID: <key-id>
+      # MORAINE_S3_SECRET_ACCESS_KEY: <application-key>
+      # MORAINE_S3_PREFIX: moraine
+
+      # ---- Metrics ---------------------------------------------------------
+      # When set, /metrics requires `Authorization: Bearer <token>`.
+      # MORAINE_METRICS_TOKEN: <long-random-token>
+
+      # ---- Federation ------------------------------------------------------
+      # Allow http:// federation to loopback, for local tests only.
+      # MORAINE_FEDERATION_ALLOW_HTTP_LOCAL: "false"
+
+      # ---- Limits (0 disables where noted) ---------------------------------
+      # MORAINE_MAX_ARTIFACT_BYTES: "536870912"             # 512 MiB per file
+      # MORAINE_MAX_UPLOAD_BYTES_PER_ACCOUNT: "5368709120"  # 5 GiB, 0 off
+      # MORAINE_MAX_PROJECTS: "10000"                       # 0 off
+      # MORAINE_MAX_DEFINITIONS: "1000"                     # 0 off
+      # MORAINE_MAX_SYNC_ENTRIES: "10000"
+      # MORAINE_MAX_SYNC_PAGES: "200"
+      # MORAINE_MAX_CONCURRENT_SYNCS: "4"
+      # MORAINE_MAX_MIRROR_PROBES_PER_CYCLE: "20"
+      # MORAINE_MAX_MIRROR_PROBE_BYTES: "268435456"         # 256 MiB
+      # MORAINE_MAX_FEED_PAGE_ENTRIES: "100"
+      # MORAINE_MAX_FEED_SCAN_PAGES: "50"
+      # MORAINE_MAX_RESPONSE_BYTES: "16777216"              # 16 MiB inbound
+      # MORAINE_REQUESTS_PER_MINUTE: "600"                  # 0 off
+
+      # ---- Retention and maintenance --------------------------------------
+      # MORAINE_STAGING_RETENTION_SECONDS: "3600"
+      # MORAINE_BLOB_RETENTION_SECONDS: "604800"
+      # MORAINE_MAINTENANCE_INTERVAL_SECONDS: "3600"        # 0 disables loop
+    volumes:
+      - moraine-data:/data
+    ports:
+      # Kept on the host loopback: terminate TLS in a proxy in front.
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Optional backing services. They stay out of a plain `up`; start one with
+  # its profile and point the matching variable at it:
+  #
+  #   docker compose --profile postgres up -d
+  #   MORAINE_DATABASE_URL=postgres://moraine:secret@postgres:5432/moraine
+  #
+  postgres:
+    image: postgres:17
+    profiles: [postgres]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: moraine
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: moraine
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moraine"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  #   docker compose --profile s3 up -d
+  #   MORAINE_S3_BUCKET=moraine
+  #   MORAINE_S3_ENDPOINT=http://rustfs:9000
+  #   MORAINE_S3_REGION=us-east-1
+  #   MORAINE_S3_ACCESS_KEY_ID=rustfsadmin
+  #   MORAINE_S3_SECRET_ACCESS_KEY=rustfsadmin
+  #
+  rustfs:
+    image: rustfs/rustfs:latest
+    profiles: [s3]
+    restart: unless-stopped
+    depends_on:
+      rustfs-init:
+        condition: service_completed_successfully
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ACCESS_KEY: rustfsadmin # CHANGEME
+      RUSTFS_SECRET_KEY: rustfsadmin # CHANGEME
+    volumes:
+      - rustfs-data:/data
+    ports:
+      - "127.0.0.1:9000:9000" # S3 API
+      - "127.0.0.1:9001:9001" # console
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # rustfs runs as uid:gid 10001:10001, so a fresh named volume has to be
+  # chowned before it starts. Replace this with `user: "<uid>:<gid>"` on the
+  # rustfs service if you would rather match the host user.
+  rustfs-init:
+    image: alpine
+    profiles: [s3]
+    restart: "no"
+    volumes:
+      - rustfs-data:/data
+    command: sh -c "chown -R 10001:10001 /data"
+
+volumes:
+  moraine-data:
+  postgres-data:
+  rustfs-data:

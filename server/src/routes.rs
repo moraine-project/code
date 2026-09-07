@@ -380,6 +380,8 @@ mod tests {
 			max_artifact_bytes: 1024,
 			max_upload_bytes_per_account: 5_368_709_120,
 			max_projects: 10_000,
+			tls_terminated: false,
+			allow_insecure_http: false,
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,

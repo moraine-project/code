@@ -55,6 +55,12 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_BIND", default_value = "127.0.0.1:8080")]
 	pub bind: SocketAddr,
 
+	#[arg(long, env = "MORAINE_TLS_TERMINATED", default_value_t = false)]
+	pub tls_terminated: bool,
+
+	#[arg(long, env = "MORAINE_ALLOW_INSECURE_HTTP", default_value_t = false)]
+	pub allow_insecure_http: bool,
+
 	#[arg(long, env = "MORAINE_DATA_DIR", default_value = "./data")]
 	pub data_dir: PathBuf,
 
@@ -144,6 +150,16 @@ pub struct S3Settings {
 }
 
 impl Config {
+	pub fn check_binding(&self) -> Result<(), String> {
+		if self.bind.ip().is_loopback() || self.tls_terminated || self.allow_insecure_http {
+			return Ok(());
+		}
+		Err(format!(
+			"binding {} serves plain HTTP; put a TLS-terminating reverse proxy in front and pass --tls-terminated, or set MORAINE_ALLOW_INSECURE_HTTP=true to accept the risk",
+			self.bind
+		))
+	}
+
 	pub fn database_url(&self) -> String {
 		self.database_url
 			.clone()
@@ -177,6 +193,8 @@ mod tests {
 			max_artifact_bytes: 1024,
 			max_upload_bytes_per_account: 5_368_709_120,
 			max_projects: 10_000,
+			tls_terminated: false,
+			allow_insecure_http: false,
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,
@@ -208,6 +226,25 @@ mod tests {
 	fn leaves_a_credential_free_url_alone() {
 		let labelled = config(Some("postgres://host/moraine".to_string())).database_label();
 		assert_eq!(labelled, "postgres://host/moraine");
+	}
+
+	#[test]
+	fn refuses_a_public_bind_without_tls() {
+		let mut config = config(None);
+		config.bind = "0.0.0.0:8080".parse().expect("addr");
+		assert!(config.check_binding().is_err());
+
+		config.tls_terminated = true;
+		assert!(config.check_binding().is_ok());
+
+		config.tls_terminated = false;
+		config.allow_insecure_http = true;
+		assert!(config.check_binding().is_ok());
+	}
+
+	#[test]
+	fn allows_loopback_without_tls() {
+		assert!(config(None).check_binding().is_ok());
 	}
 
 	#[test]

@@ -19,7 +19,7 @@ export default defineConfig({
 					'script-src': ['self'],
 					'style-src': ['self', 'unsafe-inline'],
 					'img-src': ['self', 'data:'],
-					'connect-src': ['self'],
+					'connect-src': ['self', 'https:', 'http://127.0.0.1:*', 'http://localhost:*'],
 					'font-src': ['self'],
 					'object-src': ['none'],
 					'base-uri': ['self'],

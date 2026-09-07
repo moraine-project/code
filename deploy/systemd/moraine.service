@@ -1,0 +1,25 @@
+[Unit]
+Description=Moraine registry
+Documentation=https://github.com/moraine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=moraine
+Group=moraine
+StateDirectory=moraine
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/moraine-server \
+	--data-dir /var/lib/moraine \
+	--bind 127.0.0.1:8080 \
+	--tls-terminated
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/moraine
+
+[Install]
+WantedBy=multi-user.target

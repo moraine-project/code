@@ -1,0 +1,162 @@
+# Running an instance
+
+An instance is one process, one data directory, and one database. SQLite and
+the local filesystem are the default and are enough for a real instance.
+PostgreSQL and S3-compatible storage are there for when you outgrow them.
+
+The website ships with the server, so a single deployment serves both the API
+and the pages people browse.
+
+## What you need
+
+- A host, a domain, and something that terminates TLS: Caddy, nginx, or a
+  cloud load balancer.
+- A directory for data on a disk you back up.
+
+TLS is not optional here. The server refuses to bind a non-loopback address
+unless you pass `--tls-terminated` to say a proxy is in front of it, or set
+`MORAINE_ALLOW_INSECURE_HTTP=true` for a throwaway test. It does not handle
+certificates itself; your proxy owns those.
+
+## Install
+
+With the container:
+
+```sh
+docker build -t moraine/server .
+docker run -d --name moraine \
+	-v moraine-data:/data \
+	-p 127.0.0.1:8080:8080 \
+	moraine/server
+```
+
+`deploy/compose/docker-compose.yml` does the same and binds the published port
+to localhost so only the host proxy can reach it.
+`deploy/systemd/moraine.service` runs the binary as an unprivileged user with a
+state directory.
+
+From source:
+
+```sh
+cargo build --release -p moraine-server
+./target/release/moraine-server \
+	--data-dir /var/lib/moraine \
+	--bind 127.0.0.1:8080 \
+	--tls-terminated
+```
+
+Create the first operator account once:
+
+```sh
+moraine-server --data-dir /var/lib/moraine bootstrap --email you@example.org
+```
+
+The password is printed once. Store it in your password manager now; the server
+keeps only a hash and cannot show it to you again.
+
+Then point the proxy at the instance and visit it. The first load runs the
+migrations unless `MORAINE_SKIP_MIGRATE_ON_START=true`, in which case run
+`moraine-server migrate` yourself as part of the deploy.
+
+## Settings
+
+Every setting has a `MORAINE_*` environment variable and the same flag.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MORAINE_BIND` | `127.0.0.1:8080` | Address to listen on |
+| `MORAINE_TLS_TERMINATED` | `false` | A proxy in front terminates TLS |
+| `MORAINE_ALLOW_INSECURE_HTTP` | `false` | Serve plain HTTP on a public bind anyway |
+| `MORAINE_DATA_DIR` | `./data` | Blobs and instance keys |
+| `MORAINE_DATABASE_URL` | unset | PostgreSQL URL; SQLite under the data dir when unset |
+| `MORAINE_WEB_DIR` | unset | Serve the built website from this directory |
+| `MORAINE_S3_BUCKET` | unset | Store blobs in S3 instead of the filesystem |
+| `MORAINE_S3_ENDPOINT` | unset | S3 endpoint for non-AWS providers |
+| `MORAINE_S3_REGION` | unset | S3 region |
+| `MORAINE_S3_ACCESS_KEY_ID` | unset | S3 credential |
+| `MORAINE_S3_SECRET_ACCESS_KEY` | unset | S3 credential |
+| `MORAINE_S3_PREFIX` | `moraine` | Key prefix inside the bucket |
+| `MORAINE_PUBLISHING` | `review` | `review` gates new projects behind approval, `open` does not |
+| `MORAINE_OPERATOR_EMAIL` | unset | Used by `bootstrap` |
+| `MORAINE_TLS_EXTRA_ROOTS` | unset | PEM bundle trusted in addition to the system roots, for federation |
+
+Retention and limits:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MORAINE_MAX_ARTIFACT_BYTES` | 512 MiB | Largest single artifact |
+| `MORAINE_MAX_UPLOAD_BYTES_PER_ACCOUNT` | 5 GiB | Per-account stored bytes; `0` disables |
+| `MORAINE_MAX_PROJECTS` | 10000 | Projects on this instance; `0` disables |
+| `MORAINE_MAX_FEED_PAGE_ENTRIES` | 100 | Feed page size |
+| `MORAINE_MAX_FEED_SCAN_PAGES` | 50 | Pages a feed read will walk |
+| `MORAINE_MAX_SYNC_PAGES` | 200 | Pages one federation sync will walk |
+| `MORAINE_MAX_CONCURRENT_SYNCS` | 4 | Mirrors syncing at once |
+| `MORAINE_MAX_MIRROR_PROBES_PER_CYCLE` | 20 | Mirror probes per maintenance cycle |
+| `MORAINE_MAX_MIRROR_PROBE_BYTES` | 256 MiB | Bytes one probe cycle may fetch |
+| `MORAINE_MAX_RESPONSE_BYTES` | 16 MiB | Largest inbound response from another home |
+| `MORAINE_REQUESTS_PER_MINUTE` | 600 | Per-client request budget |
+| `MORAINE_STAGING_RETENTION_SECONDS` | 3600 | Unreferenced staging blobs kept this long |
+| `MORAINE_BLOB_RETENTION_SECONDS` | 604800 | Unreferenced blobs kept this long |
+| `MORAINE_MAINTENANCE_INTERVAL_SECONDS` | 3600 | Background cycle interval |
+| `MORAINE_FEDERATION_ALLOW_HTTP_LOCAL` | `false` | Allow `http://` federation to loopback, for local tests |
+
+Set a limit to `0` to turn that limit off. An operator running a public
+instance wants the defaults; an operator running one for a small group may
+lower them.
+
+## Storage
+
+SQLite keeps metadata in `<data-dir>/moraine.sqlite3`, and blobs live under
+`<data-dir>/blobs` unless S3 is configured. PostgreSQL gets metadata only, and
+S3 gets blobs only; the two choices are independent.
+
+Blobs are content-addressed, so the same bytes uploaded twice are stored once.
+Nothing is deleted while a signed record references it. Withdrawal, quarantine,
+and takedown stop serving and stop indexing; they do not rewrite or delete the
+bytes, because a signature over them still exists.
+
+## Backups
+
+```sh
+moraine-server --data-dir /var/lib/moraine backup --out /srv/backups/2026-09-20
+moraine-server --data-dir /var/lib/moraine verify-backup --dir /srv/backups/2026-09-20
+moraine-server --data-dir /var/lib/moraine restore --dir /srv/backups/2026-09-20 --force
+```
+
+A backup takes a consistent snapshot of the database and a listing of every
+blob it references. It does not include publisher root keys, and it does not
+include the instance webhook signing key; copy both separately or you will lose
+the ability to sign on behalf of the instance and to verify past webhook
+deliveries.
+
+Run the drill. A backup you have never restored is a hope, not a backup.
+Restore into an empty data directory, start the instance against it, and fetch
+a release with `moraine-verify` before you trust it.
+
+## Monitoring
+
+`GET /metrics` returns Prometheus text: request counts and durations by route,
+sessions and API keys created and revoked, staging and blob collections, blob
+serve failures, and key-change events. Scrape it; the server does not push.
+
+`deploy/otel/` has two OpenTelemetry Collector profiles, one that writes to
+Grafana and one that writes to SigNoz. Pick one at deploy time. A collector is
+the only component that needs the backend's credentials, and an instance with
+no collector configured sends nothing off the host.
+
+Watch `moraine_request_duration_seconds` for latency, `moraine_key_changes_total`
+for key activity, and the collection counters to confirm maintenance is running.
+
+## Policy
+
+Every instance publishes its own rules: what it will host, how long it keeps
+things, how it handles a takedown, and who to contact. `docs/policy-template.md`
+is a starting point. Put the finished policy somewhere stable and link it from
+the instance, because reporters and publishers will look for it.
+
+## Upgrading
+
+Replace the binary or the image, run `moraine-server migrate`, and restart.
+Migrations are forward-only; take a backup first, and if you need to roll back,
+restore that backup rather than moving the database backwards. The signed
+formats are frozen, so an upgrade does not invalidate anything already stored.

@@ -108,6 +108,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			Err(error) => return Err(error.into()),
 		}
 	}
+	if let Err(message) = config.check_binding() {
+		return Err(message.into());
+	}
 	let store = Arc::new(blob::open_store(&config).await?);
 	let metadata = Arc::new(store::MetadataStore::open_url(&config.database_url()).await?);
 	let capability = Arc::new(capability::Capability::discover(&config));

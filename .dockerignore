@@ -1,0 +1,6 @@
+local
+target
+.git
+web/node_modules
+web/build
+web/.svelte-kit
