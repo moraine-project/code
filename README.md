@@ -4,8 +4,16 @@ A federated registry for games and their mods. Each project lives at a home its
 publisher controls, releases are signed and immutable, and independent
 directories and mirrors can index and serve them without owning your project.
 
-Nothing here is finished. This repository holds the protocol implementation and
-the tools that check it.
+This is an alpha. The protocol and the server work and are covered by tests,
+but nobody outside this repository has run two instances against each other
+yet, there has been no external security review, and the desktop launcher is
+not built. The website, not a launcher, is the way people use it.
+
+Run an instance locally, publish something, and tell us where it breaks. For a
+suspected vulnerability, follow [`SECURITY.md`](./SECURITY.md) rather than
+opening a public issue. To build or contribute, read
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) and the operator and author guides under
+[`docs/`](./docs/).
 
 ## What works right now
 
@@ -555,9 +563,17 @@ protocol/
   spec/         notes that pin implementation decisions
   vectors/      the test-vector corpus
 interop/        independent Python checker for the vector corpus
+docs/           operator, security, and author guides, and a policy template
 deploy/
   otel/         collector profiles for a Grafana or SigNoz metrics backend
+  compose/      a compose file that keeps the port on localhost
+  systemd/      a hardened unit file
 ```
+
+`Dockerfile` builds the server and the website into one image. `SECURITY.md`
+says how to report a vulnerability, and `CONTRIBUTING.md` covers building,
+testing, and the rule that a signed-format change moves the corpus, the Rust
+implementation, and the independent checker together.
 
 ## License
 
