@@ -174,7 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				Ok(_) => {}
 				Err(error) => tracing::warn!(%error, "subscription resync failed"),
 			}
-			match federation::probe_mirrors(&prune_state, 20).await {
+			match federation::probe_mirrors(&prune_state, prune_state.capability.max_mirror_probes_per_cycle as i64).await {
 				Ok(confirmed) if confirmed > 0 => {
 					tracing::info!(confirmed, "confirmed mirror holdings");
 				}

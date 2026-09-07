@@ -708,3 +708,5 @@ fn storage_error(error: sqlx::Error) -> Response {
 
 #[cfg(test)]
 mod federation_tests;
+#[cfg(test)]
+mod mirror_tests;

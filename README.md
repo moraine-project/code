@@ -492,6 +492,23 @@ exact `moraine-publish` command to run locally, filled in with what you entered
 and the origin you are on. Signing stays on your machine; the browser never
 holds a release key.
 
+## Operator limits
+
+A few environment variables bound what one instance will do. They are not
+advertised in the discovery document, since they are anti-abuse settings and
+not part of the protocol.
+
+- `MORAINE_MAX_PROJECTS` (default 10000, 0 disables) caps how many projects the
+  instance holds; a new project past the cap is refused with 403.
+- `MORAINE_MAX_UPLOAD_BYTES_PER_ACCOUNT` caps stored bytes per account and
+  `MORAINE_MAX_ARTIFACT_BYTES` caps a single file.
+- `MORAINE_REQUESTS_PER_MINUTE` caps request rate per credential and address.
+- `MORAINE_MAX_MIRROR_PROBES_PER_CYCLE` caps how many mirror commitments the
+  maintenance worker verifies per run, and `MORAINE_MAX_MIRROR_PROBE_BYTES`
+  skips any single commitment larger than that, so a mirror cannot make the
+  instance download an unbounded artifact. A skipped commitment is left
+  unverified rather than marked unreachable.
+
 ## Metrics and observability
 
 `GET /metrics` serves Prometheus text: request counts, request duration, server

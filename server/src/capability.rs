@@ -21,6 +21,12 @@ pub struct Capability {
 	pub publishing: String,
 	pub webhook_public_key: Option<String>,
 	#[serde(skip)]
+	pub max_projects: u64,
+	#[serde(skip)]
+	pub max_mirror_probes_per_cycle: u32,
+	#[serde(skip)]
+	pub max_mirror_probe_bytes: u64,
+	#[serde(skip)]
 	pub allow_insecure_federation_local: bool,
 	#[serde(skip)]
 	pub tls_extra_roots: Vec<reqwest::Certificate>,
@@ -46,6 +52,9 @@ impl Capability {
 			max_sync_pages: config.max_sync_pages,
 			requests_per_minute: config.requests_per_minute,
 			max_concurrent_syncs: config.max_concurrent_syncs,
+			max_projects: config.max_projects,
+			max_mirror_probes_per_cycle: config.max_mirror_probes_per_cycle,
+			max_mirror_probe_bytes: config.max_mirror_probe_bytes,
 			maintenance_interval_seconds: config.maintenance_interval_seconds,
 			artifact_sources: vec!["local".to_string(), "external".to_string(), "mirrored".to_string()],
 			upload_modes: vec!["staged".to_string()],

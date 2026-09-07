@@ -529,3 +529,17 @@ async fn rejects_a_profile_tag_the_game_does_not_declare() {
 	let response = application.oneshot(request).await.expect("response");
 	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn refuses_projects_beyond_the_instance_quota() {
+	let (application, _directory) = app_with_max_projects(1).await;
+	let first = key(60);
+	let (_, _) = publish_project(&application, &first).await;
+
+	let second = key(61);
+	let request = axum::http::Request::post("/v1/projects")
+		.body(Body::from(genesis_wire(&second, PROJECT_KINDS)))
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+}

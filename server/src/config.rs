@@ -64,6 +64,15 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_MAX_UPLOAD_BYTES_PER_ACCOUNT", default_value_t = 5_368_709_120)]
 	pub max_upload_bytes_per_account: u64,
 
+	#[arg(long, env = "MORAINE_MAX_PROJECTS", default_value_t = 10_000)]
+	pub max_projects: u64,
+
+	#[arg(long, env = "MORAINE_MAX_MIRROR_PROBES_PER_CYCLE", default_value_t = 20)]
+	pub max_mirror_probes_per_cycle: u32,
+
+	#[arg(long, env = "MORAINE_MAX_MIRROR_PROBE_BYTES", default_value_t = 268_435_456)]
+	pub max_mirror_probe_bytes: u64,
+
 	#[arg(long, env = "MORAINE_MAX_FEED_PAGE_ENTRIES", default_value_t = 100)]
 	pub max_feed_page_entries: u32,
 
@@ -167,6 +176,9 @@ mod tests {
 			data_dir: std::path::PathBuf::from("/tmp/moraine"),
 			max_artifact_bytes: 1024,
 			max_upload_bytes_per_account: 5_368_709_120,
+			max_projects: 10_000,
+			max_mirror_probes_per_cycle: 20,
+			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,
 			max_feed_scan_pages: 50,
 			skip_migrate_on_start: false,

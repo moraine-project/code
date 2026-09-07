@@ -112,6 +112,19 @@ async fn create_project(State(state): State<AppState>, body: Bytes) -> Response 
 		}
 		Ok(Some(_)) => {}
 		Ok(None) => {
+			if state.capability.max_projects != 0 {
+				let held = match state.metadata.table_count("projects").await {
+					Ok(held) => held,
+					Err(error) => return storage_error(error),
+				};
+				if held.max(0) as u64 >= state.capability.max_projects {
+					return (
+						StatusCode::FORBIDDEN,
+						"this instance has reached its project limit".to_string(),
+					)
+						.into_response();
+				}
+			}
 			if let Err(error) = state.metadata.put_object(&stored(&object)).await {
 				return storage_error(error);
 			}

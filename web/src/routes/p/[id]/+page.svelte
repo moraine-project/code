@@ -27,6 +27,16 @@
 
 	const entries = $derived(data.feed?.entries ?? []);
 	const releases = $derived(entries.filter((entry) => entry.kind === 'release-published'));
+	const releaseRows = $derived(
+		entries.filter(
+			(entry) => entry.kind === 'release-published' || entry.kind === 'release-withdrawn',
+		),
+	);
+	const history = $derived(
+		entries.filter(
+			(entry) => entry.kind !== 'release-published' && entry.kind !== 'release-withdrawn',
+		),
+	);
 	const latest = $derived(releases[0] ?? null);
 	const gameId = $derived(
 		entries.find((entry) => entry.release?.game_id)?.release?.game_id ?? null,
@@ -246,7 +256,7 @@
 
 				{#if data.feed.entries.length === 0}
 					<p class="text-base-content/80 text-sm">This project has no releases yet.</p>
-				{:else if entries.length === 0}
+				{:else if releaseRows.length === 0}
 					<p class="text-base-content/80 text-sm">No release matches these filters.</p>
 				{:else}
 					<div class="overflow-x-auto">
@@ -263,7 +273,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each entries as entry (entry.entry)}
+								{#each releaseRows as entry (entry.entry)}
 									<tr>
 										<td class="text-base-content/60">{entry.seq}</td>
 										<td>{changeLabel(entry.kind)}</td>
@@ -300,6 +310,30 @@
 				{/if}
 			</div>
 		</section>
+
+		{#if history.length > 0}
+			<section class="card card-border bg-base-200">
+				<div class="card-body gap-3">
+					<div class="flex flex-col gap-1">
+						<h2 class="card-title">Project history</h2>
+						<p class="text-base-content/70 text-sm">
+							Changes to the project's identity and metadata, newest last: description updates,
+							signing key changes, ownership transfers, and moves between homes. A changed publisher
+							key is a security event, not a routine update.
+						</p>
+					</div>
+					<ul class="flex flex-col gap-2">
+						{#each history as entry (entry.entry)}
+							<li class="flex flex-wrap items-center gap-2 text-sm">
+								<span class="badge badge-outline">{changeLabel(entry.kind)}</span>
+								<span class="text-base-content/70">{formatTime(entry.declared_at)}</span>
+								<Digest copyOnly value={entry.entry} label="the history entry" />
+							</li>
+						{/each}
+					</ul>
+				</div>
+			</section>
+		{/if}
 
 		<div role="alert" class="alert alert-info alert-soft">
 			<span>
