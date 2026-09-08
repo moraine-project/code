@@ -135,6 +135,20 @@ moraine-publish transfer --key publisher.key --home https://example.org \
 Transfer signs the project over to a new root key. The new key is live from
 that point forward, and the change sits in the feed where followers can see it.
 
+## Publishing from the website
+
+You do not need the CLI. The publish console on a home can create a project and
+publish a release, signing in the browser with WebAssembly built from the same
+crates the CLI uses. Bring a key by generating one, pasting it, or opening a key
+file; it stays in the tab and is never uploaded.
+
+Two things are worth knowing. A key generated in a browser is only as safe as
+the backup you make, and clearing the tab loses it, so download it. And the
+website that serves the signing page is in your trust path; for a root key you
+care about, use the CLI on a machine you control, or sign releases with a
+delegated key and keep the root offline. The console tells you when the key you
+are using is a project root.
+
 ## Checking what you published
 
 ```sh

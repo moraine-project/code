@@ -79,6 +79,19 @@ second party to corroborate a home, run a second instance and compare.
 - Denial of service from a party willing to spend resources. Limits raise the
   cost; they do not remove the risk.
 
+## Signing in a browser
+
+The publish console can sign with a key that never leaves the tab. That is
+convenient and it removes the risk of a key sitting in browser storage, but it
+puts the page that serves the console in your trust path: whoever controls that
+origin serves the code that reads your key. A non-extractable WebCrypto key
+would not help here, because the page still asks it to sign. Two habits keep
+this safe. Treat a browser key as a release key, not a root: delegate a key to
+the project, publish with it, and keep the root offline, so a leaked browser key
+can be revoked without losing the project. And for a root key you care about,
+sign with the CLI on a machine you control. The console warns when the key in
+use is a project root.
+
 ## Reporting a problem
 
 See [`SECURITY.md`](../SECURITY.md) at the repository root. Do not open a public

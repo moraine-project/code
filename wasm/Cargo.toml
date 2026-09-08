@@ -1,0 +1,21 @@
+[package]
+name = "moraine-wasm"
+description = "Browser signer for Moraine objects, compiled to WebAssembly"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+moraine-crypto = { path = "../crypto" }
+moraine-model = { path = "../model" }
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

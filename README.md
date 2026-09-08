@@ -510,10 +510,15 @@ cookies. They work same-origin when the site is served by the registry via
 `--web-dir`, and cross-origin when the site's origin is listed in
 `MORAINE_WEB_ORIGINS`.
 
-The publish console (`/publish`) uploads an artifact to the home and prints the
-exact `moraine-publish` command to run locally, filled in with what you entered
-and the origin you are on. Signing stays on your machine; the browser never
-holds a release key.
+The publish console (`/publish`) can create a project and publish a release
+without the CLI. It takes a key you generate, paste, or open from a file, and
+signs genesis, releases, profiles, and changelogs in WebAssembly built from the
+same crates as `moraine-publish`, so the bytes are identical. The key is never
+uploaded or stored; it lives in the tab and is gone when you close it. The
+console warns when you are about to sign with a project root rather than a
+delegated release key, and offers the key file for download, because a browser
+key that is not backed up is a project you cannot recover. The CLI remains the
+better choice for a root key you care about.
 
 ## Operator limits
 
@@ -572,6 +577,7 @@ resolver/       deterministic dependency resolution and lockfiles
 metadata/       safe mod-archive metadata extraction
 install/        per-game install placement planning with path containment
 launcher/       game-agnostic installer core that verifies locked bytes and applies a plan
+wasm/           browser signer that compiles the model and crypto crates to WebAssembly
 server/         moraine-server registry, directory, and worker binary
 web/            SvelteKit website with static and Cloudflare build targets
 protocol/

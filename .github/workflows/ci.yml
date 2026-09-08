@@ -46,6 +46,25 @@ jobs:
           MORAINE_TEST_POSTGRES: postgres://moraine_app:app@127.0.0.1:5432/moraine_app_test
         run: cargo test -p moraine-server
 
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: wasm
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - name: Signer tests in Node
+        run: wasm-pack test --node
+        working-directory: wasm
+      - name: The crate builds for the browser target
+        run: cargo build -p moraine-wasm --target wasm32-unknown-unknown
+
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -53,6 +72,12 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
       - uses: pnpm/action-setup@v4
         with:
           version: 9
@@ -62,6 +87,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build:wasm
       - run: pnpm fmt:check
       - run: pnpm lint
       - run: pnpm check

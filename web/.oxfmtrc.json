@@ -4,5 +4,6 @@
 	"singleQuote": true,
 	"printWidth": 100,
 	"sortPackageJson": true,
-	"svelte": true
+	"svelte": true,
+	"ignorePatterns": ["src/lib/signer/pkg/**"]
 }

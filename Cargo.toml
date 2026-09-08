@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["codec", "crypto", "model", "metadata", "install", "verify", "publish", "resolver", "launcher", "server"]
+members = ["codec", "crypto", "model", "metadata", "install", "verify", "publish", "resolver", "launcher", "server", "wasm"]
 
 [workspace.package]
 version = "0.1.0"
