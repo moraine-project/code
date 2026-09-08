@@ -72,6 +72,7 @@ mod tests {
 			max_projects: 10_000,
 			tls_terminated: false,
 			allow_insecure_http: false,
+			web_origins: Vec::new(),
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,

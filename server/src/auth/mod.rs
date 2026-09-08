@@ -143,6 +143,9 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
 				if header_token.is_none() || header_token != cookie_token.as_deref() {
 					return Err((StatusCode::FORBIDDEN, "missing or mismatched CSRF token").into_response());
 				}
+				if !origin_trusted(parts, state) {
+					return Err((StatusCode::FORBIDDEN, "request origin is not allowed").into_response());
+				}
 			}
 			let _ = state.metadata.touch_session(&session.id, now, now + IDLE_SECONDS).await;
 			return Ok(Self {
@@ -171,6 +174,7 @@ struct RegisterReceipt {
 struct LoginReceipt {
 	user_id: String,
 	expires_at: i64,
+	csrf: String,
 }
 
 async fn register(State(state): State<AppState>, Json(credentials): Json<Credentials>) -> Response {
@@ -231,13 +235,15 @@ async fn login(State(state): State<AppState>, Json(credentials): Json<Credential
 		return storage_error(error);
 	}
 	state.metrics.record_session_created();
+	let cross_origin = state.capability.cross_origin();
 	let mut response = Json(LoginReceipt {
 		user_id: user.id,
 		expires_at: session.absolute_expires_at,
+		csrf: csrf.clone(),
 	})
 	.into_response();
-	append_cookie(&mut response, &session_cookie(&token));
-	append_cookie(&mut response, &csrf_cookie(&csrf));
+	append_cookie(&mut response, &session_cookie(&token, cross_origin));
+	append_cookie(&mut response, &csrf_cookie(&csrf, cross_origin));
 	response
 }
 
@@ -248,9 +254,10 @@ async fn logout(State(state): State<AppState>, user: AuthenticatedUser) -> Respo
 		}
 		state.metrics.record_session_revoked();
 	}
+	let cross_origin = state.capability.cross_origin();
 	let mut response = StatusCode::NO_CONTENT.into_response();
-	append_cookie(&mut response, &clear_cookie(SESSION_COOKIE, true));
-	append_cookie(&mut response, &clear_cookie(CSRF_COOKIE, false));
+	append_cookie(&mut response, &clear_cookie(SESSION_COOKIE, true, cross_origin));
+	append_cookie(&mut response, &clear_cookie(CSRF_COOKIE, false, cross_origin));
 	response
 }
 
@@ -409,20 +416,53 @@ fn append_cookie(response: &mut Response, cookie: &str) {
 	}
 }
 
-fn session_cookie(token: &str) -> String {
-	format!("{SESSION_COOKIE}={token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age={ABSOLUTE_SECONDS}")
+fn same_site(cross_origin: bool) -> &'static str {
+	if cross_origin { "None" } else { "Lax" }
 }
 
-fn csrf_cookie(token: &str) -> String {
-	format!("{CSRF_COOKIE}={token}; Path=/; Secure; SameSite=Lax; Max-Age={ABSOLUTE_SECONDS}")
+fn session_cookie(token: &str, cross_origin: bool) -> String {
+	format!(
+		"{SESSION_COOKIE}={token}; Path=/; HttpOnly; Secure; SameSite={}; Max-Age={ABSOLUTE_SECONDS}",
+		same_site(cross_origin)
+	)
 }
 
-fn clear_cookie(name: &str, http_only: bool) -> String {
-	let mut cookie = format!("{name}=; Path=/; Secure; SameSite=Lax; Max-Age=0");
+fn csrf_cookie(token: &str, cross_origin: bool) -> String {
+	format!(
+		"{CSRF_COOKIE}={token}; Path=/; Secure; SameSite={}; Max-Age={ABSOLUTE_SECONDS}",
+		same_site(cross_origin)
+	)
+}
+
+fn clear_cookie(name: &str, http_only: bool, cross_origin: bool) -> String {
+	let mut cookie = format!("{name}=; Path=/; Secure; SameSite={}; Max-Age=0", same_site(cross_origin));
 	if http_only {
 		cookie.push_str("; HttpOnly");
 	}
 	cookie
+}
+
+fn origin_trusted(parts: &Parts, state: &AppState) -> bool {
+	let origin = parts
+		.headers
+		.get(header::ORIGIN)
+		.and_then(|value| value.to_str().ok())
+		.or_else(|| parts.headers.get(header::REFERER).and_then(|value| value.to_str().ok()));
+	let Some(origin) = origin else {
+		return true;
+	};
+	if state.capability.origin_allowed(origin) {
+		return true;
+	}
+	let Some(host) = parts.headers.get(header::HOST).and_then(|value| value.to_str().ok()) else {
+		return true;
+	};
+	origin_host(origin) == Some(host)
+}
+
+fn origin_host(origin: &str) -> Option<&str> {
+	let rest = origin.split_once("://").map_or(origin, |(_, rest)| rest);
+	rest.split('/').next()
 }
 
 fn split_scopes(scopes: &str) -> Vec<String> {
@@ -502,6 +542,7 @@ mod tests {
 			max_projects: 10_000,
 			tls_terminated: false,
 			allow_insecure_http: false,
+			web_origins: Vec::new(),
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,
@@ -654,6 +695,72 @@ mod tests {
 			.expect("request");
 		let response = application.oneshot(create).await.expect("response");
 		assert_eq!(response.status(), StatusCode::FORBIDDEN);
+	}
+
+	#[tokio::test]
+	async fn login_returns_the_csrf_token_in_the_body_for_cross_origin_clients() {
+		let (application, _directory) = app().await;
+		let register = json_request(
+			"POST",
+			"/v1/auth/register",
+			serde_json::json!({ "email": "cross@example.org", "password": "correct horse battery" }),
+		);
+		application.clone().oneshot(register).await.expect("response");
+		let login = json_request(
+			"POST",
+			"/v1/auth/session",
+			serde_json::json!({ "email": "cross@example.org", "password": "correct horse battery" }),
+		);
+		let response = application.clone().oneshot(login).await.expect("response");
+		let csrf_cookie = cookie_token(&response, CSRF_COOKIE).expect("csrf cookie");
+		let body = json_body(response).await;
+		assert_eq!(body["csrf"].as_str(), Some(csrf_cookie.as_str()));
+	}
+
+	#[tokio::test]
+	async fn a_foreign_origin_cannot_drive_a_session_write() {
+		let (application, _directory) = app().await;
+		let register = json_request(
+			"POST",
+			"/v1/auth/register",
+			serde_json::json!({ "email": "origin@example.org", "password": "correct horse battery" }),
+		);
+		application.clone().oneshot(register).await.expect("response");
+		let login = json_request(
+			"POST",
+			"/v1/auth/session",
+			serde_json::json!({ "email": "origin@example.org", "password": "correct horse battery" }),
+		);
+		let response = application.clone().oneshot(login).await.expect("response");
+		let session = cookie_token(&response, SESSION_COOKIE).expect("session cookie");
+		let csrf = cookie_token(&response, CSRF_COOKIE).expect("csrf cookie");
+
+		let create = |origin: &str| {
+			axum::http::Request::builder()
+				.method("POST")
+				.uri("/v1/auth/keys")
+				.header(header::CONTENT_TYPE, "application/json")
+				.header(header::HOST, "api.example")
+				.header(header::ORIGIN, origin)
+				.header(header::COOKIE, format!("{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}"))
+				.header("x-csrf-token", csrf.clone())
+				.body(Body::from(serde_json::json!({ "name": "ci" }).to_string()))
+				.expect("request")
+		};
+
+		let response = application
+			.clone()
+			.oneshot(create("https://evil.example"))
+			.await
+			.expect("response");
+		assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+		let response = application
+			.clone()
+			.oneshot(create("https://api.example"))
+			.await
+			.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
 	}
 
 	#[tokio::test]

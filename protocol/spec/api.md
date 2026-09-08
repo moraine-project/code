@@ -558,19 +558,43 @@ the public ranges, and the connection is then pinned to those addresses, so a
 name that would resolve inward on a second lookup never reaches one. A sync is
 a synchronous request; the same syncs also run on the maintenance tick.
 
-## Cross-origin reads
+## Cross-origin reads and writes
 
-A static website runs on a different origin than the registry, so read requests
-need CORS. The server answers `GET` and `HEAD` with `Access-Control-Allow-Origin:
-*` and no credentials, which lets any static site resolve projects and fetch
-blobs. `POST`, `PUT`, `PATCH`, and `DELETE` are deliberately absent from the
-allowed methods, so a browser cannot use a cross-origin credential to write.
-Automation that must write uses an API key over a direct connection, not a
-browser fetch.
+A static website can run on a different origin than the registry, so read
+requests need CORS. By default the server answers `GET` and `HEAD` with
+`Access-Control-Allow-Origin: *` and no credentials, which lets any static site
+resolve projects and fetch blobs. Allowing every read origin is safe because
+reads are public and carry no credentials.
 
-Allowing every read origin is safe here because reads are public and carry no
-credentials. An operator that wants to restrict reads can narrow the allowed
-origin; the protocol does not require a particular policy.
+Writes are different. Publishing a signed object, a genesis, or a feed entry
+takes no credential at all: the signature is the authorization, so those routes
+accept a cross-origin `POST` from any origin, exactly as they accept it from
+any client. What needs a credential is the account-side work, such as uploading
+an artifact or submitting for review.
+
+An operator can name the sites it serves from another origin with a
+comma-separated allowlist. When the list is set, the server:
+
+- echoes only a listed origin in `Access-Control-Allow-Origin` and sets
+  `Access-Control-Allow-Credentials: true`;
+- allows `POST`, `PUT`, `PATCH`, and `DELETE` on top of `GET` and `HEAD`;
+- sets the session and CSRF cookies `SameSite=None; Secure`, because a browser
+  does not attach a `Lax` cookie to a cross-site request;
+- returns the CSRF token in the login response body as `csrf`, since a page on
+  another origin cannot read a cookie set by the registry's domain;
+- refuses a session-authenticated mutating request whose `Origin` (or, failing
+  that, `Referer`) is neither the request's own host nor a listed origin.
+
+An unlisted origin still gets permissive reads but no credentialed writes, and
+its preflight for a write method is refused. An API key is still rejected from a
+browser context; the allowlist exists so a first-party site on another origin
+can use a session, not so a browser can carry a key.
+
+When the allowlist is empty the server keeps the original behavior: any origin
+may read, no origin may write with credentials, and the site is expected to be
+served by the registry itself. A deployment that puts the site and the API on
+one hostname, such as a proxy that routes `/api` to the registry, needs no
+allowlist and stays same-origin.
 
 ## Search
 

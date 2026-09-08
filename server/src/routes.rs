@@ -10,7 +10,7 @@ use axum::{Json, Router};
 use futures_util::TryStreamExt;
 use serde::Serialize;
 use tokio_util::io::StreamReader;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
@@ -63,8 +63,8 @@ pub fn router(state: AppState) -> Router {
 			state.clone(),
 			crate::auth::ratelimit::limit,
 		))
+		.layer(cors(&state.capability.web_origins))
 		.with_state(state)
-		.layer(read_only_cors())
 		.layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
 		.layer(TimeoutLayer::with_status_code(
 			StatusCode::REQUEST_TIMEOUT,
@@ -91,12 +91,34 @@ pub fn router(state: AppState) -> Router {
 	}
 }
 
-fn read_only_cors() -> CorsLayer {
+fn cors(origins: &[String]) -> CorsLayer {
+	if origins.is_empty() {
+		return CorsLayer::new()
+			.allow_origin(Any)
+			.allow_methods([Method::GET, Method::HEAD])
+			.allow_headers(Any)
+			.max_age(Duration::from_secs(3600));
+	}
+	let allowed: Vec<HeaderValue> = origins.iter().filter_map(|origin| origin.parse().ok()).collect();
 	CorsLayer::new()
-		.allow_origin(Any)
-		.allow_methods([Method::GET, Method::HEAD])
-		.allow_headers(Any)
-		.max_age(std::time::Duration::from_secs(3600))
+		.allow_origin(AllowOrigin::list(allowed))
+		.allow_credentials(true)
+		.allow_methods([
+			Method::GET,
+			Method::HEAD,
+			Method::POST,
+			Method::PUT,
+			Method::PATCH,
+			Method::DELETE,
+		])
+		.allow_headers([
+			header::CONTENT_TYPE,
+			header::ACCEPT,
+			header::RANGE,
+			header::IF_NONE_MATCH,
+			axum::http::HeaderName::from_static("x-csrf-token"),
+		])
+		.max_age(Duration::from_secs(3600))
 }
 
 async fn well_known(State(state): State<AppState>) -> Json<Capability> {
@@ -360,6 +382,16 @@ mod tests {
 		(router(state), directory)
 	}
 
+	async fn test_app_with_origins(origins: Vec<String>) -> (Router, tempfile::TempDir) {
+		let (mut state, directory) = test_state(None).await;
+		let capability = crate::capability::Capability {
+			web_origins: origins,
+			..state.capability.as_ref().clone()
+		};
+		state.capability = Arc::new(capability);
+		(router(state), directory)
+	}
+
 	async fn test_state(web_dir: Option<std::path::PathBuf>) -> (AppState, tempfile::TempDir) {
 		let directory = tempfile::tempdir().expect("tempdir");
 		let store = BlobStore::new(directory.path()).await.expect("store");
@@ -382,6 +414,7 @@ mod tests {
 			max_projects: 10_000,
 			tls_terminated: false,
 			allow_insecure_http: false,
+			web_origins: Vec::new(),
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,
@@ -643,6 +676,41 @@ mod tests {
 			.unwrap_or_default()
 			.to_ascii_uppercase();
 		assert!(!methods.contains("POST"));
+	}
+
+	#[tokio::test]
+	async fn an_allowlisted_origin_may_write_with_credentials() {
+		let (app, _directory) = test_app_with_origins(vec!["https://site.example".to_string()]).await;
+		let preflight = axum::http::Request::builder()
+			.method("OPTIONS")
+			.uri("/v1/blobs")
+			.header(header::ORIGIN, "https://site.example")
+			.header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+			.body(Body::empty())
+			.expect("request");
+		let response = app.clone().oneshot(preflight).await.expect("response");
+		assert_eq!(
+			response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+			"https://site.example"
+		);
+		assert_eq!(response.headers()[header::ACCESS_CONTROL_ALLOW_CREDENTIALS], "true");
+		let methods = response
+			.headers()
+			.get(header::ACCESS_CONTROL_ALLOW_METHODS)
+			.and_then(|value| value.to_str().ok())
+			.unwrap_or_default()
+			.to_ascii_uppercase();
+		assert!(methods.contains("POST"), "{methods}");
+
+		let other = axum::http::Request::builder()
+			.method("OPTIONS")
+			.uri("/v1/blobs")
+			.header(header::ORIGIN, "https://evil.example")
+			.header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+			.body(Body::empty())
+			.expect("request");
+		let response = app.oneshot(other).await.expect("response");
+		assert!(response.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none());
 	}
 
 	#[tokio::test]

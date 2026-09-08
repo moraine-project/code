@@ -29,6 +29,8 @@ pub struct Capability {
 	#[serde(skip)]
 	pub allow_insecure_federation_local: bool,
 	#[serde(skip)]
+	pub web_origins: Vec<String>,
+	#[serde(skip)]
 	pub tls_extra_roots: Vec<reqwest::Certificate>,
 	#[serde(skip)]
 	pub webhook_signer: Option<SigningKey>,
@@ -37,6 +39,15 @@ pub struct Capability {
 impl Capability {
 	pub fn is_open(&self) -> bool {
 		self.publishing == "open"
+	}
+
+	pub fn cross_origin(&self) -> bool {
+		!self.web_origins.is_empty()
+	}
+
+	pub fn origin_allowed(&self, origin: &str) -> bool {
+		let origin = origin.trim_end_matches('/');
+		self.web_origins.iter().any(|allowed| allowed.eq_ignore_ascii_case(origin))
 	}
 
 	pub fn discover(config: &Config) -> Self {
@@ -62,6 +73,12 @@ impl Capability {
 			publishing: config.publishing.as_str().to_string(),
 			webhook_public_key,
 			allow_insecure_federation_local: config.allow_insecure_federation_local,
+			web_origins: config
+				.web_origins
+				.iter()
+				.map(|origin| origin.trim().trim_end_matches('/').to_string())
+				.filter(|origin| !origin.is_empty())
+				.collect(),
 			tls_extra_roots: extra_roots(config),
 			webhook_signer,
 		}

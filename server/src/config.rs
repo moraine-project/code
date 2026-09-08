@@ -61,6 +61,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_ALLOW_INSECURE_HTTP", default_value_t = false)]
 	pub allow_insecure_http: bool,
 
+	#[arg(long, env = "MORAINE_WEB_ORIGINS", value_delimiter = ',')]
+	pub web_origins: Vec<String>,
+
 	#[arg(long, env = "MORAINE_DATA_DIR", default_value = "./data")]
 	pub data_dir: PathBuf,
 
@@ -195,6 +198,7 @@ mod tests {
 			max_projects: 10_000,
 			tls_terminated: false,
 			allow_insecure_http: false,
+			web_origins: Vec::new(),
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,

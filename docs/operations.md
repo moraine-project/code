@@ -70,6 +70,7 @@ Every setting has a `MORAINE_*` environment variable and the same flag.
 | `MORAINE_DATA_DIR` | `./data` | Blobs and instance keys |
 | `MORAINE_DATABASE_URL` | unset | PostgreSQL URL; SQLite under the data dir when unset |
 | `MORAINE_WEB_DIR` | unset | Serve the built website from this directory |
+| `MORAINE_WEB_ORIGINS` | unset | Comma-separated origins allowed to write with a session cookie |
 | `MORAINE_S3_BUCKET` | unset | Store blobs in S3 instead of the filesystem |
 | `MORAINE_S3_ENDPOINT` | unset | S3 endpoint for non-AWS providers |
 | `MORAINE_S3_REGION` | unset | S3 region |
@@ -146,6 +147,33 @@ no collector configured sends nothing off the host.
 
 Watch `moraine_request_duration_seconds` for latency, `moraine_key_changes_total`
 for key activity, and the collection counters to confirm maintenance is running.
+
+## Hosting the website on another origin
+
+The website ships with the server and is served from it, which is the simplest
+setup. If you host it elsewhere, such as a static site on a CDN while the API
+runs on a VPS, list the site's origin so the account and upload routes accept
+its requests:
+
+```sh
+MORAINE_WEB_ORIGINS=https://mods.example,https://preview.mods.example
+```
+
+With the list set, the server answers those origins with credentials, switches
+the session cookies to `SameSite=None`, returns the CSRF token in the login
+response body, and rejects a session write whose `Origin` is neither the
+request's host nor a listed origin. Origins not on the list can still read.
+Build the site with `PUBLIC_MORAINE_REGISTRY` pointing at the API, for example
+`https://api.example`.
+
+Two cautions. Every origin you list can drive a logged-in visitor's session, so
+list only origins you operate and keep the list tight. If your proxy rewrites
+the `Host` header, the same-origin check cannot match and you must list the
+public origin explicitly.
+
+If the site and the API share one hostname, for example a proxy that forwards
+`/api` to the server, leave the list empty: requests are same-origin, the
+cookies stay `SameSite=Lax`, and none of this applies.
 
 ## Policy
 

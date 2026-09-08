@@ -488,10 +488,17 @@ pnpm dev
 produces a Worker build from the same source. `pnpm lint` runs Oxlint,
 `pnpm fmt:check` runs Oxfmt, `pnpm fmt` rewrites files in place, and `pnpm test`
 runs the Vitest suite. The site reads
-`PUBLIC_MORAINE_REGISTRY` for its default home. The server answers read
-requests with permissive CORS and no credentials, so a static site on another
-origin can resolve projects and fetch blobs. Writes are not offered
-cross-origin.
+`PUBLIC_MORAINE_REGISTRY` for its default home, and uses it as the API base for
+writes too. The server answers read requests with permissive CORS and no
+credentials, so any static site can resolve projects and fetch blobs. Signed
+writes need no credential either, so a cross-origin site can publish them.
+
+Account-side writes need a credential. If you host the site somewhere other
+than the registry, list its origin in `MORAINE_WEB_ORIGINS`; the server then
+allows those origins to write with credentials, switches the session cookies to
+`SameSite=None`, returns the CSRF token in the login response body, and checks
+the request `Origin`. An origin that is not listed gets reads only. If the site
+and the API share a hostname, no allowlist is needed.
 
 A release page can hash a file you already downloaded and check it against the
 release's artifact digests. That is a byte check in the browser; the verifier
@@ -499,8 +506,9 @@ CLI is still what checks the publisher's signature. A release marked withdrawn
 shows a warning at the top of its page, and the feed names the withdrawal.
 
 The account console (`/account`) and review queue (`/review`) use session
-cookies, so they work when the site is served by the registry under one origin
-via `--web-dir`. From a separate origin only the public read pages work.
+cookies. They work same-origin when the site is served by the registry via
+`--web-dir`, and cross-origin when the site's origin is listed in
+`MORAINE_WEB_ORIGINS`.
 
 The publish console (`/publish`) uploads an artifact to the home and prints the
 exact `moraine-publish` command to run locally, filled in with what you entered
