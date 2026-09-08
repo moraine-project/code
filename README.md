@@ -167,6 +167,12 @@ MORAINE_TEST_POSTGRES=postgres://postgres:postgres@127.0.0.1:5432/moraine_test \
   cargo test -p moraine-server
 ```
 
+Federation is exercised in `server/tests/two_hosts.rs`: the test starts two
+server processes on their own ports and data directories, publishes a project
+on one, and syncs it from the other over HTTP. Two routers in one process would
+prove less, because they would share the code paths that a network hop is most
+likely to break.
+
 Read a mod archive's manifest without running it:
 
 ```sh
