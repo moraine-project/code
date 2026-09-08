@@ -102,6 +102,11 @@ const MIGRATIONS: &[Migration] = &[
 		sqlite: include_str!("../../migrations/sqlite/0016_deny_lists.sql"),
 		postgres: include_str!("../../migrations/postgres/0016_deny_lists.sql"),
 	},
+	Migration {
+		name: "0017_witness_observations",
+		sqlite: include_str!("../../migrations/sqlite/0017_witness_observations.sql"),
+		postgres: include_str!("../../migrations/postgres/0017_witness_observations.sql"),
+	},
 ];
 
 pub(super) async fn run_migrations(pool: &AnyPool, engine: Engine) -> Result<usize, sqlx::Error> {

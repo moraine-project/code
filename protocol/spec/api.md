@@ -521,6 +521,31 @@ applied stay applied. The budget is advertised in the capability document and
 set with `MORAINE_MAX_SYNC_PAGES`. `GET /v1/subscriptions` lists the followed
 homes and their cursors. Both routes need the `federation:manage` scope.
 
+Every sync records the head it observed, as the entry ID the home presented at a
+sequence, in a local witness log. `GET /v1/projects/{id}/witness` returns those
+observations and any sequence where two observations disagree:
+
+```json
+{
+  "project_id": "gd:sha256:...",
+  "observations": [
+    { "source_home": "https://example.org", "sequence": 1, "head_entry": "gd:sha256:...", "observed_at": 1760000000 }
+  ],
+  "conflicts": [
+    { "sequence": 1, "entries": ["gd:sha256:...", "gd:sha256:..."], "homes": ["https://example.org"] }
+  ]
+}
+```
+
+A sequence maps to one entry, so two different entries recorded at the same
+sequence is evidence that a home rewrote history, and it stays visible after the
+head has moved on. The log is per instance and database-backed, deduplicated by
+project, home, sequence, and entry. It is a local record, not an exchange: this
+instance does not publish its log to other instances or fetch theirs, so it can
+detect equivocation it observed itself and cannot corroborate what it did not
+see. The route needs the `federation:manage` scope, like the subscription list,
+so following choices stay private to the operator.
+
 A game, loader, or runtime identity is pulled the same way with
 `POST /v1/federation/sync-definition`.
 
@@ -960,3 +985,7 @@ signed publisher object.
 The desktop launcher GUI. The verifier, resolver, installer core, metadata
 extractors, and install adapters are built; only the toolkit choice and its
 prototype remain, deliberately, until installer requirements are known.
+
+Cross-instance witness exchange. Each instance keeps its own witness log of the
+heads it observed, but instances do not publish or fetch each other's logs, so
+corroboration is manual for now.

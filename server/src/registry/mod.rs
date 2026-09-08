@@ -22,6 +22,7 @@ pub mod search_facets;
 pub mod search_index;
 pub mod search_labels;
 pub mod views;
+pub mod witness;
 
 use axum::body::Bytes;
 use axum::extract::{Path, State};

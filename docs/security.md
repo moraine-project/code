@@ -60,6 +60,13 @@ stores. A response that fails verification is discarded, not cached. Outbound
 fetches are bounded in size and page count, and federation to loopback over
 plain HTTP is off unless an operator turns it on for local tests.
 
+Each sync also records the head it observed, so a home that later presents a
+different entry at a sequence it already showed leaves a durable conflict
+instead of a transient one. That log is local to this instance and is not
+exchanged with anyone, so it can only prove equivocation this instance saw
+itself. Cross-instance witness exchange is not implemented; if you need a
+second party to corroborate a home, run a second instance and compare.
+
 ## What none of this covers
 
 - A malicious release with a valid signature. This is the reason the UI shows

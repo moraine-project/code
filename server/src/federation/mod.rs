@@ -4,6 +4,7 @@ pub mod mirrors;
 pub mod notifications;
 pub mod subscriptions;
 pub mod webhooks;
+pub mod witness;
 
 use std::fmt;
 
@@ -33,6 +34,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/definition-subscriptions", get(list_definition_subscriptions))
 		.route("/v1/subscriptions", get(list_subscriptions).delete(unsubscribe))
 		.route("/v1/subscriptions/reset", post(reset_subscription))
+		.route("/v1/projects/{id}/witness", get(witness::observe))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -552,6 +554,7 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 	let mut applied = 0;
 	let mut head_seq;
 	let mut pages = 0;
+	let mut observed_head: Option<(i64, String)> = None;
 	loop {
 		let page = client
 			.get_json::<FeedPage>(&format!("/v1/projects/{project_id}/feed?after={cursor}&limit=100"))
@@ -590,6 +593,9 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 				.map_err(|error| rejected(*error))?;
 			applied += 1;
 		}
+		if last.seq == head_seq {
+			observed_head = Some((head_seq, last.entry.clone()));
+		}
 		if last.seq <= cursor {
 			break;
 		}
@@ -608,6 +614,14 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 				"the home feed is longer than one sync will follow".to_string(),
 			));
 		}
+	}
+
+	if let Some((sequence, entry)) = observed_head {
+		state
+			.metadata
+			.record_witness_observation(project_id, home_url, sequence, &entry, now())
+			.await
+			.map_err(storage)?;
 	}
 
 	Ok(SyncReport {
@@ -710,3 +724,5 @@ fn storage_error(error: sqlx::Error) -> Response {
 mod federation_tests;
 #[cfg(test)]
 mod mirror_tests;
+#[cfg(test)]
+mod witness_tests;
