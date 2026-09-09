@@ -484,6 +484,8 @@ pnpm install
 pnpm dev
 ```
 
+Building the site needs `wasm-pack` and the `wasm32-unknown-unknown` target;
+`pnpm build:wasm` compiles the signer, and the build scripts run it first.
 `pnpm build:static` produces a static site. `pnpm build:cloudflare`
 produces a Worker build from the same source. `pnpm lint` runs Oxlint,
 `pnpm fmt:check` runs Oxfmt, `pnpm fmt` rewrites files in place, and `pnpm test`

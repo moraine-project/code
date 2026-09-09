@@ -32,6 +32,14 @@ MORAINE_TEST_POSTGRES=postgres://user:password@127.0.0.1:5432/db cargo test -p m
 
 The website:
 
+The website signs in WebAssembly, so its build needs `wasm-pack` and the
+`wasm32-unknown-unknown` target:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+```
+
 ```sh
 cd web
 pnpm install
