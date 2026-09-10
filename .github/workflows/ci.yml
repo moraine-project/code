@@ -54,8 +54,6 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: wasm
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
           version: latest
