@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { Search } from '@lucide/svelte';
 	import { untrack } from 'svelte';
 
 	let {
@@ -19,10 +20,7 @@
 
 <form class={`join w-full ${className}`} onsubmit={submit} role="search">
 	<label class="input join-item w-full">
-		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-			<circle cx="11" cy="11" r="7" />
-			<path d="m20 20-3.5-3.5" stroke-linecap="round" />
-		</svg>
+		<Search size={16} class="opacity-50" />
 		<input bind:value={query} {placeholder} aria-label="Search mods" autocomplete="off" />
 	</label>
 	<button class="btn join-item" type="submit">Search</button>

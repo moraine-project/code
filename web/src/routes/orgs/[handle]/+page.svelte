@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { FolderTree, MoveRight, Plus, Trash2, UserPlus } from '@lucide/svelte';
 	import {
 		addOrgMember,
 		createOrgTeam,
@@ -12,6 +13,9 @@
 		type OrgMember,
 		type OrgTeam,
 	} from '$lib/api/orgs';
+	import Avatar from '$lib/components/Avatar.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import type { PageProps } from './$types';
 
 	let { params }: PageProps = $props();
@@ -116,77 +120,73 @@
 </svelte:head>
 
 <div class="flex flex-col gap-6">
-	<h1 class="text-2xl font-bold">{detail?.display_name ?? params.handle}</h1>
-	{#if role}
-		<p class="text-base-content/80 text-sm">Your role here is {role}.</p>
-	{/if}
+	<PageHeader title={detail?.display_name ?? params.handle} subtitle={`@${params.handle}`}>
+		{#if role}
+			<span class="badge badge-outline">Your role: {role}</span>
+		{/if}
+	</PageHeader>
 
 	{#if error}
 		<div role="alert" class="alert alert-error"><span>{error}</span></div>
 	{/if}
 
 	{#if loading}
-		<span class="loading loading-spinner loading-sm" aria-hidden="true"></span>
-		<span class="sr-only" role="status">Loading the organization</span>
+		<div class="skeleton h-24 w-full"></div>
 	{:else if detail}
-		<section class="card card-border">
-			<div class="card-body">
-				<h2 class="card-title">Members</h2>
-				<div class="overflow-x-auto">
-					<table class="table table-sm">
-						<thead>
-							<tr>
-								<th scope="col">Account</th>
-								<th scope="col">Role</th>
-								<th scope="col"></th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each members as member (member.user_id)}
-								<tr>
-									<td>{member.email}</td>
-									<td><span class="badge badge-outline">{member.role}</span></td>
-									<td>
-										{#if canManage}
-											<button
-												class="btn btn-ghost btn-xs"
-												type="button"
-												disabled={busy}
-												onclick={() => removeMember(member)}
-												aria-label={`Remove ${member.email}`}
-											>
-												remove
-											</button>
-										{/if}
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
+		<section class="card card-border bg-base-200">
+			<div class="card-body gap-4">
+				<h2 class="card-title"><UserPlus size={18} /> Members</h2>
+				{#if members.length === 0}
+					<EmptyState title="No members yet" />
+				{:else}
+					<ul class="flex flex-col divide-y divide-base-300">
+						{#each members as member (member.user_id)}
+							<li class="flex items-center gap-3 py-2">
+								<Avatar name={member.email} id={member.user_id} size={36} />
+								<span class="min-w-0 flex-1 truncate">{member.email}</span>
+								<span class="badge badge-outline badge-sm">{member.role}</span>
+								{#if canManage}
+									<button
+										class="btn btn-ghost btn-xs"
+										type="button"
+										disabled={busy}
+										onclick={() => removeMember(member)}
+										aria-label={`Remove ${member.email}`}
+									>
+										<Trash2 size={13} />
+										remove
+									</button>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
 				{#if canManage}
 					<form class="flex flex-wrap items-end gap-3" onsubmit={addMember}>
-						<fieldset class="fieldset">
-							<legend class="fieldset-legend">Account email</legend>
+						<label class="floating-label">
+							<span>Account email</span>
 							<input
-								class="input"
+								class="input w-64"
 								type="email"
 								bind:value={email}
 								required
 								aria-label="Member email"
 							/>
-						</fieldset>
-						<fieldset class="fieldset">
-							<legend class="fieldset-legend">Role</legend>
-							<select class="select" bind:value={memberRole} aria-label="Member role">
+						</label>
+						<label class="floating-label">
+							<span>Role</span>
+							<select class="select w-32" bind:value={memberRole} aria-label="Member role">
 								<option value="member">member</option>
 								<option value="admin">admin</option>
 								<option value="owner">owner</option>
 							</select>
-						</fieldset>
-						<button class="btn" type="submit" disabled={busy}>Add member</button>
+						</label>
+						<button class="btn" type="submit" disabled={busy}>
+							<Plus size={16} />
+							Add member
+						</button>
 					</form>
-					<p class="text-base-content/60 text-sm">
+					<p class="text-xs text-base-content/50">
 						A role grant is not a shared login and does not hand over signing keys. The last owner
 						cannot be removed.
 					</p>
@@ -194,33 +194,39 @@
 			</div>
 		</section>
 
-		<section class="card card-border">
-			<div class="card-body">
-				<h2 class="card-title">Teams</h2>
+		<section class="card card-border bg-base-200">
+			<div class="card-body gap-4">
+				<h2 class="card-title"><FolderTree size={18} /> Teams</h2>
 				{#if detail.teams.length === 0}
-					<p class="text-base-content/60 text-sm">No teams yet.</p>
+					<p class="text-sm text-base-content/60">No teams yet.</p>
 				{:else}
 					{#snippet teamNode(team: OrgTeam, depth: number)}
 						<li style={`margin-inline-start: ${depth}rem`}>
-							<span class="badge badge-outline">{team.display_name}</span>
-							{#if canManage}
-								{#if moving === team.id}
-									<select class="select select-xs" bind:value={moveTarget}>
-										<option value="">top level</option>
-										{#each movableTeams.filter((candidate) => candidate.id !== team.id) as candidate (candidate.id)}
-											<option value={candidate.id}>{candidate.display_name}</option>
-										{/each}
-									</select>
-									<button class="btn btn-xs" onclick={() => moveTeam(team)}>Move</button>
-									<button class="btn btn-xs btn-ghost" onclick={() => (moving = null)}
-										>Cancel</button
-									>
-								{:else}
-									<button class="btn btn-xs btn-ghost" onclick={() => (moving = team.id)}
-										>Move</button
-									>
+							<div class="flex flex-wrap items-center gap-2">
+								<span class="badge badge-outline">{team.display_name}</span>
+								{#if canManage}
+									{#if moving === team.id}
+										<select class="select select-xs" bind:value={moveTarget}>
+											<option value="">top level</option>
+											{#each movableTeams.filter((candidate) => candidate.id !== team.id) as candidate (candidate.id)}
+												<option value={candidate.id}>{candidate.display_name}</option>
+											{/each}
+										</select>
+										<button class="btn btn-xs" onclick={() => moveTeam(team)}>
+											<MoveRight size={13} />
+											Move
+										</button>
+										<button class="btn btn-xs btn-ghost" onclick={() => (moving = null)}
+											>Cancel</button
+										>
+									{:else}
+										<button class="btn btn-xs btn-ghost" onclick={() => (moving = team.id)}>
+											<MoveRight size={13} />
+											Move
+										</button>
+									{/if}
 								{/if}
-							{/if}
+							</div>
 							{#if childrenOf(team.id).length > 0}
 								<ul class="mt-2 flex flex-wrap gap-2">
 									{#each childrenOf(team.id) as child (child.id)}
@@ -238,20 +244,23 @@
 				{/if}
 				{#if canManage}
 					<form class="flex flex-wrap items-end gap-3" onsubmit={addTeam}>
-						<fieldset class="fieldset">
-							<legend class="fieldset-legend">Team name</legend>
-							<input class="input" bind:value={teamName} required aria-label="Team name" />
-						</fieldset>
-						<fieldset class="fieldset">
-							<legend class="fieldset-legend">Parent team</legend>
-							<select class="select" bind:value={parentTeamId} aria-label="Parent team">
+						<label class="floating-label">
+							<span>Team name</span>
+							<input class="input w-56" bind:value={teamName} required aria-label="Team name" />
+						</label>
+						<label class="floating-label">
+							<span>Parent team</span>
+							<select class="select w-56" bind:value={parentTeamId} aria-label="Parent team">
 								<option value="">none</option>
 								{#each detail.teams as team (team.id)}
 									<option value={team.id}>{team.display_name}</option>
 								{/each}
 							</select>
-						</fieldset>
-						<button class="btn" type="submit" disabled={busy}>Create team</button>
+						</label>
+						<button class="btn" type="submit" disabled={busy}>
+							<Plus size={16} />
+							Create team
+						</button>
 					</form>
 				{/if}
 			</div>

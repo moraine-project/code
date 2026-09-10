@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { Download } from '@lucide/svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import SelectField, { type SelectOption } from '$lib/components/SelectField.svelte';
@@ -122,20 +123,7 @@
 		<div class="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
 			{#if latest}
 				<a class="btn btn-primary" href={releaseUrl(latest)}>
-					<svg
-						class="h-4 w-4"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<path d="M12 3v12" />
-						<path d="m7 10 5 5 5-5" />
-						<path d="M5 21h14" />
-					</svg>
+					<Download size={16} />
 					Download
 				</a>
 				<p class="text-xs text-base-content/50">

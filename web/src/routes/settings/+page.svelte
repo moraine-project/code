@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
+	import { Plus, RefreshCw, RotateCcw, Server, Unlink } from '@lucide/svelte';
 	import {
 		follow,
 		resync,
@@ -10,6 +11,8 @@
 		type Subscription,
 	} from '$lib/api/federation';
 	import Digest from '$lib/components/Digest.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 
 	let homes = $state<Subscription[]>([]);
 	let error = $state<string | null>(null);
@@ -94,49 +97,54 @@
 </script>
 
 <svelte:head>
-	<title>Advanced settings · Moraine</title>
+	<title>Instance settings · Moraine</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">
-	<h1 class="text-2xl font-bold">Advanced settings</h1>
+	<PageHeader
+		title="Instance settings"
+		subtitle="Where this instance resolves projects and which homes it pulls from."
+	/>
 
-	<section class="card card-border">
-		<div class="card-body">
-			<h2 class="card-title">Chosen directory</h2>
-			<p class="text-base-content/80 text-sm">
+	<section class="card card-border bg-base-200">
+		<div class="card-body gap-3">
+			<h2 class="card-title"><Server size={18} /> This build</h2>
+			<p class="text-sm text-base-content/70">
 				{#if PUBLIC_MORAINE_REGISTRY}
-					This build resolves through <strong>{PUBLIC_MORAINE_REGISTRY}</strong> unless a page is given
-					another home. A deployment can point elsewhere by setting that value at build time.
+					Resolves through <strong>{PUBLIC_MORAINE_REGISTRY}</strong> unless a page is given another home.
+					A deployment sets this at build time.
 				{:else}
-					This build has no default directory. Pages fall back to whatever home they are given.
+					No default home is baked in. Pages fall back to whatever home they are given.
 				{/if}
 			</p>
 		</div>
 	</section>
 
-	<section class="card card-border">
-		<div class="card-body">
+	<section class="card card-border bg-base-200">
+		<div class="card-body gap-4">
 			<div class="flex flex-wrap items-center justify-between gap-2">
-				<h2 class="card-title">Direct homes</h2>
+				<h2 class="card-title"><Server size={18} /> Followed homes</h2>
 				<button class="btn btn-sm btn-outline" type="button" disabled={busy} onclick={resyncNow}>
+					<RefreshCw size={15} />
 					Pull all now
 				</button>
 			</div>
-			<p class="text-base-content/80 text-sm">
-				These are the projects this instance pulls from other homes. A home is addressed by its URL
-				and verified against the project's own signed records, not trusted because of where it is.
+			<p class="text-sm text-base-content/70">
+				Projects this instance pulls from other homes. Each home is verified against the project's
+				own signed records, not trusted because of where it is.
 			</p>
+
 			{#if error}
 				<div role="alert" class="alert alert-error"><span>{error}</span></div>
 			{/if}
 			{#if notice}
 				<div role="alert" class="alert alert-success"><span>{notice}</span></div>
 			{/if}
+
 			{#if loading}
-				<span class="loading loading-spinner loading-sm" aria-hidden="true"></span>
-				<span class="sr-only" role="status">Loading direct homes</span>
+				<div class="skeleton h-16 w-full"></div>
 			{:else if homes.length === 0}
-				<p class="text-base-content/60 text-sm">No direct homes are followed yet.</p>
+				<EmptyState title="No homes followed" message="Add one below to pull a project." />
 			{:else}
 				<div class="overflow-x-auto">
 					<table class="table table-sm">
@@ -146,7 +154,6 @@
 								<th scope="col">Project</th>
 								<th scope="col">Cursor</th>
 								<th scope="col">Behind</th>
-								<th scope="col">Resets</th>
 								<th scope="col">Last sync</th>
 								<th scope="col"></th>
 							</tr>
@@ -161,17 +168,10 @@
 										{#if home.lag_entries > 0}
 											<span class="badge badge-warning badge-sm">{home.lag_entries}</span>
 										{:else}
-											<span class="text-base-content/60">0</span>
+											<span class="text-base-content/50">0</span>
 										{/if}
 									</td>
-									<td>
-										{#if home.resets > 0}
-											<span class="badge badge-ghost badge-sm">{home.resets}</span>
-										{:else}
-											<span class="text-base-content/60">0</span>
-										{/if}
-									</td>
-									<td>{formatTime(home.updated_at)}</td>
+									<td class="whitespace-nowrap">{formatTime(home.updated_at)}</td>
 									<td>
 										<div class="flex gap-1">
 											<button
@@ -181,6 +181,7 @@
 												onclick={() => reset(home)}
 												aria-label={`Reset the cursor for ${home.project_id} from ${home.home_url}`}
 											>
+												<RotateCcw size={13} />
 												reset
 											</button>
 											<button
@@ -190,6 +191,7 @@
 												onclick={() => stopFollowing(home)}
 												aria-label={`Stop pulling ${home.project_id} from ${home.home_url}`}
 											>
+												<Unlink size={13} />
 												unfollow
 											</button>
 										</div>
@@ -200,33 +202,37 @@
 					</table>
 				</div>
 			{/if}
+
 			<form class="flex flex-wrap items-end gap-3" onsubmit={startFollowing}>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Home URL</legend>
+				<label class="floating-label">
+					<span>Home URL</span>
 					<input
-						class="input"
+						class="input w-64"
 						type="url"
 						bind:value={homeUrl}
 						required
 						placeholder="https://home.example"
 						aria-label="Home URL"
 					/>
-				</fieldset>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Project ID</legend>
+				</label>
+				<label class="floating-label">
+					<span>Project ID</span>
 					<input
-						class="input font-mono"
+						class="input w-72 font-mono text-xs"
 						bind:value={projectId}
 						required
 						placeholder="gd:sha256:…"
 						aria-label="Project ID"
 					/>
-				</fieldset>
-				<button class="btn" type="submit" disabled={busy}>Pull project</button>
+				</label>
+				<button class="btn" type="submit" disabled={busy}>
+					<Plus size={16} />
+					Pull project
+				</button>
 			</form>
-			<p class="text-base-content/60 text-sm">
-				Following fetches and verifies the project's genesis and feed from that home. It does not
-				grant the home any authority over your copy.
+			<p class="text-xs text-base-content/50">
+				Following fetches and verifies the project's genesis and feed. It grants the home no
+				authority over your copy.
 			</p>
 		</div>
 	</section>

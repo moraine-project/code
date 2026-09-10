@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { CheckCircle2, Clock, Inbox, ShieldAlert, XCircle } from '@lucide/svelte';
 	import Digest from '$lib/components/Digest.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { mySubmissions, type SubmissionDetail } from '$lib/api/review';
 
 	const pageSize = 50;
@@ -46,6 +49,20 @@
 	function formatTime(seconds: number): string {
 		return new Date(seconds * 1000).toLocaleString();
 	}
+
+	function stateBadge(state: string): string {
+		if (state === 'accepted') return 'badge badge-success badge-sm';
+		if (state === 'rejected') return 'badge badge-error badge-sm';
+		if (state === 'quarantined') return 'badge badge-warning badge-sm';
+		return 'badge badge-ghost badge-sm';
+	}
+
+	function stateIcon(state: string) {
+		if (state === 'accepted') return CheckCircle2;
+		if (state === 'rejected') return XCircle;
+		if (state === 'quarantined') return ShieldAlert;
+		return Clock;
+	}
 </script>
 
 <svelte:head>
@@ -53,38 +70,44 @@
 </svelte:head>
 
 <div class="flex flex-col gap-6">
-	<h1 class="text-2xl font-bold">Your submissions</h1>
-	<p class="text-base-content/80 max-w-2xl">
-		Acceptance is this home's listing decision, not a safety guarantee. A rejection keeps the signed
-		record for audit and states a reason; it does not change what your keys authorize, and you can
-		publish the same signed release through another home.
-	</p>
+	<PageHeader
+		title="Submissions"
+		subtitle="Acceptance is this instance's listing decision, not a safety guarantee. A rejection keeps the signed record and states a reason."
+	/>
 
 	{#if error}
 		<div role="alert" class="alert alert-error"><span>{error}</span></div>
 	{/if}
 
 	{#if loading}
-		<span class="loading loading-spinner loading-sm" aria-hidden="true"></span>
-		<span class="sr-only" role="status">Loading your submissions</span>
+		<div class="skeleton h-20 w-full"></div>
 	{:else if items.length === 0}
-		<p class="text-base-content/60 text-sm">You have not submitted a release to this home.</p>
+		<EmptyState
+			title="No submissions yet"
+			message="Publish a release and it appears here while this instance reviews it."
+		>
+			<a class="btn btn-primary" href="/publish">Publish a mod</a>
+		</EmptyState>
 	{:else}
 		<ul class="flex flex-col gap-3">
 			{#each items as item (item.submission.id)}
-				<li class="card card-border">
-					<div class="card-body">
+				{@const Icon = stateIcon(item.submission.state)}
+				<li class="card card-border bg-base-200">
+					<div class="card-body gap-3 p-4">
 						<div class="flex flex-wrap items-center justify-between gap-2">
 							<div class="flex flex-wrap items-center gap-2">
-								<span class="badge badge-outline">{item.submission.state}</span>
+								<span class={stateBadge(item.submission.state)}>
+									<Icon size={13} />
+									{item.submission.state}
+								</span>
 								<Digest value={item.submission.object} label="the object id" />
 							</div>
-							<span class="text-base-content/60 text-sm"
-								>{formatTime(item.submission.created_at)}</span
-							>
+							<span class="text-xs text-base-content/60">
+								{formatTime(item.submission.created_at)}
+							</span>
 						</div>
 						{#each item.decisions as decision (decision.decided_at)}
-							<p class="text-base-content/80 text-sm">
+							<p class="text-sm text-base-content/80">
 								<strong>Decision:</strong>
 								{decision.decision}
 								{#if decision.reason_code}
@@ -101,6 +124,7 @@
 		</ul>
 		{#if hasMore}
 			<button class="btn btn-outline w-fit" type="button" onclick={loadMore} disabled={more}>
+				<Inbox size={16} />
 				Load older submissions
 			</button>
 		{/if}

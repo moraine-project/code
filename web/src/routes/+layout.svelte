@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { Menu, Moon, Sun } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
@@ -104,33 +105,8 @@
 							value="moraine-light"
 							aria-label="Switch to the light theme"
 						/>
-						<svg
-							class="swap-off h-5 w-5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.8"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"
-						>
-							<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-						</svg>
-						<svg
-							class="swap-on h-5 w-5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.8"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"
-						>
-							<circle cx="12" cy="12" r="4" />
-							<path
-								d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
-							/>
-						</svg>
+						<Moon class="swap-off" size={18} />
+						<Sun class="swap-on" size={18} />
 					</span>
 				</label>
 
@@ -156,17 +132,7 @@
 
 				<details class="dropdown dropdown-end md:hidden" bind:this={mobileMenu}>
 					<summary class="btn btn-ghost btn-square btn-sm" aria-label="Menu">
-						<svg
-							class="h-5 w-5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.8"
-							stroke-linecap="round"
-							aria-hidden="true"
-						>
-							<path d="M4 6h16M4 12h16M4 18h16" />
-						</svg>
+						<Menu size={20} />
 					</summary>
 					<ul
 						class="menu dropdown-content z-50 mt-2 w-60 rounded-box border border-base-300 bg-base-100 p-2 shadow-xl"

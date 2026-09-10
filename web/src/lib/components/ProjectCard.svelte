@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { SearchResult } from '$lib/api/registry';
+	import { TrendingUp } from '@lucide/svelte';
 	import Avatar from './Avatar.svelte';
 
 	let { result, gameName = '' }: { result: SearchResult; gameName?: string } = $props();
@@ -27,19 +28,7 @@
 				{/if}
 				{#if result.instance_popularity}
 					<span class="inline-flex items-center gap-1">
-						<svg
-							class="h-3.5 w-3.5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"
-						>
-							<path d="M3 17l6-6 4 4 8-8" />
-							<path d="M21 7v5h-5" />
-						</svg>
+						<TrendingUp size={14} />
 						{result.instance_popularity.value}
 					</span>
 				{/if}

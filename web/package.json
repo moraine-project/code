@@ -21,6 +21,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
+		"@lucide/svelte": "^1.47.0",
 		"bits-ui": "^2.19.2",
 		"zod": "^4.0.0"
 	},
