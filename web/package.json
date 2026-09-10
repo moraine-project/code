@@ -21,6 +21,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
+		"bits-ui": "^2.19.2",
 		"zod": "^4.0.0"
 	},
 	"devDependencies": {

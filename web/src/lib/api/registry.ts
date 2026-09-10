@@ -422,6 +422,53 @@ export async function listDefinitions(
 	return z.array(definitionSummarySchema).parse(await response.json());
 }
 
+export async function listLoaders(
+	base: string,
+	game?: string,
+	fetchFn: Fetcher = fetch,
+): Promise<DefinitionSummary[]> {
+	const params = new URLSearchParams();
+	if (game) {
+		params.set('game', game);
+	}
+	const suffix = params.toString() ? `?${params.toString()}` : '';
+	const response = await fetchFn(`${normalizeBase(base)}/v1/loaders${suffix}`);
+	if (!response.ok) {
+		throw new Error(`home returned ${response.status} for the loaders`);
+	}
+	return z.array(definitionSummarySchema).parse(await response.json());
+}
+
+export const vocabularyEntrySchema = z.object({
+	id: z.string(),
+	label: z.string(),
+	parent: z.string().nullable().optional(),
+});
+
+export const gamePayloadSchema = z.object({
+	game_id: z.string(),
+	display_name: z.string(),
+	version_ordering: z.string().optional(),
+	version_catalog: z.array(z.string()).optional(),
+	categories: z.array(vocabularyEntrySchema).optional(),
+	tags: z.array(vocabularyEntrySchema).optional(),
+	loaders_allowed: z.boolean().optional(),
+});
+
+export type GamePayload = z.infer<typeof gamePayloadSchema>;
+
+export async function fetchGamePayload(
+	base: string,
+	gameId: string,
+	fetchFn: Fetcher = fetch,
+): Promise<GamePayload | null> {
+	const definition = await fetchDefinition(base, 'games', gameId, fetchFn);
+	if (!definition) {
+		return null;
+	}
+	return gamePayloadSchema.parse(definition.payload);
+}
+
 export async function fetchRelease(
 	base: string,
 	projectId: string,

@@ -28,9 +28,9 @@
 	--color-error: #f87171;
 	--color-error-content: #2a0806;
 
-	--radius-selector: 0.25rem;
-	--radius-field: 0.25rem;
-	--radius-box: 0.5rem;
+	--radius-selector: 0.5rem;
+	--radius-field: 0.5rem;
+	--radius-box: 0.75rem;
 	--size-selector: 0.25rem;
 	--size-field: 0.25rem;
 	--border: 1px;
@@ -65,9 +65,9 @@
 	--color-error: #b91c1c;
 	--color-error-content: #ffffff;
 
-	--radius-selector: 0.25rem;
-	--radius-field: 0.25rem;
-	--radius-box: 0.5rem;
+	--radius-selector: 0.5rem;
+	--radius-field: 0.5rem;
+	--radius-box: 0.75rem;
 	--size-selector: 0.25rem;
 	--size-field: 0.25rem;
 	--border: 1px;

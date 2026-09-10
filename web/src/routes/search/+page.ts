@@ -1,7 +1,9 @@
 import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
 import {
 	emptyFacets,
+	fetchGamePayload,
 	listDefinitions,
+	listLoaders,
 	normalizeBase,
 	searchFacets,
 	searchProjects,
@@ -16,69 +18,54 @@ export const load: PageLoad = async ({ url, fetch }) => {
 	const category = url.searchParams.get('category') ?? '';
 	const tag = url.searchParams.get('tag') ?? '';
 	const gameVersion = url.searchParams.get('game_version') ?? '';
-	const loaderVersion = url.searchParams.get('loader_version') ?? '';
-	const runtimeVersion = url.searchParams.get('runtime_version') ?? '';
 	const channel = url.searchParams.get('channel') ?? '';
-	const platform = url.searchParams.get('platform') ?? '';
 	const sort = url.searchParams.get('sort') ?? '';
-	const filters = {
-		home,
-		q,
-		game,
-		loader,
-		category,
-		tag,
-		gameVersion,
-		loaderVersion,
-		runtimeVersion,
-		channel,
-		platform,
-		sort,
-	};
-	const anyFilter = [
-		q,
-		game,
-		loader,
-		category,
-		tag,
-		gameVersion,
-		loaderVersion,
-		runtimeVersion,
-		channel,
-		platform,
-	].some((value) => value.trim().length > 0);
+	const query = { q, game, loader, category, tag, gameVersion, channel, sort, limit: 20 };
+	const filtered = [q, game, loader, category, tag, gameVersion, channel].some(
+		(value) => value.trim().length > 0,
+	);
+
 	try {
 		const base = normalizeBase(home);
-		const query = {
+		const [games, loaders, facets, gamePayload] = await Promise.all([
+			listDefinitions(base, 'games', fetch).catch(() => []),
+			listLoaders(base, game || undefined, fetch).catch(() => []),
+			searchFacets(base, query, fetch).catch(() => emptyFacets),
+			game ? fetchGamePayload(base, game, fetch).catch(() => null) : Promise.resolve(null),
+		]);
+		const results = filtered ? await searchProjects(base, query, fetch) : [];
+		return {
+			home: base,
 			q,
 			game,
 			loader,
 			category,
 			tag,
 			gameVersion,
-			loaderVersion,
-			runtimeVersion,
 			channel,
-			platform,
 			sort,
-			limit: 20,
+			games,
+			loaders,
+			facets,
+			gamePayload,
+			results,
+			error: null,
 		};
-		const [games, loaders, facets] = await Promise.all([
-			listDefinitions(base, 'games', fetch).catch(() => []),
-			listDefinitions(base, 'loaders', fetch).catch(() => []),
-			searchFacets(base, query, fetch).catch(() => emptyFacets),
-		]);
-		if (!anyFilter) {
-			return { ...filters, home: base, games, loaders, facets, results: [], error: null };
-		}
-		const results = await searchProjects(base, query, fetch);
-		return { ...filters, home: base, games, loaders, facets, results, error: null };
 	} catch (cause) {
 		return {
-			...filters,
+			home,
+			q,
+			game,
+			loader,
+			category,
+			tag,
+			gameVersion,
+			channel,
+			sort,
 			games: [],
 			loaders: [],
 			facets: emptyFacets,
+			gamePayload: null,
 			results: [],
 			error: cause instanceof Error ? cause.message : 'the search failed',
 		};

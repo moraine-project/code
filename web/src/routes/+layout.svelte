@@ -1,7 +1,12 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
+	import { logout } from '$lib/api/session';
+	import Avatar from '$lib/components/Avatar.svelte';
+	import Logo from '$lib/components/Logo.svelte';
+	import SearchBar from '$lib/components/SearchBar.svelte';
 	import { session } from '$lib/session.svelte';
 
 	let { children } = $props();
@@ -10,46 +15,58 @@
 		session.refresh();
 	});
 
-	let more = $state<HTMLDetailsElement | null>(null);
+	let userMenu = $state<HTMLDetailsElement | null>(null);
+	let mobileMenu = $state<HTMLDetailsElement | null>(null);
+
+	function closeMenus() {
+		if (userMenu) {
+			userMenu.open = false;
+		}
+		if (mobileMenu) {
+			mobileMenu.open = false;
+		}
+	}
 
 	function dismiss(event: MouseEvent) {
-		if (more?.open && !more.contains(event.target as Node)) {
-			more.open = false;
+		const target = event.target as Node;
+		if (userMenu?.open && !userMenu.contains(target)) {
+			userMenu.open = false;
+		}
+		if (mobileMenu?.open && !mobileMenu.contains(target)) {
+			mobileMenu.open = false;
 		}
 	}
 
 	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape' && more?.open) {
-			more.open = false;
-			more.focus();
+		if (event.key === 'Escape') {
+			closeMenus();
 		}
 	}
 
-	function close() {
-		if (more) {
-			more.open = false;
-		}
+	async function signOut() {
+		closeMenus();
+		await logout().catch(() => undefined);
+		session.set(null);
+		await goto('/');
 	}
 
-	const primary = [
+	const nav = [
 		['/games', 'Browse'],
-		['/search', 'Search'],
-		['/projects', 'Projects'],
-		['/orgs', 'Organizations'],
+		['/search', 'Mods'],
 	] as const;
 
-	const secondary = [
-		['/submissions', 'Submissions'],
-		['/notifications', 'Notifications'],
+	const accountLinks = [
 		['/account', 'Account'],
+		['/submissions', 'Submissions'],
+		['/orgs', 'Organizations'],
+		['/notifications', 'Notifications'],
 		['/settings', 'Settings'],
-		['/about', 'About federation'],
-		['/security', 'Security'],
 	] as const;
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<link rel="icon" href={favicon} type="image/svg+xml" />
+	<meta name="theme-color" content="#0b1220" />
 	<title>Moraine</title>
 </svelte:head>
 
@@ -63,29 +80,23 @@
 		Skip to content
 	</a>
 
-	<header class="sticky top-0 z-40 border-b border-base-300 bg-base-200">
-		<div class="navbar mx-auto w-full max-w-6xl gap-2 px-2">
-			<div class="navbar-start gap-2">
-				<a class="btn btn-ghost px-2 text-lg font-semibold tracking-tight" href="/">
-					Moraine
-					<span class="hidden text-xs font-normal text-base-content/60 md:inline">
-						publish and find game mods
-					</span>
-				</a>
+	<header class="sticky top-0 z-40 border-b border-base-300 bg-base-100/90 backdrop-blur">
+		<div class="mx-auto flex w-full max-w-7xl items-center gap-2 px-3 py-2 sm:px-4">
+			<Logo />
+			<nav class="hidden items-center md:flex">
+				{#each nav as [href, label] (href)}
+					<a class="btn btn-ghost btn-sm" {href}>{label}</a>
+				{/each}
+			</nav>
+
+			<div class="hidden flex-1 justify-center px-2 md:flex">
+				<SearchBar class="max-w-lg" />
 			</div>
 
-			<div class="navbar-center hidden lg:flex">
-				<ul class="menu menu-horizontal gap-1 px-1">
-					{#each primary as [href, label] (href)}
-						<li><a {href}>{label}</a></li>
-					{/each}
-				</ul>
-			</div>
-
-			<div class="navbar-end gap-1">
+			<div class="ml-auto flex items-center gap-1 md:ml-0">
 				<a class="btn btn-primary btn-sm hidden sm:inline-flex" href="/publish">Publish</a>
 
-				<label class="btn btn-ghost btn-square btn-sm" title="Switch between dark and light">
+				<label class="btn btn-ghost btn-square btn-sm" title="Switch theme">
 					<span class="swap swap-rotate">
 						<input
 							type="checkbox"
@@ -123,18 +134,30 @@
 					</span>
 				</label>
 
-				<div class="hidden items-center gap-2 sm:flex">
-					{#if session.user}
-						<span class="badge badge-ghost">{session.user.email}</span>
-					{:else}
-						<a class="btn btn-ghost btn-sm" href="/account">Sign in</a>
-					{/if}
-				</div>
+				{#if session.user}
+					<details class="dropdown dropdown-end" bind:this={userMenu}>
+						<summary class="btn btn-ghost btn-circle" aria-label="Your account">
+							<Avatar name={session.user.email} id={session.user.user_id} size={30} />
+						</summary>
+						<ul
+							class="menu dropdown-content z-50 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2 shadow-xl"
+						>
+							<li class="menu-title truncate">{session.user.email}</li>
+							{#each accountLinks as [href, label] (href)}
+								<li><a {href} onclick={closeMenus}>{label}</a></li>
+							{/each}
+							<li><a href="/publish" onclick={closeMenus}>Publish a mod</a></li>
+							<li><button type="button" onclick={signOut}>Sign out</button></li>
+						</ul>
+					</details>
+				{:else}
+					<a class="btn btn-ghost btn-sm" href="/account">Sign in</a>
+				{/if}
 
-				<details class="dropdown dropdown-end" bind:this={more}>
-					<summary class="btn btn-ghost btn-sm" aria-label="More navigation">
+				<details class="dropdown dropdown-end md:hidden" bind:this={mobileMenu}>
+					<summary class="btn btn-ghost btn-square btn-sm" aria-label="Menu">
 						<svg
-							class="h-5 w-5 lg:hidden"
+							class="h-5 w-5"
 							viewBox="0 0 24 24"
 							fill="none"
 							stroke="currentColor"
@@ -144,45 +167,45 @@
 						>
 							<path d="M4 6h16M4 12h16M4 18h16" />
 						</svg>
-						<span class="hidden lg:inline">More</span>
 					</summary>
 					<ul
-						class="menu dropdown-content z-50 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2"
+						class="menu dropdown-content z-50 mt-2 w-60 rounded-box border border-base-300 bg-base-100 p-2 shadow-xl"
 					>
-						<li class="menu-title lg:hidden">Browse</li>
-						{#each primary as [href, label] (href)}
-							<li class="lg:hidden"><a {href} onclick={close}>{label}</a></li>
+						{#each nav as [href, label] (href)}
+							<li><a {href} onclick={closeMenus}>{label}</a></li>
 						{/each}
-						<li class="lg:hidden"><a href="/publish" onclick={close}>Publish</a></li>
+						<li><a href="/publish" onclick={closeMenus}>Publish a mod</a></li>
 						<li class="menu-title">Your account</li>
-						{#each secondary as [href, label] (href)}
-							<li><a {href} onclick={close}>{label}</a></li>
+						{#each accountLinks as [href, label] (href)}
+							<li><a {href} onclick={closeMenus}>{label}</a></li>
 						{/each}
-						<li class="sm:hidden">
-							<a href="/account" onclick={close}>{session.user ? session.user.email : 'Sign in'}</a>
-						</li>
 					</ul>
 				</details>
 			</div>
 		</div>
+
+		<div class="px-3 pb-3 md:hidden">
+			<SearchBar />
+		</div>
 	</header>
 
-	<main id="content" class="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6 lg:p-8">
+	<main id="content" class="mx-auto w-full max-w-7xl flex-1 px-3 py-6 sm:px-4 lg:px-6">
 		{@render children()}
 	</main>
 
-	<footer class="border-t border-base-300 bg-base-200">
-		<div class="mx-auto grid w-full max-w-6xl gap-8 p-6 sm:grid-cols-2 lg:grid-cols-4">
-			<div class="flex flex-col gap-2">
-				<p class="font-semibold">Moraine</p>
-				<p class="text-sm text-base-content/70">
-					A place to publish and find game mods. Anyone can run an instance.
+	<footer class="mt-8 border-t border-base-300 bg-base-200">
+		<div class="mx-auto grid w-full max-w-7xl gap-8 px-4 py-10 sm:grid-cols-2 lg:grid-cols-4">
+			<div class="flex flex-col gap-3">
+				<Logo />
+				<p class="max-w-xs text-sm text-base-content/70">
+					Publish and find mods, plugins, and packs. Every project stays at a home its publisher
+					controls, and anyone can run an instance.
 				</p>
 			</div>
 			<nav class="flex flex-col gap-2 text-sm">
-				<p class="font-medium text-base-content/60">Find mods</p>
-				<a class="link link-hover w-fit" href="/games">Browse</a>
-				<a class="link link-hover w-fit" href="/search">Search</a>
+				<p class="font-medium text-base-content/60">Discover</p>
+				<a class="link link-hover w-fit" href="/games">Browse games</a>
+				<a class="link link-hover w-fit" href="/search">Search mods</a>
 				<a class="link link-hover w-fit" href="/projects">Projects you follow</a>
 			</nav>
 			<nav class="flex flex-col gap-2 text-sm">
@@ -192,16 +215,15 @@
 				<a class="link link-hover w-fit" href="/orgs">Organizations</a>
 			</nav>
 			<nav class="flex flex-col gap-2 text-sm">
-				<p class="font-medium text-base-content/60">How it works</p>
-				<a class="link link-hover w-fit" href="/about">Homes and directories</a>
+				<p class="font-medium text-base-content/60">About</p>
+				<a class="link link-hover w-fit" href="/about">How it works</a>
 				<a class="link link-hover w-fit" href="/security">What checks prove</a>
 				<a class="link link-hover w-fit" href="/settings">Instance settings</a>
 			</nav>
 		</div>
 		<div class="border-t border-base-300">
-			<p class="mx-auto w-full max-w-6xl p-4 text-xs text-base-content/60">
-				Moraine is free software, released under the AGPL-3.0-or-later. Every project stays at a
-				home its publisher controls.
+			<p class="mx-auto w-full max-w-7xl px-4 py-4 text-xs text-base-content/60">
+				Moraine is free software, released under the AGPL-3.0-or-later.
 			</p>
 		</div>
 	</footer>

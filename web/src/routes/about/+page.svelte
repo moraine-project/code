@@ -1,9 +1,16 @@
+<script lang="ts">
+	import PageHeader from '$lib/components/PageHeader.svelte';
+</script>
+
 <svelte:head>
-	<title>About federation · Moraine</title>
+	<title>How it works · Moraine</title>
 </svelte:head>
 
-<div class="prose max-w-3xl">
-	<h1 class="text-2xl font-bold">About federation</h1>
+<div class="flex max-w-3xl flex-col gap-6">
+	<PageHeader
+		title="How it works"
+		subtitle="Projects live at homes their publishers control, and directories index them. Nothing here depends on one central server."
+	/>
 
 	<p class="text-base-content/80">
 		Moraine does not have one central server that every project must live on. A project is published

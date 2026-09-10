@@ -1,47 +1,50 @@
 <script lang="ts">
+	import Avatar from '$lib/components/Avatar.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { shortDigest } from '$lib/api/registry';
-	import Digest from '$lib/components/Digest.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 </script>
 
 <svelte:head>
-	<title>Projects · Moraine</title>
+	<title>Following · Moraine</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">
-	<h1 class="text-2xl font-bold">Projects</h1>
-	<p class="text-base-content/80 max-w-2xl">
-		The projects you follow on this instance. Following a project makes it appear here, records
-		notifications for its releases, and pulls its feed so a local copy exists. A follow is local and
-		never changes anything the publisher signed.
-	</p>
+	<PageHeader
+		title="Following"
+		subtitle="Projects you follow on this instance. Following keeps a local copy of the feed and notifies you about new releases."
+	/>
 
 	{#if data.error}
 		<div role="alert" class="alert alert-error"><span>{data.error}</span></div>
 	{:else if data.projects.length === 0}
-		<p class="text-base-content/60 text-sm">
-			You are not following anything yet. Follow a project from its page.
-		</p>
+		<EmptyState
+			title="You are not following anything yet"
+			message="Open a project and follow it to see its releases here."
+		>
+			<a class="btn btn-primary" href="/search">Find a mod</a>
+		</EmptyState>
 	{:else}
-		<ul class="flex flex-col gap-3">
+		<div class="grid gap-3 lg:grid-cols-2">
 			{#each data.projects as project (project.id)}
-				<li class="card card-border">
-					<div class="card-body">
-						<a
-							class="card-title link link-hover"
-							href={`/p/${encodeURIComponent(project.id)}${data.base ? `?home=${encodeURIComponent(data.base)}` : ''}`}
-						>
-							{project.name ?? shortDigest(project.id, 24)}
-						</a>
-						{#if project.summary}
-							<p class="text-base-content/80 text-sm">{project.summary}</p>
-						{/if}
-						<Digest value={project.id} label="the project id" length={12} />
+				<a
+					class="card card-border bg-base-200 transition hover:border-primary"
+					href={`/p/${encodeURIComponent(project.id)}${data.base ? `?home=${encodeURIComponent(data.base)}` : ''}`}
+				>
+					<div class="card-body flex-row items-center gap-4">
+						<Avatar name={project.name ?? 'Project'} id={project.id} size={44} />
+						<div class="min-w-0">
+							<p class="truncate font-semibold">{project.name ?? shortDigest(project.id, 24)}</p>
+							{#if project.summary}
+								<p class="line-clamp-1 text-sm text-base-content/70">{project.summary}</p>
+							{/if}
+						</div>
 					</div>
-				</li>
+				</a>
 			{/each}
-		</ul>
+		</div>
 	{/if}
 </div>

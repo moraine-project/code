@@ -1,9 +1,16 @@
+<script lang="ts">
+	import PageHeader from '$lib/components/PageHeader.svelte';
+</script>
+
 <svelte:head>
 	<title>Security · Moraine</title>
 </svelte:head>
 
-<div class="prose max-w-3xl">
-	<h1 class="text-2xl font-bold">What security here does and does not mean</h1>
+<div class="flex max-w-3xl flex-col gap-6">
+	<PageHeader
+		title="What security here does and does not mean"
+		subtitle="A signature proves authorization. A digest proves the bytes. Neither proves the software is safe."
+	/>
 
 	<p class="text-base-content/80">
 		Moraine is built so that the important claims are checkable rather than promised. The honest

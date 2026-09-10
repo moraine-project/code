@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { login, logout, register } from '$lib/api/session';
+	import Avatar from '$lib/components/Avatar.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { session } from '$lib/session.svelte';
 
 	let user = $state<typeof session.user>(null);
@@ -59,7 +61,7 @@
 </svelte:head>
 
 <div class="flex flex-col gap-6">
-	<h1 class="text-2xl font-bold">Account</h1>
+	<PageHeader title="Account" subtitle="Sign in to publish, submit, and manage what you follow." />
 
 	{#if error}
 		<div role="alert" class="alert alert-error"><span>{error}</span></div>
@@ -69,58 +71,80 @@
 	{/if}
 
 	{#if user}
-		<section class="card card-border">
-			<div class="card-body">
-				<h2 class="card-title">{user.email}</h2>
-				<p class="text-base-content/60 text-sm">Signed in by {user.via}.</p>
-				<div class="card-actions">
-					<a class="btn" href="/review">Review queue</a>
-					<button class="btn btn-outline" onclick={signOut} disabled={busy}>Sign out</button>
+		<section class="card card-border max-w-xl bg-base-200">
+			<div class="card-body gap-4">
+				<div class="flex items-center gap-4">
+					<Avatar name={user.email} id={user.user_id} size={56} />
+					<div>
+						<h2 class="text-lg font-semibold">{user.email}</h2>
+						<p class="text-sm text-base-content/60">Signed in by {user.via}</p>
+					</div>
+				</div>
+				<div class="flex flex-wrap gap-2">
+					<a class="btn btn-sm" href="/publish">Publish a mod</a>
+					<a class="btn btn-sm btn-outline" href="/submissions">Submissions</a>
+					<a class="btn btn-sm btn-outline" href="/orgs">Organizations</a>
+					<a class="btn btn-sm btn-outline" href="/review">Review queue</a>
+					<button class="btn btn-sm btn-ghost" onclick={signOut} disabled={busy}>Sign out</button>
 				</div>
 			</div>
 		</section>
 	{:else}
-		<section class="card card-border max-w-md">
-			<div class="card-body">
-				<h2 class="card-title">{creating ? 'Create an account' : 'Sign in'}</h2>
-				<p class="text-base-content/80 text-sm">
-					Accounts authenticate you to this server. They do not sign releases; a release key does
-					that, and only the key holder can publish.
-				</p>
+		<section class="card card-border max-w-md bg-base-200">
+			<div class="card-body gap-4">
+				<div role="tablist" class="tabs tabs-box w-fit">
+					<button
+						role="tab"
+						class="tab"
+						class:tab-active={!creating}
+						onclick={() => {
+							creating = false;
+							notice = null;
+							error = null;
+						}}>Sign in</button
+					>
+					<button
+						role="tab"
+						class="tab"
+						class:tab-active={creating}
+						onclick={() => {
+							creating = true;
+							notice = null;
+							error = null;
+						}}>Create account</button
+					>
+				</div>
 				<form class="flex flex-col gap-3" onsubmit={submit}>
-					<input
-						class="input w-full"
-						type="email"
-						bind:value={email}
-						placeholder="you@example.org"
-						aria-label="Email"
-						autocomplete="email"
-					/>
-					<input
-						class="input w-full"
-						type="password"
-						bind:value={password}
-						placeholder={creating ? 'at least 12 characters' : 'password'}
-						aria-label="Password"
-						autocomplete={creating ? 'new-password' : 'current-password'}
-					/>
-					<div class="card-actions justify-between">
-						<button class="btn" type="submit" disabled={busy}>
-							{creating ? 'Create account' : 'Sign in'}
-						</button>
-						<button
-							class="btn btn-ghost"
-							type="button"
-							onclick={() => {
-								creating = !creating;
-								notice = null;
-								error = null;
-							}}
-						>
-							{creating ? 'Have an account?' : 'Create one'}
-						</button>
-					</div>
+					<label class="floating-label">
+						<span>Email</span>
+						<input
+							class="input w-full"
+							type="email"
+							bind:value={email}
+							placeholder="you@example.org"
+							aria-label="Email"
+							autocomplete="email"
+						/>
+					</label>
+					<label class="floating-label">
+						<span>Password</span>
+						<input
+							class="input w-full"
+							type="password"
+							bind:value={password}
+							placeholder={creating ? 'at least 12 characters' : 'password'}
+							aria-label="Password"
+							autocomplete={creating ? 'new-password' : 'current-password'}
+						/>
+					</label>
+					<button class="btn btn-primary" type="submit" disabled={busy}>
+						{creating ? 'Create account' : 'Sign in'}
+					</button>
 				</form>
+				<p class="text-xs text-base-content/50">
+					An account authenticates you to this server. It does not sign releases; your release key
+					does, and it stays on your device.
+				</p>
 			</div>
 		</section>
 	{/if}

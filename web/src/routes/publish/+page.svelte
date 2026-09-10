@@ -1,17 +1,26 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { apiOrigin } from '$lib/api/session';
 	import { appendFeed, createProject, storeObject, submitFeed } from '$lib/api/publish';
 	import {
+		fetchGamePayload,
 		fetchObject,
 		fetchProject,
 		listDefinitions,
+		listLoaders,
 		normalizeBase,
 		publishingMode,
 		uploadBlob,
 		type DefinitionSummary,
+		type GamePayload,
 		type UploadReceipt,
 	} from '$lib/api/registry';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import MultiSelectField from '$lib/components/MultiSelectField.svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import SelectField, { type SelectOption } from '$lib/components/SelectField.svelte';
+	import { session } from '$lib/session.svelte';
 	import {
 		generateSeed,
 		genesisRoots,
@@ -31,20 +40,23 @@
 	let keyPublic = $state('');
 	let keyGenerated = $state(false);
 	let keyMessage = $state<string | null>(null);
+	let keyOpen = $state(false);
 
 	let mode = $state('review');
 	let games = $state<DefinitionSummary[]>([]);
 
 	let projectMode = $state<'new' | 'existing'>('new');
-	let projectId = $state('');
+	let projectId = $state(page.url.searchParams.get('project') ?? '');
 	let displayName = $state('');
 	let summary = $state('');
 	let description = $state('');
+	let selectedCategories = $state<string[]>([]);
+	let selectedTags = $state<string[]>([]);
 
+	let gameId = $state('');
 	let artifact = $state<File | null>(null);
 	let receipt = $state<UploadReceipt | null>(null);
-	let gameId = $state('');
-	let gameVersions = $state('');
+	let gameVersions = $state<string[]>([]);
 	let loaderId = $state('');
 	let version = $state('');
 	let channel = $state('release');
@@ -53,6 +65,24 @@
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 	let log = $state<string[]>([]);
+
+	onMount(async () => {
+		mode = await publishingMode().catch(() => 'review');
+		games = await listDefinitions(normalizeBase(apiOrigin()), 'games').catch(() => []);
+	});
+
+	const gameInfo = $derived.by(async () => {
+		if (!gameId) {
+			return { payload: null as GamePayload | null, loaders: [] as DefinitionSummary[] };
+		}
+		const base = normalizeBase(apiOrigin());
+		const [payload, loaders] = await Promise.all([
+			fetchGamePayload(base, gameId).catch(() => null),
+			listLoaders(base, gameId).catch(() => []),
+		]);
+		return { payload, loaders };
+	});
+
 	const rootCheck = $derived.by(async () => {
 		if (!projectId.startsWith('gd:sha256:') || !keyPublic) {
 			return false;
@@ -68,14 +98,9 @@
 		}
 	});
 
-	onMount(async () => {
-		mode = await publishingMode().catch(() => 'review');
-		try {
-			games = await listDefinitions(normalizeBase(apiOrigin()), 'games');
-		} catch {
-			games = [];
-		}
-	});
+	const gameOptions = $derived<SelectOption[]>(
+		games.map((game) => ({ value: game.id, label: game.display_name ?? game.id })),
+	);
 
 	function report(line: string) {
 		log = [...log, line];
@@ -96,16 +121,16 @@
 	async function generate() {
 		await applySeed(generateSeed());
 		keyGenerated = true;
+		keyOpen = true;
 	}
 
 	async function uploadKey(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
 		const file = input.files?.[0];
-		if (!file) {
-			return;
+		if (file) {
+			await applySeed(await file.text());
+			keyGenerated = false;
 		}
-		await applySeed(await file.text());
-		keyGenerated = false;
 	}
 
 	function downloadKey() {
@@ -117,13 +142,6 @@
 		anchor.click();
 		URL.revokeObjectURL(url);
 		keyMessage = 'Saved. Keep this file safe; anyone with it can publish as you.';
-	}
-
-	function versions(): string[] {
-		return gameVersions
-			.split(',')
-			.map((value) => value.trim())
-			.filter((value) => value.length > 0);
 	}
 
 	async function createNewProject() {
@@ -157,6 +175,8 @@
 			display_name: displayName,
 			summary,
 			description,
+			categories: selectedCategories,
+			tags: selectedTags,
 			declared_time: Math.floor(Date.now() / 1000),
 		});
 		await storeObject(projectId, 'profile', profile.wire);
@@ -185,7 +205,7 @@
 
 	async function publishRelease() {
 		if (!artifact) {
-			error = 'Choose an artifact first.';
+			error = 'Choose a file first.';
 			return;
 		}
 		busy = true;
@@ -193,7 +213,7 @@
 		try {
 			const uploaded = await uploadBlob(artifact);
 			receipt = uploaded;
-			report(`Uploaded artifact: sha256:${uploaded.digest} (${uploaded.size} bytes)`);
+			report(`Uploaded ${artifact.name}: ${uploaded.size} bytes`);
 
 			let changelogId: string | undefined;
 			if (notes.trim()) {
@@ -215,8 +235,8 @@
 				human_version: version,
 				channel,
 				declared_time: Math.floor(Date.now() / 1000),
-				game_versions: versions(),
-				loader_id: loaderId.trim() || undefined,
+				game_versions: gameVersions,
+				loader_id: loaderId || undefined,
 				digest: uploaded.digest,
 				size: uploaded.size,
 				filename: artifact.name,
@@ -238,214 +258,297 @@
 </svelte:head>
 
 <div class="flex flex-col gap-6">
-	<h1 class="text-2xl font-bold">Publish</h1>
-	<p class="text-base-content/80 max-w-2xl">
-		This console signs with a key that stays in your browser. The key is never uploaded, stored, or
-		sent anywhere; signing happens locally in WebAssembly using the same code as the
-		<code>moraine-publish</code> CLI, so the bytes are identical.
-	</p>
+	<PageHeader
+		title="Publish a mod"
+		subtitle="Sign in, pick a game, upload a file. The console signs with a key that stays on this device and never gets uploaded."
+	/>
 
 	{#if error}
 		<div role="alert" class="alert alert-error"><span>{error}</span></div>
 	{/if}
 
-	<section class="card card-border">
-		<div class="card-body gap-4">
-			<h2 class="card-title">1. Your key</h2>
-			<p class="text-base-content/80 text-sm max-w-2xl">
-				A key is a 32-byte seed in a text file, the same file the CLI uses. Generate one here, paste
-				one, or open an existing file. If you generate it, download it before you publish: losing it
-				loses the project. For anything valuable, prefer a key made with the CLI on a machine you
-				trust, or publish with a delegated release key rather than the project root.
-			</p>
-			<div class="flex flex-wrap items-center gap-2">
-				<button class="btn btn-sm" onclick={generate} disabled={busy}>Generate a key</button>
-				<input
-					type="file"
-					class="file-input file-input-sm w-full max-w-xs"
-					onchange={uploadKey}
-					disabled={busy}
-					aria-label="Open a key file"
-				/>
-				<button class="btn btn-sm btn-outline" onclick={downloadKey} disabled={!seed}>
-					Download the key
-				</button>
-			</div>
-			<label class="floating-label max-w-xl">
-				<span>Or paste a key (hex)</span>
-				<input
-					class="input w-full font-mono text-xs"
-					value={seed}
-					oninput={(event) => applySeed(event.currentTarget.value)}
-					placeholder="64 hex characters"
-				/>
-			</label>
-			{#if keyFingerprint}
-				<div class="text-sm">
-					<p>
-						Key ID: <span class="font-mono">{keyFingerprint}</span>
-					</p>
-					<p class="text-base-content/70 break-all font-mono text-xs">{keyPublic}</p>
-					{#if keyGenerated}
-						<p class="text-warning mt-1">
-							This key only exists in this tab. Download it now, and do not publish a project you
-							care about until you have a backup.
-						</p>
+	{#if !session.user}
+		<EmptyState
+			title="Sign in to publish"
+			message="You need an account on this instance to upload files. Creating the project itself is signed by your key."
+		>
+			<a class="btn btn-primary" href="/account">Sign in</a>
+		</EmptyState>
+	{:else}
+		<section class="card card-border bg-base-200">
+			<div class="card-body gap-4">
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<h2 class="card-title">1. Signing key</h2>
+					{#if keyFingerprint}
+						<span class="badge badge-success badge-sm">Key ready</span>
+					{:else}
+						<span class="badge badge-warning badge-sm">Key needed</span>
 					{/if}
 				</div>
-			{/if}
-			{#if keyMessage}
-				<p class="text-success text-sm">{keyMessage}</p>
-			{/if}
-		</div>
-	</section>
-
-	<section class="card card-border">
-		<div class="card-body gap-4">
-			<h2 class="card-title">2. The project</h2>
-			<div class="flex flex-wrap gap-2">
-				<button
-					class="btn btn-sm"
-					class:btn-active={projectMode === 'new'}
-					onclick={() => (projectMode = 'new')}>New project</button
-				>
-				<button
-					class="btn btn-sm"
-					class:btn-active={projectMode === 'existing'}
-					onclick={() => (projectMode = 'existing')}>Existing project</button
-				>
-			</div>
-			{#if projectMode === 'existing'}
-				<label class="floating-label max-w-xl">
-					<span>Project ID</span>
+				<p class="text-sm text-base-content/70">
+					Your key proves a release is yours. Generate one and save the file somewhere safe, or open
+					a key you already have.
+				</p>
+				<div class="flex flex-wrap items-center gap-2">
+					<button class="btn btn-sm" onclick={generate} disabled={busy}>Generate a key</button>
 					<input
-						class="input w-full font-mono text-xs"
-						bind:value={projectId}
-						placeholder="gd:sha256:…"
+						type="file"
+						class="file-input file-input-sm w-full max-w-xs"
+						onchange={uploadKey}
+						disabled={busy}
+						aria-label="Open a key file"
+					/>
+					{#if seed}
+						<button class="btn btn-sm btn-outline" onclick={downloadKey}>Download the key</button>
+					{/if}
+					<button class="btn btn-ghost btn-sm" onclick={() => (keyOpen = !keyOpen)}>
+						{keyOpen ? 'Hide' : 'Advanced'}
+					</button>
+				</div>
+				{#if keyFingerprint}
+					<p class="text-sm">
+						Key ID: <span class="font-mono text-xs">{keyFingerprint}</span>
+					</p>
+				{/if}
+				{#if keyMessage}
+					<p class="text-sm text-success">{keyMessage}</p>
+				{/if}
+				{#if keyOpen}
+					<label class="floating-label max-w-xl">
+						<span>Paste a key (hex)</span>
+						<input
+							class="input w-full font-mono text-xs"
+							value={seed}
+							oninput={(event) => applySeed(event.currentTarget.value)}
+							placeholder="64 hex characters"
+						/>
+					</label>
+					{#if keyGenerated}
+						<p class="text-sm text-warning">
+							This key exists only in this tab until you download it. Do that before you publish.
+						</p>
+					{/if}
+				{/if}
+			</div>
+		</section>
+
+		<section class="card card-border bg-base-200">
+			<div class="card-body gap-4">
+				<h2 class="card-title">2. Project</h2>
+				<div role="tablist" class="tabs tabs-box w-fit">
+					<button
+						role="tab"
+						class="tab"
+						class:tab-active={projectMode === 'new'}
+						onclick={() => (projectMode = 'new')}>New project</button
+					>
+					<button
+						role="tab"
+						class="tab"
+						class:tab-active={projectMode === 'existing'}
+						onclick={() => (projectMode = 'existing')}>Existing project</button
+					>
+				</div>
+
+				{#if projectMode === 'existing'}
+					<label class="floating-label max-w-xl">
+						<span>Project ID</span>
+						<input
+							class="input w-full font-mono text-xs"
+							bind:value={projectId}
+							placeholder="gd:sha256:…"
+						/>
+					</label>
+				{:else}
+					<div class="grid gap-3 sm:grid-cols-2">
+						<label class="floating-label">
+							<span>Name</span>
+							<input class="input w-full" bind:value={displayName} placeholder="My Mod" />
+						</label>
+						<label class="floating-label">
+							<span>Summary</span>
+							<input class="input w-full" bind:value={summary} placeholder="What it does" />
+						</label>
+					</div>
+					<label class="floating-label">
+						<span>Description</span>
+						<textarea class="textarea w-full" rows="3" bind:value={description}></textarea>
+					</label>
+				{/if}
+
+				<div class="max-w-xl">
+					<SelectField
+						label="Game"
+						value={gameId}
+						options={gameOptions}
+						placeholder="Choose a game"
+						onchange={(value) => {
+							gameId = value;
+							selectedCategories = [];
+							selectedTags = [];
+							gameVersions = [];
+							loaderId = '';
+						}}
+					/>
+				</div>
+
+				{#if projectMode === 'new'}
+					{#await gameInfo then info}
+						{#if info.payload && ((info.payload.categories?.length ?? 0) > 0 || (info.payload.tags?.length ?? 0) > 0)}
+							<div class="grid gap-3 sm:grid-cols-2">
+								<MultiSelectField
+									label="Categories"
+									value={selectedCategories}
+									options={(info.payload.categories ?? []).map((category) => ({
+										value: category.id,
+										label: category.label,
+									}))}
+									placeholder="None"
+								/>
+								<MultiSelectField
+									label="Tags"
+									value={selectedTags}
+									options={(info.payload.tags ?? []).map((tag) => ({
+										value: tag.id,
+										label: tag.label,
+									}))}
+									placeholder="None"
+								/>
+							</div>
+						{/if}
+					{/await}
+				{/if}
+
+				{#if projectId}
+					<p class="font-mono text-xs text-base-content/60">{projectId}</p>
+				{/if}
+				{#await rootCheck then isRoot}
+					{#if isRoot}
+						<div role="alert" class="alert alert-warning">
+							<span>
+								This is the project's root key. That works, but the page serving this console is in
+								your trust path. For a root you care about, use the CLI on a machine you control.
+							</span>
+						</div>
+					{/if}
+				{/await}
+				<button
+					class="btn btn-sm w-fit"
+					onclick={createNewProject}
+					disabled={busy || !seed || !gameId}
+				>
+					{projectMode === 'new' ? 'Create the project' : 'Publish the profile'}
+				</button>
+			</div>
+		</section>
+
+		<section class="card card-border bg-base-200">
+			<div class="card-body gap-4">
+				<h2 class="card-title">3. Release</h2>
+				<label class="floating-label">
+					<span>File</span>
+					<input
+						type="file"
+						class="file-input w-full"
+						onchange={(event) =>
+							(artifact = (event.currentTarget as HTMLInputElement).files?.[0] ?? null)}
+						aria-label="File to publish"
 					/>
 				</label>
-			{:else}
+				{#if receipt}
+					<p class="text-sm text-base-content/70">
+						Uploaded: <span class="font-mono">{receipt.size}</span> bytes
+					</p>
+				{/if}
+
+				{#await gameInfo then info}
+					<div class="grid gap-3 sm:grid-cols-2">
+						<MultiSelectField
+							label="Game versions"
+							value={gameVersions}
+							options={(info.payload?.version_catalog ?? []).map((value) => ({
+								value,
+								label: value,
+							}))}
+							placeholder="Any version"
+							hint={info.payload?.version_catalog?.length
+								? ''
+								: 'Type versions by hand below if the game has no list.'}
+						/>
+						<SelectField
+							label="Loader"
+							value={loaderId}
+							options={info.loaders.map((loader) => ({
+								value: loader.id,
+								label: loader.display_name ?? loader.id,
+							}))}
+							placeholder="None"
+						/>
+					</div>
+				{/await}
+
+				{#if gameVersions.length === 0}
+					<label class="floating-label max-w-xl">
+						<span>Game versions (comma separated)</span>
+						<input
+							class="input w-full"
+							placeholder="1.20.1"
+							oninput={(event) =>
+								(gameVersions = event.currentTarget.value
+									.split(',')
+									.map((value) => value.trim())
+									.filter(Boolean))}
+						/>
+					</label>
+				{/if}
+
 				<div class="grid gap-3 sm:grid-cols-2">
 					<label class="floating-label">
-						<span>Display name</span>
-						<input class="input w-full" bind:value={displayName} placeholder="My Mod" />
+						<span>Version</span>
+						<input class="input w-full" bind:value={version} placeholder="1.2.3" />
 					</label>
 					<label class="floating-label">
-						<span>Summary</span>
-						<input class="input w-full" bind:value={summary} placeholder="What it does" />
+						<span>Channel</span>
+						<input class="input w-full" bind:value={channel} />
 					</label>
 				</div>
 				<label class="floating-label">
-					<span>Description</span>
-					<textarea class="textarea w-full" rows="3" bind:value={description}></textarea>
+					<span>Release notes (optional)</span>
+					<textarea class="textarea w-full" rows="3" bind:value={notes}></textarea>
 				</label>
-			{/if}
-			{#if projectId}
-				<p class="text-base-content/70 font-mono text-xs">{projectId}</p>
-			{/if}
-			{#await rootCheck then isRoot}
-				{#if isRoot}
-					<div role="alert" class="alert alert-warning">
-						<span>
-							This key is a root of the project. Signing here works, but the page that serves this
-							console is in your trust path; for a root you care about, prefer the CLI on a machine
-							you control, or delegate a release key and keep the root offline.
-						</span>
-					</div>
-				{/if}
-			{/await}
-			<button
-				class="btn btn-sm w-fit"
-				onclick={createNewProject}
-				disabled={busy || !seed || !gameId}
-			>
-				{projectMode === 'new' ? 'Create the project' : 'Publish the profile'}
-			</button>
-			<p class="text-base-content/60 text-xs">
-				Creating a project signs its genesis, which fixes its identity. It cannot be renamed or
-				moved later, and the ID never changes even if you publish it to another home.
-			</p>
-		</div>
-	</section>
 
-	<section class="card card-border">
-		<div class="card-body gap-4">
-			<h2 class="card-title">3. The release</h2>
-			<div class="grid gap-3 sm:grid-cols-2">
-				<label class="floating-label">
-					<span>Game</span>
-					<select class="select w-full" bind:value={gameId}>
-						<option value="">Choose a game</option>
-						{#each games as game (game.id)}
-							<option value={game.id}>{game.display_name ?? game.id}</option>
-						{/each}
-					</select>
-				</label>
-				<label class="floating-label">
-					<span>Game versions (comma separated)</span>
-					<input class="input w-full" bind:value={gameVersions} placeholder="1.20.1" />
-				</label>
-				<label class="floating-label">
-					<span>Loader (optional)</span>
-					<input
-						class="input w-full font-mono text-xs"
-						bind:value={loaderId}
-						placeholder="gd:sha256:…"
-					/>
-				</label>
-				<label class="floating-label">
-					<span>Version</span>
-					<input class="input w-full" bind:value={version} placeholder="1.2.3" />
-				</label>
-				<label class="floating-label">
-					<span>Channel</span>
-					<input class="input w-full" bind:value={channel} />
-				</label>
-			</div>
-			<label class="floating-label">
-				<span>Artifact</span>
-				<input
-					type="file"
-					class="file-input w-full"
-					onchange={(event) =>
-						(artifact = (event.currentTarget as HTMLInputElement).files?.[0] ?? null)}
-					aria-label="Artifact to publish"
-				/>
-			</label>
-			<label class="floating-label">
-				<span>Release notes (optional, markdown)</span>
-				<textarea class="textarea w-full" rows="3" bind:value={notes}></textarea>
-			</label>
-			{#if receipt}
-				<p class="text-sm">
-					Stored as <span class="font-mono">{receipt.digest}</span> ({receipt.size} bytes).
+				<button
+					class="btn btn-primary w-fit"
+					onclick={publishRelease}
+					disabled={busy ||
+						!seed ||
+						!projectId ||
+						!artifact ||
+						!gameId ||
+						!version ||
+						gameVersions.length === 0}
+				>
+					{busy ? 'Publishing…' : 'Publish release'}
+				</button>
+				<p class="text-xs text-base-content/60">
+					{mode === 'open'
+						? 'This instance publishes directly.'
+						: 'This instance reviews submissions before they appear.'}
 				</p>
-			{/if}
-			<button
-				class="btn btn-primary btn-sm w-fit"
-				onclick={publishRelease}
-				disabled={busy || !seed || !projectId || !artifact || !gameId || !version}
-			>
-				{busy ? 'Working…' : 'Sign and publish'}
-			</button>
-			<p class="text-base-content/60 text-xs">
-				{mode === 'open'
-					? 'This home publishes directly, so the signed release is added to the feed.'
-					: 'This home reviews submissions, so the signed release is submitted for review.'}
-			</p>
-		</div>
-	</section>
-
-	{#if log.length}
-		<section class="card card-border">
-			<div class="card-body">
-				<h2 class="card-title">What happened</h2>
-				<ul class="font-mono text-xs">
-					{#each log as line, index (index)}
-						<li>{line}</li>
-					{/each}
-				</ul>
 			</div>
 		</section>
+
+		{#if log.length}
+			<section class="card card-border bg-base-200">
+				<div class="card-body">
+					<h2 class="card-title">What happened</h2>
+					<ul class="font-mono text-xs">
+						{#each log as line, index (index)}
+							<li>{line}</li>
+						{/each}
+					</ul>
+				</div>
+			</section>
+		{/if}
 	{/if}
 </div>
