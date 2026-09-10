@@ -15,12 +15,31 @@ export function setCsrfToken(token: string | null) {
 	csrfInMemory = token;
 }
 
+export function isLoopbackHost(host: string): boolean {
+	return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
+}
+
+export function sameOrigin(configured: string, origin: string): boolean {
+	if (configured === origin) {
+		return true;
+	}
+	try {
+		const base = new URL(configured);
+		const page = new URL(origin);
+		return (
+			base.port === page.port && isLoopbackHost(base.hostname) && isLoopbackHost(page.hostname)
+		);
+	} catch {
+		return false;
+	}
+}
+
 export function apiBase(): string {
 	const configured = (PUBLIC_MORAINE_REGISTRY ?? '').replace(/\/+$/, '');
 	if (!configured) {
 		return '';
 	}
-	if (typeof window !== 'undefined' && configured === window.location.origin) {
+	if (typeof window !== 'undefined' && sameOrigin(configured, window.location.origin)) {
 		return '';
 	}
 	return configured;
@@ -48,11 +67,21 @@ export async function authorizedFetch(path: string, init: RequestInit = {}): Pro
 	if (token) {
 		headers.set('x-csrf-token', token);
 	}
-	return fetch(`${base}${path}`, {
-		credentials: base ? 'include' : 'same-origin',
-		...init,
-		headers,
-	});
+	try {
+		return await fetch(`${base}${path}`, {
+			credentials: base ? 'include' : 'same-origin',
+			...init,
+			headers,
+		});
+	} catch (cause) {
+		if (base) {
+			throw new Error(
+				`could not reach ${base}. If this site is served from another origin, add that origin to MORAINE_WEB_ORIGINS on the registry.`,
+				{ cause },
+			);
+		}
+		throw cause;
+	}
 }
 
 export async function account(): Promise<Account | null> {
