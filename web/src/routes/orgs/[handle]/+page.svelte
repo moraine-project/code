@@ -16,6 +16,7 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import SelectField from '$lib/components/SelectField.svelte';
 	import type { PageProps } from './$types';
 
 	let { params }: PageProps = $props();
@@ -38,6 +39,15 @@
 	const childrenOf = (parentId: string) =>
 		detail?.teams.filter((team) => team.parent_team_id === parentId) ?? [];
 	const movableTeams = $derived(detail?.teams ?? []);
+	const roleOptions = [
+		{ value: 'member', label: 'member' },
+		{ value: 'admin', label: 'admin' },
+		{ value: 'owner', label: 'owner' },
+	];
+	const parentOptions = $derived([
+		{ value: '', label: 'None' },
+		...(detail?.teams ?? []).map((team) => ({ value: team.id, label: team.display_name })),
+	]);
 
 	onMount(load);
 
@@ -173,14 +183,9 @@
 								aria-label="Member email"
 							/>
 						</label>
-						<label class="floating-label">
-							<span>Role</span>
-							<select class="select w-32" bind:value={memberRole} aria-label="Member role">
-								<option value="member">member</option>
-								<option value="admin">admin</option>
-								<option value="owner">owner</option>
-							</select>
-						</label>
+						<div class="w-32">
+							<SelectField label="Role" bind:value={memberRole} options={roleOptions} />
+						</div>
 						<button class="btn" type="submit" disabled={busy}>
 							<Plus size={16} />
 							Add member
@@ -206,12 +211,23 @@
 								<span class="badge badge-outline">{team.display_name}</span>
 								{#if canManage}
 									{#if moving === team.id}
-										<select class="select select-xs" bind:value={moveTarget}>
-											<option value="">top level</option>
-											{#each movableTeams.filter((candidate) => candidate.id !== team.id) as candidate (candidate.id)}
-												<option value={candidate.id}>{candidate.display_name}</option>
-											{/each}
-										</select>
+										<div class="w-48">
+											<SelectField
+												bare
+												label="Move under"
+												bind:value={moveTarget}
+												options={[
+													{ value: '', label: 'Top level' },
+													...movableTeams
+														.filter((candidate) => candidate.id !== team.id)
+														.map((candidate) => ({
+															value: candidate.id,
+															label: candidate.display_name,
+														})),
+												]}
+												placeholder="Top level"
+											/>
+										</div>
 										<button class="btn btn-xs" onclick={() => moveTeam(team)}>
 											<MoveRight size={13} />
 											Move
@@ -248,15 +264,9 @@
 							<span>Team name</span>
 							<input class="input w-56" bind:value={teamName} required aria-label="Team name" />
 						</label>
-						<label class="floating-label">
-							<span>Parent team</span>
-							<select class="select w-56" bind:value={parentTeamId} aria-label="Parent team">
-								<option value="">none</option>
-								{#each detail.teams as team (team.id)}
-									<option value={team.id}>{team.display_name}</option>
-								{/each}
-							</select>
-						</label>
+						<div class="w-56">
+							<SelectField label="Parent team" bind:value={parentTeamId} options={parentOptions} />
+						</div>
 						<button class="btn" type="submit" disabled={busy}>
 							<Plus size={16} />
 							Create team

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Check, Copy } from '@lucide/svelte';
 	import { onDestroy } from 'svelte';
 	import { shortDigest } from '$lib/api/registry';
 
@@ -27,9 +28,19 @@
 
 <span class="inline-flex items-center gap-1">
 	{#if !copyOnly}
-		<code class="font-mono" title={value}>{shortDigest(value, length)}</code>
+		<code class="font-mono text-xs" title={value}>{shortDigest(value, length)}</code>
 	{/if}
-	<button class="btn btn-ghost btn-xs" type="button" onclick={copy} aria-label={`Copy ${label}`}>
-		{copied ? 'copied' : 'copy'}
+	<button
+		class="btn btn-ghost btn-xs btn-square"
+		type="button"
+		onclick={copy}
+		aria-label={`Copy ${label}`}
+		title={copied ? 'Copied' : 'Copy'}
+	>
+		{#if copied}
+			<Check size={13} class="text-success" />
+		{:else}
+			<Copy size={13} />
+		{/if}
 	</button>
 </span>

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Select } from 'bits-ui';
 	import { Check, ChevronDown } from '@lucide/svelte';
+	import { Select } from 'bits-ui';
 
 	export type SelectOption = { value: string; label: string };
 
@@ -11,6 +11,7 @@
 		placeholder = 'Choose…',
 		disabled = false,
 		hint = '',
+		bare = false,
 		onchange,
 	}: {
 		label: string;
@@ -19,12 +20,12 @@
 		placeholder?: string;
 		disabled?: boolean;
 		hint?: string;
+		bare?: boolean;
 		onchange?: (value: string) => void;
 	} = $props();
 </script>
 
-<fieldset class="fieldset">
-	<legend class="fieldset-legend">{label}</legend>
+{#snippet control()}
 	<Select.Root
 		type="single"
 		bind:value
@@ -63,5 +64,14 @@
 			</Select.Content>
 		</Select.Portal>
 	</Select.Root>
-	{#if hint}<p class="label">{hint}</p>{/if}
-</fieldset>
+{/snippet}
+
+{#if bare}
+	{@render control()}
+{:else}
+	<fieldset class="fieldset">
+		<legend class="fieldset-legend">{label}</legend>
+		{@render control()}
+		{#if hint}<p class="label">{hint}</p>{/if}
+	</fieldset>
+{/if}

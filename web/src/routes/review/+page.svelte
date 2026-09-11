@@ -5,6 +5,7 @@
 	import Digest from '$lib/components/Digest.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import SelectField from '$lib/components/SelectField.svelte';
 	import { assign, decide, reasonCodes, reviewQueue, type Submission } from '$lib/api/review';
 	import { session } from '$lib/session.svelte';
 
@@ -89,6 +90,8 @@
 	function formatTime(seconds: number): string {
 		return new Date(seconds * 1000).toLocaleString();
 	}
+
+	const reasonOptions = reasonCodes.map((code) => ({ value: code, label: code }));
 </script>
 
 <svelte:head>
@@ -143,15 +146,15 @@
 								{/if}
 							</td>
 							<td>
-								<select
-									class="select select-sm"
-									bind:value={reasons[submission.id]}
-									aria-label="Reason code"
-								>
-									{#each reasonCodes as code (code)}
-										<option value={code}>{code}</option>
-									{/each}
-								</select>
+								<div class="w-44">
+									<SelectField
+										bare
+										label="Reason code"
+										bind:value={reasons[submission.id]}
+										options={reasonOptions}
+										placeholder="Reason code"
+									/>
+								</div>
 							</td>
 							<td>
 								<div class="flex flex-wrap gap-1">
