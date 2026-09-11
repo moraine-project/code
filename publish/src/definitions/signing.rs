@@ -21,85 +21,112 @@ pub fn game(
 	loaders_allowed: bool,
 	metadata_extractor: Option<&str>,
 	install_adapter: Option<&str>,
+	revision_of: Option<&str>,
 	out: &Path,
 ) -> Result<(), String> {
 	let key = keyfile::load(key_path)?;
-	emit(
-		&key,
-		GenesisKind::Game,
-		&["delegation", "game-def"],
-		ObjectKind::GameDef,
-		|game_id| GameDef {
+	let build = |game_id: &str| GameDef {
+		protocol: 1,
+		game_id: game_id.to_string(),
+		display_name: display_name.to_string(),
+		version_syntax: VersionSyntax {
+			kind: version_ordering.to_string(),
+			pattern: None,
+		},
+		version_ordering: version_ordering.to_string(),
+		version_catalog: versions.to_vec(),
+		loaders_allowed,
+		loader_authorities: Vec::new(),
+		categories: Vec::new(),
+		tags: Vec::new(),
+		metadata_extractor: trimmed(metadata_extractor),
+		install_adapter: trimmed(install_adapter),
+		declared_time: now(),
+	};
+	match optional_revision(revision_of) {
+		Some(id) => revision(&key, ObjectKind::GameDef, &revision_id(&id)?, build, out, "game_id")?,
+		None => emit(
+			&key,
+			GenesisKind::Game,
+			&["delegation", "game-def"],
+			ObjectKind::GameDef,
+			build,
+			out,
+			"game_id",
+		)?,
+	};
+	Ok(())
+}
+
+pub fn loader(
+	key_path: &Path,
+	game_id: &str,
+	display_name: &str,
+	version_ordering: &str,
+	revision_of: Option<&str>,
+	out: &Path,
+) -> Result<(), String> {
+	let key = keyfile::load(key_path)?;
+	let build = |loader_id: &str| {
+		LoaderObject::Definition(LoaderDef {
 			protocol: 1,
+			loader_id: loader_id.to_string(),
 			game_id: game_id.to_string(),
-			display_name: display_name.to_string(),
-			version_syntax: VersionSyntax {
-				kind: version_ordering.to_string(),
-				pattern: None,
-			},
-			version_ordering: version_ordering.to_string(),
-			version_catalog: versions.to_vec(),
-			loaders_allowed,
-			loader_authorities: Vec::new(),
-			categories: Vec::new(),
-			tags: Vec::new(),
-			metadata_extractor: trimmed(metadata_extractor),
-			install_adapter: trimmed(install_adapter),
-			declared_time: now(),
-		},
-		out,
-		"game_id",
-	)
-	.map(|_| ())
-}
-
-pub fn loader(key_path: &Path, game_id: &str, display_name: &str, version_ordering: &str, out: &Path) -> Result<(), String> {
-	let key = keyfile::load(key_path)?;
-	emit(
-		&key,
-		GenesisKind::Loader,
-		&["delegation", "loader-def"],
-		ObjectKind::LoaderDef,
-		|loader_id| {
-			LoaderObject::Definition(LoaderDef {
-				protocol: 1,
-				loader_id: loader_id.to_string(),
-				game_id: game_id.to_string(),
-				display_name: display_name.to_string(),
-				version_ordering: version_ordering.to_string(),
-				version_catalog: Vec::new(),
-				game_versions: None,
-				bootstrap: None,
-				accepted_artifacts: None,
-				declared_time: now(),
-			})
-		},
-		out,
-		"loader_id",
-	)
-	.map(|_| ())
-}
-
-pub fn runtime(key_path: &Path, kind: &str, display_name: &str, version_ordering: &str, out: &Path) -> Result<(), String> {
-	let key = keyfile::load(key_path)?;
-	emit(
-		&key,
-		GenesisKind::Runtime,
-		&["delegation", "runtime-def"],
-		ObjectKind::RuntimeDef,
-		|runtime_id| RuntimeDef {
-			protocol: 1,
-			runtime_id: runtime_id.to_string(),
-			kind: kind.to_string(),
 			display_name: display_name.to_string(),
 			version_ordering: version_ordering.to_string(),
 			version_catalog: Vec::new(),
+			game_versions: None,
+			bootstrap: None,
+			accepted_artifacts: None,
 			declared_time: now(),
-		},
-		out,
-		"runtime_id",
-	)
-	.map(|_| ())
+		})
+	};
+	match optional_revision(revision_of) {
+		Some(id) => revision(&key, ObjectKind::LoaderDef, &revision_id(&id)?, build, out, "loader_id")?,
+		None => emit(
+			&key,
+			GenesisKind::Loader,
+			&["delegation", "loader-def"],
+			ObjectKind::LoaderDef,
+			build,
+			out,
+			"loader_id",
+		)?,
+	};
+	Ok(())
+}
+
+pub fn runtime(
+	key_path: &Path,
+	kind: &str,
+	display_name: &str,
+	version_ordering: &str,
+	revision_of: Option<&str>,
+	out: &Path,
+) -> Result<(), String> {
+	let key = keyfile::load(key_path)?;
+	let build = |runtime_id: &str| RuntimeDef {
+		protocol: 1,
+		runtime_id: runtime_id.to_string(),
+		kind: kind.to_string(),
+		display_name: display_name.to_string(),
+		version_ordering: version_ordering.to_string(),
+		version_catalog: Vec::new(),
+		declared_time: now(),
+	};
+	match optional_revision(revision_of) {
+		Some(id) => revision(&key, ObjectKind::RuntimeDef, &revision_id(&id)?, build, out, "runtime_id")?,
+		None => emit(
+			&key,
+			GenesisKind::Runtime,
+			&["delegation", "runtime-def"],
+			ObjectKind::RuntimeDef,
+			build,
+			out,
+			"runtime_id",
+		)?,
+	};
+	Ok(())
 }
 
 pub fn loader_release(
@@ -200,6 +227,38 @@ fn genesis(key: &SigningKey, kind: GenesisKind, kinds: &[&str]) -> Result<Genesi
 		contacts: None,
 		created_at: now(),
 	})
+}
+
+pub(super) fn optional_revision(value: Option<&str>) -> Option<String> {
+	value.map(str::trim).filter(|text| !text.is_empty()).map(str::to_string)
+}
+
+pub(super) fn revision_id(value: &str) -> Result<String, String> {
+	let trimmed = value.trim();
+	let hex = trimmed.strip_prefix("gd:sha256:").unwrap_or_default();
+	if hex.len() != 64 || !hex.chars().all(|character| character.is_ascii_hexdigit()) {
+		return Err(format!("`{value}` is not a definition id (gd:sha256:<64 hex>)"));
+	}
+	Ok(trimmed.to_string())
+}
+
+pub(super) fn revision<T: Canonical + Clone>(
+	key: &SigningKey,
+	definition_kind: ObjectKind,
+	id: &str,
+	definition: impl FnOnce(&str) -> T,
+	out: &Path,
+	label: &str,
+) -> Result<String, String> {
+	let signed = sign_payload(definition_kind, &definition(id), &[key]);
+	std::fs::create_dir_all(out).map_err(|error| format!("{}: {error}", out.display()))?;
+	let stem = id.strip_prefix("gd:sha256:").unwrap_or(id);
+	let path = out.join(format!("{stem}.definition"));
+	std::fs::write(&path, signed.wire_bytes()).map_err(|error| format!("{}: {error}", path.display()))?;
+	println!("{label} revision: {id}");
+	println!("definition: {}", signed.id(definition_kind));
+	println!("written to {}", out.display());
+	Ok(id.to_string())
 }
 
 pub(super) fn write_object(directory: &Path, id: &str, object: &[u8]) -> Result<(), String> {

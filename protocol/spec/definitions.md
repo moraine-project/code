@@ -68,6 +68,26 @@ serves the newest revision at the same URL. Adding a loader version is even
 lighter — it is a separate `loader-def` object of the release shape, so the
 loader definition is not republished at all.
 
+Authoring a revision reuses the identity instead of minting a new one. In a
+readable definition file, set `revision_of` to the existing ID; the compiler
+signs a new definition under that ID and writes it over the file for that
+identity, so a definitions directory holds one current definition per game,
+loader, or runtime:
+
+```toml
+kind = "game"
+revision_of = "gd:sha256:..."
+display_name = "Minecraft"
+version_ordering = "ordered-list"
+versions = ["1.20", "1.21", "1.22"]
+```
+
+The revision must be signed by the key that owns the identity's genesis, or by a
+delegate authorized for that kind. The instance verifies it against the stored
+genesis and applies the append-only checks below. A `loader-release` or
+`mapping` is a standalone object with its own digest and no identity of its own,
+so `revision_of` does not apply to those shapes.
+
 The catalogue is append-only, and the instance enforces it. A revision that
 drops a version, category, or tag, that changes the version ordering scheme, or
 that names a different identity than the one it is stored under is refused with

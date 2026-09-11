@@ -96,6 +96,8 @@ enum Command {
 		metadata_extractor: Option<String>,
 		#[arg(long)]
 		install_adapter: Option<String>,
+		#[arg(long = "revision-of")]
+		revision_of: Option<String>,
 		#[arg(long, default_value = "definitions")]
 		out: PathBuf,
 	},
@@ -109,6 +111,8 @@ enum Command {
 		name: String,
 		#[arg(long, default_value = "semver")]
 		version_ordering: String,
+		#[arg(long = "revision-of")]
+		revision_of: Option<String>,
 		#[arg(long, default_value = "definitions")]
 		out: PathBuf,
 	},
@@ -122,6 +126,8 @@ enum Command {
 		name: String,
 		#[arg(long, default_value = "semver")]
 		version_ordering: String,
+		#[arg(long = "revision-of")]
+		revision_of: Option<String>,
 		#[arg(long, default_value = "definitions")]
 		out: PathBuf,
 	},
@@ -385,6 +391,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			version_list,
 			metadata_extractor,
 			install_adapter,
+			revision_of,
 			out,
 		} => definitions::game(
 			&key,
@@ -394,6 +401,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			loaders_allowed,
 			metadata_extractor.as_deref(),
 			install_adapter.as_deref(),
+			revision_of.as_deref(),
 			&out,
 		),
 		Command::DefineLoader {
@@ -401,15 +409,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			game,
 			name,
 			version_ordering,
+			revision_of,
 			out,
-		} => definitions::loader(&key, &game, &name, &version_ordering, &out),
+		} => definitions::loader(&key, &game, &name, &version_ordering, revision_of.as_deref(), &out),
 		Command::DefineRuntime {
 			key,
 			kind,
 			name,
 			version_ordering,
+			revision_of,
 			out,
-		} => definitions::runtime(&key, &kind, &name, &version_ordering, &out),
+		} => definitions::runtime(&key, &kind, &name, &version_ordering, revision_of.as_deref(), &out),
 		Command::DefineLoaderAcceptance {
 			key,
 			loader,

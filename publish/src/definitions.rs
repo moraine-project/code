@@ -12,7 +12,7 @@ use moraine_model::definition::{
 use moraine_model::genesis::GenesisKind;
 use moraine_model::signed::sign_payload;
 use serde::Deserialize;
-use signing::{emit, now, write_object};
+use signing::{emit, now, optional_revision, revision, revision_id, write_object};
 pub use signing::{game, loader, loader_acceptance, loader_release, runtime};
 
 use crate::keyfile;
@@ -40,6 +40,8 @@ struct DefinitionFile {
 	tags: Vec<TagFile>,
 	#[serde(default)]
 	game_id: Option<String>,
+	#[serde(default)]
+	revision_of: Option<String>,
 	#[serde(default)]
 	runtime_kind: Option<String>,
 	#[serde(default)]
@@ -174,6 +176,11 @@ fn compile(
 	if matches!(source.kind.as_str(), "game" | "loader" | "runtime") && (display_name.is_empty() || ordering.is_empty()) {
 		return Err("display_name and version_ordering are required".to_string());
 	}
+	if !matches!(source.kind.as_str(), "game" | "loader" | "runtime")
+		&& optional_revision(source.revision_of.as_deref()).is_some()
+	{
+		return Err("revision_of applies to a game, loader, or runtime definition".to_string());
+	}
 	let definition_id = match source.kind.as_str() {
 		"game" => {
 			let authorities = source
@@ -181,92 +188,104 @@ fn compile(
 				.iter()
 				.map(|authority| resolve_ref(names, authority))
 				.collect::<Result<Vec<_>, _>>()?;
-			emit(
-				&key,
-				GenesisKind::Game,
-				&["delegation", "game-def"],
-				ObjectKind::GameDef,
-				|game_id| GameDef {
-					protocol: 1,
-					game_id: game_id.to_string(),
-					display_name: display_name.clone(),
-					version_syntax: VersionSyntax {
-						kind: ordering.clone(),
-						pattern: None,
-					},
-					version_ordering: ordering.clone(),
-					version_catalog: source.versions.clone(),
-					loaders_allowed: source.loaders_allowed.unwrap_or(true),
-					loader_authorities: authorities,
-					categories: source
-						.categories
-						.iter()
-						.map(|category| GameCategory {
-							id: category.id.clone(),
-							label: category.label.clone(),
-							parent: category.parent.clone(),
-						})
-						.collect(),
-					tags: source
-						.tags
-						.iter()
-						.map(|tag| GameTag {
-							id: tag.id.clone(),
-							label: tag.label.clone(),
-						})
-						.collect(),
-					metadata_extractor: trimmed(source.metadata_extractor.as_deref()),
-					install_adapter: trimmed(source.install_adapter.as_deref()),
-					declared_time: now(),
+			let build = |game_id: &str| GameDef {
+				protocol: 1,
+				game_id: game_id.to_string(),
+				display_name: display_name.clone(),
+				version_syntax: VersionSyntax {
+					kind: ordering.clone(),
+					pattern: None,
 				},
-				out,
-				"game_id",
-			)?
+				version_ordering: ordering.clone(),
+				version_catalog: source.versions.clone(),
+				loaders_allowed: source.loaders_allowed.unwrap_or(true),
+				loader_authorities: authorities,
+				categories: source
+					.categories
+					.iter()
+					.map(|category| GameCategory {
+						id: category.id.clone(),
+						label: category.label.clone(),
+						parent: category.parent.clone(),
+					})
+					.collect(),
+				tags: source
+					.tags
+					.iter()
+					.map(|tag| GameTag {
+						id: tag.id.clone(),
+						label: tag.label.clone(),
+					})
+					.collect(),
+				metadata_extractor: trimmed(source.metadata_extractor.as_deref()),
+				install_adapter: trimmed(source.install_adapter.as_deref()),
+				declared_time: now(),
+			};
+			match optional_revision(source.revision_of.as_deref()) {
+				Some(id) => revision(&key, ObjectKind::GameDef, &revision_id(&id)?, build, out, "game_id")?,
+				None => emit(
+					&key,
+					GenesisKind::Game,
+					&["delegation", "game-def"],
+					ObjectKind::GameDef,
+					build,
+					out,
+					"game_id",
+				)?,
+			}
 		}
 		"loader" => {
 			let game_id = resolve_ref(names, required_field(source.game_id.as_deref(), "game_id")?)?;
-			emit(
-				&key,
-				GenesisKind::Loader,
-				&["delegation", "loader-def"],
-				ObjectKind::LoaderDef,
-				|loader_id| {
-					LoaderObject::Definition(LoaderDef {
-						protocol: 1,
-						loader_id: loader_id.to_string(),
-						game_id: game_id.clone(),
-						display_name: display_name.clone(),
-						version_ordering: ordering.clone(),
-						version_catalog: source.versions.clone(),
-						game_versions: predicate_or_none(&source.game_versions, source.game_version_scheme.as_deref()),
-						bootstrap: None,
-						accepted_artifacts: None,
-						declared_time: now(),
-					})
-				},
-				out,
-				"loader_id",
-			)?
-		}
-		"runtime" => {
-			let runtime_kind = source.runtime_kind.as_deref().unwrap_or("java");
-			emit(
-				&key,
-				GenesisKind::Runtime,
-				&["delegation", "runtime-def"],
-				ObjectKind::RuntimeDef,
-				|runtime_id| RuntimeDef {
+			let build = |loader_id: &str| {
+				LoaderObject::Definition(LoaderDef {
 					protocol: 1,
-					runtime_id: runtime_id.to_string(),
-					kind: runtime_kind.to_string(),
+					loader_id: loader_id.to_string(),
+					game_id: game_id.clone(),
 					display_name: display_name.clone(),
 					version_ordering: ordering.clone(),
 					version_catalog: source.versions.clone(),
+					game_versions: predicate_or_none(&source.game_versions, source.game_version_scheme.as_deref()),
+					bootstrap: None,
+					accepted_artifacts: None,
 					declared_time: now(),
-				},
-				out,
-				"runtime_id",
-			)?
+				})
+			};
+			match optional_revision(source.revision_of.as_deref()) {
+				Some(id) => revision(&key, ObjectKind::LoaderDef, &revision_id(&id)?, build, out, "loader_id")?,
+				None => emit(
+					&key,
+					GenesisKind::Loader,
+					&["delegation", "loader-def"],
+					ObjectKind::LoaderDef,
+					build,
+					out,
+					"loader_id",
+				)?,
+			}
+		}
+		"runtime" => {
+			let runtime_kind = source.runtime_kind.as_deref().unwrap_or("java");
+			let build = |runtime_id: &str| RuntimeDef {
+				protocol: 1,
+				runtime_id: runtime_id.to_string(),
+				kind: runtime_kind.to_string(),
+				display_name: display_name.clone(),
+				version_ordering: ordering.clone(),
+				version_catalog: source.versions.clone(),
+				declared_time: now(),
+			};
+			match optional_revision(source.revision_of.as_deref()) {
+				Some(id) => revision(&key, ObjectKind::RuntimeDef, &revision_id(&id)?, build, out, "runtime_id")?,
+				None => emit(
+					&key,
+					GenesisKind::Runtime,
+					&["delegation", "runtime-def"],
+					ObjectKind::RuntimeDef,
+					build,
+					out,
+					"runtime_id",
+				)?,
+			}
 		}
 		"loader-release" | "release" => {
 			let loader_id = resolve_ref(names, required_field(source.loader_id.as_deref(), "loader_id")?)?;

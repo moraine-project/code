@@ -17,6 +17,7 @@ fn writes_a_game_genesis_and_definition_pair() {
 		true,
 		None,
 		Some("sims4/default"),
+		None,
 		&out,
 	)
 	.expect("game");
@@ -77,6 +78,7 @@ fn the_definition_id_matches_the_genesis_id() {
 		true,
 		None,
 		Some("sims4/default"),
+		None,
 		&out,
 	)
 	.expect("game");
@@ -438,4 +440,154 @@ fn rejects_a_file_with_an_unknown_kind() {
 	.expect("write");
 	let error = from_file(&key_path, &source, &directory.path().join("out")).expect_err("error");
 	assert!(error.contains("unknown `kind"));
+}
+
+fn genesis_stem(out: &Path) -> String {
+	std::fs::read_dir(out)
+		.expect("read")
+		.filter_map(|entry| Some(entry.ok()?.path()))
+		.find(|path| path.extension().is_some_and(|extension| extension == "genesis"))
+		.expect("genesis file")
+		.file_stem()
+		.expect("stem")
+		.to_string_lossy()
+		.to_string()
+}
+
+#[test]
+fn compiles_a_game_revision_under_the_same_identity() {
+	use moraine_model::signed::SignedObject;
+
+	let directory = tempfile::tempdir().expect("tempdir");
+	let key_path = directory.path().join("game.key");
+	keyfile::create(&key_path).expect("key");
+	let out = directory.path().join("definitions");
+
+	game(
+		&key_path,
+		"Minecraft",
+		"ordered-list",
+		&["1.20.1".to_string()],
+		true,
+		None,
+		None,
+		None,
+		&out,
+	)
+	.expect("game");
+	let stem = genesis_stem(&out);
+	let id = format!("gd:sha256:{stem}");
+
+	game(
+		&key_path,
+		"Minecraft",
+		"ordered-list",
+		&["1.20.1".to_string(), "1.22".to_string()],
+		true,
+		None,
+		None,
+		Some(&id),
+		&out,
+	)
+	.expect("revision");
+
+	let signed = SignedObject::<GameDef>::from_bytes(&std::fs::read(out.join(format!("{stem}.definition"))).expect("read"))
+		.expect("decode");
+	assert_eq!(signed.payload.game_id, id, "a revision keeps the identity");
+	assert_eq!(signed.payload.version_catalog, vec!["1.20.1", "1.22"]);
+
+	let genesis_count = std::fs::read_dir(&out)
+		.expect("read")
+		.filter(|entry| {
+			entry
+				.as_ref()
+				.is_ok_and(|entry| entry.path().extension().is_some_and(|e| e == "genesis"))
+		})
+		.count();
+	assert_eq!(genesis_count, 1, "a revision does not create a new genesis");
+}
+
+#[test]
+fn reads_a_game_revision_from_a_readable_file() {
+	use moraine_model::signed::SignedObject;
+
+	let directory = tempfile::tempdir().expect("tempdir");
+	let key_path = directory.path().join("game.key");
+	keyfile::create(&key_path).expect("key");
+	let out = directory.path().join("definitions");
+
+	game(
+		&key_path,
+		"Minecraft",
+		"ordered-list",
+		&["1.20.1".to_string()],
+		true,
+		None,
+		None,
+		None,
+		&out,
+	)
+	.expect("game");
+	let stem = genesis_stem(&out);
+	let id = format!("gd:sha256:{stem}");
+
+	let source = directory.path().join("minecraft.toml");
+	std::fs::write(
+		&source,
+		format!(
+			r#"kind = "game"
+revision_of = "{id}"
+display_name = "Minecraft"
+version_ordering = "ordered-list"
+versions = ["1.20.1", "1.22"]
+"#
+		),
+	)
+	.expect("write");
+
+	from_file(&key_path, &source, &out).expect("compile");
+
+	let signed = SignedObject::<GameDef>::from_bytes(&std::fs::read(out.join(format!("{stem}.definition"))).expect("read"))
+		.expect("decode");
+	assert_eq!(signed.payload.game_id, id);
+	assert_eq!(signed.payload.version_catalog, vec!["1.20.1", "1.22"]);
+}
+
+#[test]
+fn rejects_a_revision_of_a_non_identity_object() {
+	let directory = tempfile::tempdir().expect("tempdir");
+	let key_path = directory.path().join("key");
+	keyfile::create(&key_path).expect("key");
+	let source = directory.path().join("release.toml");
+	std::fs::write(
+		&source,
+		r#"kind = "loader-release"
+revision_of = "gd:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+loader_id = "gd:sha256:loader"
+version = "1.0.0"
+game_versions = ["1.20.1"]
+"#,
+	)
+	.expect("write");
+	let error = from_file(&key_path, &source, &directory.path().join("out")).expect_err("error");
+	assert!(error.contains("revision_of"), "{error}");
+}
+
+#[test]
+fn rejects_a_revision_with_a_malformed_identity() {
+	let directory = tempfile::tempdir().expect("tempdir");
+	let key_path = directory.path().join("key");
+	keyfile::create(&key_path).expect("key");
+	let source = directory.path().join("game.toml");
+	std::fs::write(
+		&source,
+		r#"kind = "game"
+revision_of = "minecraft"
+display_name = "Minecraft"
+version_ordering = "ordered-list"
+"#,
+	)
+	.expect("write");
+	let error = from_file(&key_path, &source, &directory.path().join("out")).expect_err("error");
+	assert!(error.contains("not a definition id"), "{error}");
 }

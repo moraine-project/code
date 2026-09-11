@@ -497,3 +497,41 @@ async fn filters_loaders_by_the_game_version_they_support() {
 	let wrong_game = list(application.clone(), "game=gd:sha256:other").await;
 	assert!(wrong_game.as_array().expect("loaders").is_empty());
 }
+
+#[tokio::test]
+async fn a_directory_with_a_revision_keeps_the_latest_catalogue() {
+	let directory = tempfile::tempdir().expect("tempdir");
+	let definitions = directory.path().join("definitions");
+	std::fs::create_dir(&definitions).expect("create");
+	let signer = SigningKey::from_seed(&[0x91; 32]);
+	let genesis = game_genesis(&signer);
+	let (_, object) = crate::verify::verify_genesis(&genesis).expect("verify");
+	let game_id = object.id;
+	std::fs::write(definitions.join("game.genesis"), &genesis).expect("write");
+	std::fs::write(
+		definitions.join("a-old.definition"),
+		game_definition_catalog(&signer, &game_id, "ordered-list", vec!["1.20"], true, Vec::new()),
+	)
+	.expect("write");
+	std::fs::write(
+		definitions.join("z-new.definition"),
+		game_definition_catalog(&signer, &game_id, "ordered-list", vec!["1.20", "1.21"], true, Vec::new()),
+	)
+	.expect("write");
+	let state = state(directory.path()).await;
+
+	let loaded = load_directory(&state, &definitions).await.expect("load");
+
+	assert_eq!(loaded, 3);
+	let request = axum::http::Request::get(format!("/v1/games/{game_id}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = crate::routes::router(state).oneshot(request).await.expect("response");
+	let body = to_bytes(response.into_body(), 64 * 1024).await.expect("body");
+	let view: serde_json::Value = serde_json::from_slice(&body).expect("json");
+	assert_eq!(
+		view["payload"]["version_catalog"],
+		serde_json::json!(["1.20", "1.21"]),
+		"the more complete catalogue is the current one"
+	);
+}

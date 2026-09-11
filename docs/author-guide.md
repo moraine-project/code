@@ -119,6 +119,27 @@ by digest, and the compiler resolves the order for you. A game's version list
 grows by publishing a new revision; the definition keeps the same identity, so
 nothing that referenced it changes.
 
+## Publishing a revision
+
+A definition keeps its identity forever, so a new game version is a revision of
+the existing definition rather than a new one. Point the file at the ID you
+already published:
+
+```toml
+kind = "game"
+revision_of = "gd:sha256:..."
+display_name = "Minecraft"
+version_ordering = "ordered-list"
+versions = ["1.20", "1.21", "1.22"]
+```
+
+Compile and import it the same way as the original. The revision must be signed
+by the key that owns the identity, and the catalogue is append-only: adding a
+version, category, or tag is fine; removing one, or changing the ordering
+scheme, is refused. Loader versions are not revisions at all — a
+`kind = "loader-release"` file is a standalone object, so a loader does not get
+republished to add a version.
+
 ## Withdrawing and transferring
 
 Withdrawing stops a release from being served and indexed. It does not erase

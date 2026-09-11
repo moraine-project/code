@@ -366,6 +366,24 @@ resolved through the game's version table; `loaders/fabric.toml` does that, and
 hunt down every loader build and work out which Minecraft version each one
 targets.
 
+A definition's identity is fixed at creation, so adding a game version later is
+a **revision**, not a new game. Set `revision_of` to the existing ID in the
+file; the compiler signs a new definition under that ID and writes it over the
+file for that identity, so a directory keeps one current definition per game:
+
+```toml
+kind = "game"
+revision_of = "gd:sha256:..."
+display_name = "Minecraft"
+version_ordering = "ordered-list"
+versions = ["1.20", "1.21", "1.22"]
+```
+
+The revision has to be signed by the key that owns the identity's genesis. The
+catalogue is append-only: dropping a version, changing the ordering scheme, or
+naming a different identity is refused. `--revision-of` does the same thing for
+the single-file `define-game`, `define-loader`, and `define-runtime` commands.
+
 When you do want precision, a loader's *versions* are separate
 `kind = "loader-release"` files, each naming the `game_versions` it supports
 and, optionally, the `runtime_id` and `runtime_versions` it needs. So

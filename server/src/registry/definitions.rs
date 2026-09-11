@@ -426,14 +426,20 @@ pub async fn load_directory(state: &AppState, directory: &std::path::Path) -> Re
 			Err((_, message)) => return Err(format!("{}: {message}", object.id)),
 		}
 	}
+
+	let mut versions = Vec::new();
 	for path in &files {
 		let bytes = tokio::fs::read(path).await.map_err(|error| error.to_string())?;
 		if verify::verify_genesis(&bytes).is_ok() {
 			continue;
 		}
-		let Some((expected, kind, id)) = definition_target(&bytes) else {
+		let Some((expected, kind, id, catalogue)) = definition_target(&bytes) else {
 			continue;
 		};
+		versions.push((expected, kind, id, catalogue, path.clone(), bytes));
+	}
+	versions.sort_by(|left, right| left.2.cmp(&right.2).then(left.3.cmp(&right.3)).then(left.4.cmp(&right.4)));
+	for (expected, kind, id, _, _, bytes) in versions {
 		match store_definition_version(state, expected, kind, &id, &bytes).await {
 			Ok(_) => loaded += 1,
 			Err((_, message)) => return Err(format!("{id}: {message}")),
@@ -442,20 +448,30 @@ pub async fn load_directory(state: &AppState, directory: &std::path::Path) -> Re
 	Ok(loaded)
 }
 
-fn definition_target(bytes: &[u8]) -> Option<(GenesisKind, ObjectKind, String)> {
+fn definition_target(bytes: &[u8]) -> Option<(GenesisKind, ObjectKind, String, usize)> {
 	if let Ok(signed) = SignedObject::<GameDef>::from_bytes(bytes) {
-		return Some((GenesisKind::Game, ObjectKind::GameDef, signed.payload.game_id));
+		return Some((
+			GenesisKind::Game,
+			ObjectKind::GameDef,
+			signed.payload.game_id,
+			signed.payload.version_catalog.len(),
+		));
 	}
 	if let Ok(signed) = SignedObject::<LoaderObject>::from_bytes(bytes) {
-		let loader_id = match &signed.payload {
-			LoaderObject::Definition(definition) => definition.loader_id.clone(),
-			LoaderObject::Release(release) => release.loader_id.clone(),
-			LoaderObject::Acceptance(acceptance) => acceptance.accepting_loader_id.clone(),
+		let (loader_id, catalogue) = match &signed.payload {
+			LoaderObject::Definition(definition) => (definition.loader_id.clone(), definition.version_catalog.len()),
+			LoaderObject::Release(release) => (release.loader_id.clone(), 0),
+			LoaderObject::Acceptance(acceptance) => (acceptance.accepting_loader_id.clone(), 0),
 		};
-		return Some((GenesisKind::Loader, ObjectKind::LoaderDef, loader_id));
+		return Some((GenesisKind::Loader, ObjectKind::LoaderDef, loader_id, catalogue));
 	}
 	if let Ok(signed) = SignedObject::<RuntimeDef>::from_bytes(bytes) {
-		return Some((GenesisKind::Runtime, ObjectKind::RuntimeDef, signed.payload.runtime_id));
+		return Some((
+			GenesisKind::Runtime,
+			ObjectKind::RuntimeDef,
+			signed.payload.runtime_id,
+			signed.payload.version_catalog.len(),
+		));
 	}
 	None
 }
