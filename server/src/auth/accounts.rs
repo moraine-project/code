@@ -33,11 +33,19 @@ pub struct ApiKeyRow {
 }
 
 impl MetadataStore {
-	pub async fn create_user(&self, id: &str, email: &str, password_hash: &str, created_at: i64) -> Result<(), sqlx::Error> {
+	pub async fn create_user(
+		&self,
+		id: &str,
+		email: &str,
+		password_hash: &str,
+		role: &str,
+		created_at: i64,
+	) -> Result<(), sqlx::Error> {
 		let mut transaction = self.pool.begin().await?;
-		sqlx::query("INSERT INTO users (id, email, created_at) VALUES ($1, $2, $3)")
+		sqlx::query("INSERT INTO users (id, email, role, created_at) VALUES ($1, $2, $3, $4)")
 			.bind(id)
 			.bind(email)
+			.bind(role)
 			.bind(created_at)
 			.execute(&mut *transaction)
 			.await?;
@@ -79,6 +87,14 @@ impl MetadataStore {
 			email: row.get("email"),
 			password_hash: row.get("secret_hash"),
 		}))
+	}
+
+	pub async fn user_role(&self, id: &str) -> Result<Option<String>, sqlx::Error> {
+		let role = sqlx::query_scalar::<_, String>("SELECT role FROM users WHERE id = $1")
+			.bind(id)
+			.fetch_optional(&self.pool)
+			.await?;
+		Ok(role)
 	}
 
 	pub async fn create_session(&self, session: &SessionRow) -> Result<(), sqlx::Error> {

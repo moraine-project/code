@@ -13,6 +13,8 @@ const MAJOR_SIMPLE: u8 = 7;
 
 const MAX_DEPTH: usize = 64;
 
+const MAX_PREALLOC: usize = 1024;
+
 pub fn decode(bytes: &[u8]) -> Result<Value, CodecError> {
 	let mut parser = Parser {
 		input: bytes,
@@ -65,7 +67,8 @@ impl Parser<'_> {
 			}
 			MAJOR_ARRAY => {
 				let length = self.read_length(additional)?;
-				let mut values = Vec::with_capacity(length);
+				self.check_container_length(length)?;
+				let mut values = Vec::with_capacity(length.min(MAX_PREALLOC));
 				for _ in 0..length {
 					values.push(self.parse_value(depth + 1)?);
 				}
@@ -80,7 +83,8 @@ impl Parser<'_> {
 
 	fn parse_map(&mut self, additional: u8, depth: usize) -> Result<Value, CodecError> {
 		let length = self.read_length(additional)?;
-		let mut pairs = Vec::with_capacity(length);
+		self.check_container_length(length)?;
+		let mut pairs = Vec::with_capacity(length.min(MAX_PREALLOC));
 		let mut previous: Option<Vec<u8>> = None;
 		let mut normalized_keys = std::collections::HashSet::new();
 		for _ in 0..length {
@@ -154,6 +158,13 @@ impl Parser<'_> {
 			31 => Err(CodecError::IndefiniteLengthForbidden),
 			_ => Err(CodecError::UnsupportedSimple),
 		}
+	}
+
+	fn check_container_length(&self, length: usize) -> Result<(), CodecError> {
+		if length > self.input.len().saturating_sub(self.position) {
+			return Err(CodecError::UnexpectedEof);
+		}
+		Ok(())
 	}
 
 	fn read_length(&mut self, additional: u8) -> Result<usize, CodecError> {

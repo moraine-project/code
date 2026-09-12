@@ -22,7 +22,7 @@ fn entry(target_kind: DenyTarget, target_id: &str, reason: &str, valid_until: Op
 }
 
 async fn pin(application: &axum::Router, issuer: &SigningKey) {
-	let (session, csrf) = login(application, "issuer@example.org").await;
+	let (session, csrf) = login(application, "ops@example.org").await;
 	let cookie = format!("moraine_session={session}; moraine_csrf={csrf}");
 	let request = axum::http::Request::post("/v1/providers/dir.example/keys")
 		.header(header::CONTENT_TYPE, "application/json")

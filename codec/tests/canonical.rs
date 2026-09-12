@@ -85,3 +85,28 @@ fn round_trips_a_nested_value() {
 	let bytes = encode(&value).unwrap();
 	assert_eq!(decode(&bytes).unwrap(), value);
 }
+
+#[test]
+fn rejects_a_container_length_larger_than_the_input() {
+	assert_eq!(
+		decode(&[0x9b, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]),
+		Err(CodecError::UnexpectedEof),
+		"an array cannot claim more elements than there are bytes left"
+	);
+	assert_eq!(
+		decode(&[0xbb, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]),
+		Err(CodecError::UnexpectedEof),
+		"a map cannot claim more pairs than there are bytes left"
+	);
+}
+
+#[test]
+fn accepts_a_large_but_well_formed_array() {
+	let mut bytes = vec![0x9a, 0x00, 0x01, 0x00, 0x00];
+	bytes.extend(std::iter::repeat_n(0x00, 0x1_0000));
+	let value = decode(&bytes).expect("decode");
+	let Value::Array(values) = value else {
+		panic!("expected an array");
+	};
+	assert_eq!(values.len(), 0x1_0000);
+}

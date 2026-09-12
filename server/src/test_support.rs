@@ -77,6 +77,34 @@ fn unique_schema() -> String {
 	format!("t{nanos:x}_{count:x}")
 }
 
+const TEST_OPERATORS: &[&str] = &[
+	"ops@example.org",
+	"moderator@example.org",
+	"legal@example.org",
+	"reviewer@example.org",
+	"provider@example.org",
+	"operator@example.org",
+];
+
+pub(crate) async fn seed_operators(metadata: &MetadataStore) {
+	for (index, email) in TEST_OPERATORS.iter().enumerate() {
+		if metadata.user_by_email(email).await.ok().flatten().is_some() {
+			continue;
+		}
+		let hash = crate::auth::password::hash_password("correct horse battery").expect("hash");
+		metadata
+			.create_user(
+				&format!("operator-{index}"),
+				email,
+				&hash,
+				crate::auth::OPERATOR_ROLE,
+				1_760_000_000,
+			)
+			.await
+			.expect("seed operator");
+	}
+}
+
 pub(crate) async fn app() -> (Router, tempfile::TempDir) {
 	app_mode(crate::config::Publishing::Open, false).await
 }
@@ -171,6 +199,7 @@ pub(crate) async fn app_in_with_scan(
 ) -> Router {
 	let store = Arc::new(BlobStore::new(directory).await.expect("blob store"));
 	let metadata = Arc::new(MetadataStore::open_url(database).await.expect("metadata"));
+	seed_operators(&metadata).await;
 	let config = test_config(
 		directory,
 		database,
@@ -188,6 +217,7 @@ pub(crate) async fn app_with_max_projects(max_projects: u64) -> (Router, tempfil
 	let database = test_database(directory.path()).await;
 	let store = Arc::new(BlobStore::new(directory.path()).await.expect("blob store"));
 	let metadata = Arc::new(MetadataStore::open_url(&database).await.expect("metadata"));
+	seed_operators(&metadata).await;
 	let mut config = test_config(
 		directory.path(),
 		&database,
@@ -232,6 +262,8 @@ fn test_config(
 		tls_terminated: false,
 		allow_insecure_http: false,
 		web_origins: Vec::new(),
+		registration: crate::config::Registration::Open,
+		max_definitions: 1_000,
 		max_mirror_probes_per_cycle: 20,
 		max_mirror_probe_bytes: 268_435_456,
 		max_feed_page_entries,

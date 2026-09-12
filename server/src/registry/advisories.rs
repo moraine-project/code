@@ -137,6 +137,9 @@ async fn pin_provider(
 	Json(request): Json<ProviderKey>,
 ) -> Response {
 	let provider_id = provider_id.trim().to_string();
+	if !user.allows("directory:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
 	if provider_id.is_empty() || provider_id.len() > 128 {
 		return (StatusCode::BAD_REQUEST, "invalid provider id").into_response();
 	}

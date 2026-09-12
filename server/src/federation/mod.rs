@@ -278,6 +278,12 @@ pub(crate) async fn sync_definition(
 		}
 		Some(_) => {}
 		None => {
+			let over_quota = crate::registry::definitions::definition_quota_reached(state)
+				.await
+				.map_err(|(_, message)| FederationError::Rejected(message))?;
+			if let Some(message) = over_quota {
+				return Err(FederationError::Rejected(message));
+			}
 			state
 				.metadata
 				.put_object(&registry::stored(&genesis_object))

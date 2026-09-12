@@ -360,6 +360,9 @@ async fn create_webhook(
 	user: AuthenticatedUser,
 	Json(request): Json<CreateWebhook>,
 ) -> Response {
+	if !user.allows("federation:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
 	if validate_url(request.url.trim(), state.capability.allow_insecure_federation_local).is_err() {
 		return (StatusCode::BAD_REQUEST, "webhook url must be https, or loopback when enabled").into_response();
 	}
@@ -378,6 +381,9 @@ async fn create_webhook(
 }
 
 async fn list_webhooks(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
+	if !user.allows("federation:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
 	match state.metadata.webhooks_for_owner(&user.user_id).await {
 		Ok(webhooks) => Json(
 			webhooks
@@ -401,6 +407,9 @@ async fn list_webhooks(State(state): State<AppState>, user: AuthenticatedUser) -
 }
 
 async fn revoke_webhook(State(state): State<AppState>, user: AuthenticatedUser, Path(id): Path<String>) -> Response {
+	if !user.allows("federation:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
 	match state.metadata.revoke_webhook(&user.user_id, &id, now()).await {
 		Ok(true) => StatusCode::NO_CONTENT.into_response(),
 		Ok(false) => (StatusCode::NOT_FOUND, "no such webhook").into_response(),
@@ -457,6 +466,7 @@ mod tests {
 				.await
 				.expect("metadata"),
 		);
+		crate::test_support::seed_operators(&metadata).await;
 		let config = crate::config::Config {
 			bind: "127.0.0.1:0".parse().expect("addr"),
 			data_dir: directory.path().to_path_buf(),
@@ -466,6 +476,8 @@ mod tests {
 			tls_terminated: false,
 			allow_insecure_http: false,
 			web_origins: Vec::new(),
+			registration: crate::config::Registration::Open,
+			max_definitions: 1_000,
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,

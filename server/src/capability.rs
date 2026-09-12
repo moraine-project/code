@@ -19,9 +19,12 @@ pub struct Capability {
 	pub upload_modes: Vec<String>,
 	pub server_role: Vec<String>,
 	pub publishing: String,
+	pub registration: String,
 	pub webhook_public_key: Option<String>,
 	#[serde(skip)]
 	pub max_projects: u64,
+	#[serde(skip)]
+	pub max_definitions: u64,
 	#[serde(skip)]
 	pub max_mirror_probes_per_cycle: u32,
 	#[serde(skip)]
@@ -30,6 +33,8 @@ pub struct Capability {
 	pub allow_insecure_federation_local: bool,
 	#[serde(skip)]
 	pub web_origins: Vec<String>,
+	#[serde(skip)]
+	pub registration_open: bool,
 	#[serde(skip)]
 	pub tls_extra_roots: Vec<reqwest::Certificate>,
 	#[serde(skip)]
@@ -64,6 +69,7 @@ impl Capability {
 			requests_per_minute: config.requests_per_minute,
 			max_concurrent_syncs: config.max_concurrent_syncs,
 			max_projects: config.max_projects,
+			max_definitions: config.max_definitions,
 			max_mirror_probes_per_cycle: config.max_mirror_probes_per_cycle,
 			max_mirror_probe_bytes: config.max_mirror_probe_bytes,
 			maintenance_interval_seconds: config.maintenance_interval_seconds,
@@ -71,8 +77,10 @@ impl Capability {
 			upload_modes: vec!["staged".to_string()],
 			server_role: vec!["home".to_string(), "directory".to_string()],
 			publishing: config.publishing.as_str().to_string(),
+			registration: config.registration.as_str().to_string(),
 			webhook_public_key,
 			allow_insecure_federation_local: config.allow_insecure_federation_local,
+			registration_open: config.registration.is_open(),
 			web_origins: config
 				.web_origins
 				.iter()

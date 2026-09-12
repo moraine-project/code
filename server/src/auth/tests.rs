@@ -16,6 +16,7 @@ async fn app() -> (Router, tempfile::TempDir) {
 			.await
 			.expect("metadata"),
 	);
+	crate::test_support::seed_operators(&metadata).await;
 	let config = crate::config::Config {
 		bind: "127.0.0.1:0".parse().expect("addr"),
 		data_dir: directory.path().to_path_buf(),
@@ -25,6 +26,8 @@ async fn app() -> (Router, tempfile::TempDir) {
 		tls_terminated: false,
 		allow_insecure_http: false,
 		web_origins: Vec::new(),
+		registration: crate::config::Registration::Open,
+		max_definitions: 1_000,
 		max_mirror_probes_per_cycle: 20,
 		max_mirror_probe_bytes: 268_435_456,
 		max_feed_page_entries: 100,
@@ -243,6 +246,69 @@ async fn a_foreign_origin_cannot_drive_a_session_write() {
 		.await
 		.expect("response");
 	assert_eq!(response.status(), StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn a_member_session_is_not_an_operator() {
+	let (application, _directory) = app().await;
+	let register = json_request(
+		"POST",
+		"/v1/auth/register",
+		serde_json::json!({ "email": "member@example.org", "password": "correct horse battery" }),
+	);
+	application.clone().oneshot(register).await.expect("response");
+	let login = json_request(
+		"POST",
+		"/v1/auth/session",
+		serde_json::json!({ "email": "member@example.org", "password": "correct horse battery" }),
+	);
+	let response = application.clone().oneshot(login).await.expect("response");
+	let session = cookie_token(&response, SESSION_COOKIE).expect("session cookie");
+	let csrf = cookie_token(&response, CSRF_COOKIE).expect("csrf cookie");
+
+	let queue = axum::http::Request::get("/v1/review-queue")
+		.header(header::COOKIE, format!("{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(queue).await.expect("response");
+	assert_eq!(response.status(), StatusCode::FORBIDDEN, "a member is not a reviewer");
+
+	let mint = axum::http::Request::builder()
+		.method("POST")
+		.uri("/v1/auth/keys")
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, format!("{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}"))
+		.header("x-csrf-token", csrf)
+		.body(Body::from(
+			serde_json::json!({ "name": "grab", "scopes": ["directory:manage"] }).to_string(),
+		))
+		.expect("request");
+	let response = application.oneshot(mint).await.expect("response");
+	assert_eq!(
+		response.status(),
+		StatusCode::FORBIDDEN,
+		"a member cannot mint an operator scope"
+	);
+}
+
+#[tokio::test]
+async fn an_operator_session_reaches_an_operator_route() {
+	let (application, _directory) = app().await;
+	let login = json_request(
+		"POST",
+		"/v1/auth/session",
+		serde_json::json!({ "email": "ops@example.org", "password": "correct horse battery" }),
+	);
+	let response = application.clone().oneshot(login).await.expect("response");
+	let session = cookie_token(&response, SESSION_COOKIE).expect("session cookie");
+	let csrf = cookie_token(&response, CSRF_COOKIE).expect("csrf cookie");
+
+	let queue = axum::http::Request::get("/v1/review-queue")
+		.header(header::COOKIE, format!("{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(queue).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]

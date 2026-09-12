@@ -300,6 +300,21 @@ async fn add_member(
 		Ok(None) => return (StatusCode::NOT_FOUND, "no account with that email").into_response(),
 		Err(error) => return storage_error(error),
 	};
+	let current_role = state.metadata.org_role(&org.id, &target.id).await.ok().flatten();
+	if current_role.as_deref() == Some("owner") && request.role != "owner" {
+		if actor_role != "owner" {
+			return (StatusCode::FORBIDDEN, "only an owner may change an owner's role").into_response();
+		}
+		let owners = state
+			.metadata
+			.org_members(&org.id)
+			.await
+			.map(|members| members.iter().filter(|member| member.role == "owner").count())
+			.unwrap_or(0);
+		if owners <= 1 {
+			return (StatusCode::BAD_REQUEST, "an organization must keep at least one owner").into_response();
+		}
+	}
 	if let Err(error) = state.metadata.add_org_member(&org.id, &target.id, &request.role, now()).await {
 		return storage_error(error);
 	}
@@ -424,6 +439,8 @@ mod tests {
 			tls_terminated: false,
 			allow_insecure_http: false,
 			web_origins: Vec::new(),
+			registration: crate::config::Registration::Open,
+			max_definitions: 1_000,
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,
@@ -609,8 +626,32 @@ mod tests {
 			.header("x-csrf-token", csrf_of(&owner_cookie))
 			.body(Body::empty())
 			.expect("request");
-		let response = application.oneshot(member_removes_self).await.expect("response");
+		let response = application.clone().oneshot(member_removes_self).await.expect("response");
 		assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+		let promote = write(
+			"/v1/orgs/cleanroom/members",
+			&owner_cookie,
+			serde_json::json!({ "email": "member@example.org", "role": "admin" }),
+		);
+		let response = application.clone().oneshot(promote).await.expect("response");
+		assert_eq!(response.status(), StatusCode::CREATED);
+
+		let admin_demotes_owner = write(
+			"/v1/orgs/cleanroom/members",
+			&member_cookie,
+			serde_json::json!({ "email": "owner@example.org", "role": "member" }),
+		);
+		let response = application.clone().oneshot(admin_demotes_owner).await.expect("response");
+		assert_eq!(response.status(), StatusCode::FORBIDDEN, "an admin cannot demote an owner");
+
+		let owner_demotes_self = write(
+			"/v1/orgs/cleanroom/members",
+			&owner_cookie,
+			serde_json::json!({ "email": "owner@example.org", "role": "member" }),
+		);
+		let response = application.oneshot(owner_demotes_self).await.expect("response");
+		assert_eq!(response.status(), StatusCode::BAD_REQUEST, "the last owner cannot be demoted");
 	}
 
 	#[tokio::test]

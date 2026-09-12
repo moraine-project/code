@@ -302,6 +302,9 @@ async fn import_definition(
 		}
 		Ok(Some(_)) => Ok(()),
 		Ok(None) => {
+			if let Some(message) = definition_quota_reached(state).await? {
+				return Err((StatusCode::FORBIDDEN, message));
+			}
 			state.metadata.put_object(&stored(object)).await.map_err(store_failure)?;
 			state
 				.metadata
@@ -402,6 +405,17 @@ async fn ensure_game_permits_loader(state: &AppState, loader_id: &str, game_id: 
 
 fn is_loader_definition(payload: &[u8]) -> bool {
 	matches!(LoaderObject::from_canonical_bytes(payload), Ok(LoaderObject::Definition(_)))
+}
+
+pub(crate) async fn definition_quota_reached(state: &AppState) -> Result<Option<String>, (StatusCode, String)> {
+	if state.capability.max_definitions == 0 {
+		return Ok(None);
+	}
+	let held = state.metadata.table_count("definitions").await.map_err(store_failure)?;
+	if held.max(0) as u64 >= state.capability.max_definitions {
+		return Ok(Some("this instance has reached its definition limit".to_string()));
+	}
+	Ok(None)
 }
 
 fn store_failure(error: sqlx::Error) -> (StatusCode, String) {

@@ -18,6 +18,25 @@ impl Publishing {
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum Registration {
+	Open,
+	Closed,
+}
+
+impl Registration {
+	pub const fn as_str(self) -> &'static str {
+		match self {
+			Self::Open => "open",
+			Self::Closed => "closed",
+		}
+	}
+
+	pub const fn is_open(self) -> bool {
+		matches!(self, Self::Open)
+	}
+}
+
 #[derive(Debug, Clone, Parser)]
 pub struct Cli {
 	#[command(flatten)]
@@ -76,6 +95,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_MAX_PROJECTS", default_value_t = 10_000)]
 	pub max_projects: u64,
 
+	#[arg(long, env = "MORAINE_MAX_DEFINITIONS", default_value_t = 1_000)]
+	pub max_definitions: u64,
+
 	#[arg(long, env = "MORAINE_MAX_MIRROR_PROBES_PER_CYCLE", default_value_t = 20)]
 	pub max_mirror_probes_per_cycle: u32,
 
@@ -120,6 +142,9 @@ pub struct Config {
 
 	#[arg(long, env = "MORAINE_PUBLISHING", value_enum, default_value_t = Publishing::Review)]
 	pub publishing: Publishing,
+
+	#[arg(long, env = "MORAINE_REGISTRATION", value_enum, default_value_t = Registration::Closed)]
+	pub registration: Registration,
 
 	#[arg(long, env = "MORAINE_FEDERATION_ALLOW_HTTP_LOCAL", default_value_t = false)]
 	pub allow_insecure_federation_local: bool,
@@ -199,6 +224,8 @@ mod tests {
 			tls_terminated: false,
 			allow_insecure_http: false,
 			web_origins: Vec::new(),
+			registration: crate::config::Registration::Open,
+			max_definitions: 1_000,
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,

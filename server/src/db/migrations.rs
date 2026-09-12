@@ -112,6 +112,11 @@ const MIGRATIONS: &[Migration] = &[
 		sqlite: include_str!("../../migrations/sqlite/0018_definition_source.sql"),
 		postgres: include_str!("../../migrations/postgres/0018_definition_source.sql"),
 	},
+	Migration {
+		name: "0019_instance_role",
+		sqlite: include_str!("../../migrations/sqlite/0019_instance_role.sql"),
+		postgres: include_str!("../../migrations/postgres/0019_instance_role.sql"),
+	},
 ];
 
 pub(super) async fn run_migrations(pool: &AnyPool, engine: Engine) -> Result<usize, sqlx::Error> {

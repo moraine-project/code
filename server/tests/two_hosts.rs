@@ -157,8 +157,26 @@ async fn json_body(response: reqwest::Response) -> serde_json::Value {
 	serde_json::from_slice(&bytes).expect("json")
 }
 
-async fn login(client: &reqwest::Client, base: &str) -> (String, String) {
-	let credentials = json(&serde_json::json!({ "email": "ops@example.org", "password": "correct horse battery" }));
+fn bootstrap(data_dir: &std::path::Path) -> String {
+	let output = Command::new(env!("CARGO_BIN_EXE_moraine-server"))
+		.arg("--data-dir")
+		.arg(data_dir)
+		.arg("bootstrap")
+		.arg("--email")
+		.arg("ops@example.org")
+		.output()
+		.expect("bootstrap");
+	assert!(output.status.success(), "bootstrap failed");
+	let stdout = String::from_utf8_lossy(&output.stdout);
+	stdout
+		.lines()
+		.find_map(|line| line.strip_prefix("operator password:"))
+		.map(|password| password.trim().to_string())
+		.expect("operator password")
+}
+
+async fn login(client: &reqwest::Client, base: &str, password: &str) -> (String, String) {
+	let credentials = json(&serde_json::json!({ "email": "ops@example.org", "password": password }));
 	client
 		.post(format!("{base}/v1/auth/register"))
 		.header("content-type", "application/json")
@@ -187,6 +205,7 @@ async fn one_process_syncs_a_feed_from_another_over_http() {
 
 	let home_dir = tempfile::tempdir().expect("home dir");
 	let directory_dir = tempfile::tempdir().expect("directory dir");
+	let directory_password = bootstrap(directory_dir.path());
 	let home = spawn(home_dir.path(), free_port(), &[("MORAINE_PUBLISHING", "open")]);
 	let directory = spawn(
 		directory_dir.path(),
@@ -228,7 +247,7 @@ async fn one_process_syncs_a_feed_from_another_over_http() {
 		.expect("feed");
 	assert_eq!(response.status(), reqwest::StatusCode::CREATED);
 
-	let (session, csrf) = login(&client, &directory.base).await;
+	let (session, csrf) = login(&client, &directory.base, &directory_password).await;
 	let response = client
 		.post(format!("{}/v1/federation/sync", directory.base))
 		.header("cookie", format!("moraine_session={session}; moraine_csrf={csrf}"))

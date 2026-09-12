@@ -49,6 +49,9 @@ impl LoginLimiter {
 
 	fn record_failure(&self, key: &str, now: i64) {
 		let mut attempts = self.attempts.lock().expect("login limiter");
+		if attempts.len() > 10_000 {
+			attempts.retain(|_, (_, start)| now - *start < LOGIN_WINDOW_SECONDS);
+		}
 		let entry = attempts.entry(key.to_string()).or_insert((0, now));
 		if now - entry.1 >= LOGIN_WINDOW_SECONDS {
 			*entry = (0, now);
@@ -80,6 +83,17 @@ pub const KNOWN_SCOPES: &[&str] = &[
 	"notifications:read",
 ];
 
+pub const OPERATOR_ROLE: &str = "operator";
+
+pub const SESSION_SCOPES: &[&str] = &[
+	"account:read",
+	"keys:manage",
+	"projects:write",
+	"artifacts:write",
+	"submissions:write",
+	"notifications:read",
+];
+
 pub fn routes() -> Router<AppState> {
 	Router::new()
 		.route("/v1/auth/register", post(register))
@@ -94,11 +108,25 @@ pub struct AuthenticatedUser {
 	pub scopes: Vec<String>,
 	pub session_id: Option<String>,
 	pub api_key_id: Option<String>,
+	pub is_operator: bool,
 }
 
 impl AuthenticatedUser {
 	pub fn allows(&self, scope: &str) -> bool {
-		self.session_id.is_some() || self.scopes.iter().any(|granted| granted == scope)
+		if self.session_id.is_some() {
+			return self.is_operator || SESSION_SCOPES.contains(&scope);
+		}
+		self.scopes.iter().any(|granted| granted == scope)
+	}
+
+	pub fn mintable_scopes(&self) -> Vec<&str> {
+		if self.session_id.is_some() && self.is_operator {
+			return KNOWN_SCOPES.to_vec();
+		}
+		if self.session_id.is_some() {
+			return SESSION_SCOPES.to_vec();
+		}
+		self.scopes.iter().map(String::as_str).collect()
 	}
 
 	pub fn via(&self) -> &'static str {
@@ -126,6 +154,7 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
 				scopes: split_scopes(&key.scopes),
 				session_id: None,
 				api_key_id: Some(key.id),
+				is_operator: false,
 			});
 		}
 		if let Some(token) = cookie(parts.headers.get(header::COOKIE), SESSION_COOKIE) {
@@ -148,15 +177,37 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
 				}
 			}
 			let _ = state.metadata.touch_session(&session.id, now, now + IDLE_SECONDS).await;
+			let role = state.metadata.user_role(&session.user_id).await.map_err(storage_error)?;
+			let is_operator = role.as_deref() == Some(OPERATOR_ROLE);
 			return Ok(Self {
 				user_id: session.user_id,
 				scopes: Vec::new(),
 				session_id: Some(session.id),
 				api_key_id: None,
+				is_operator,
 			});
 		}
 		Err(unauthorized())
 	}
+}
+
+pub struct ClientIp(pub Option<std::net::IpAddr>);
+
+impl FromRequestParts<AppState> for ClientIp {
+	type Rejection = std::convert::Infallible;
+
+	async fn from_request_parts(parts: &mut Parts, _state: &AppState) -> Result<Self, Self::Rejection> {
+		let ip = parts
+			.extensions
+			.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+			.map(|axum::extract::ConnectInfo(address)| address.ip());
+		Ok(Self(ip))
+	}
+}
+
+fn dummy_hash() -> &'static str {
+	static HASH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+	HASH.get_or_init(|| password::hash_password("not a real password").unwrap_or_default())
 }
 
 #[derive(Deserialize)]
@@ -178,6 +229,9 @@ struct LoginReceipt {
 }
 
 async fn register(State(state): State<AppState>, Json(credentials): Json<Credentials>) -> Response {
+	if !state.capability.registration_open {
+		return (StatusCode::FORBIDDEN, "this instance is not accepting new accounts").into_response();
+	}
 	let email = credentials.email.trim().to_lowercase();
 	if !email.contains('@') {
 		return (StatusCode::BAD_REQUEST, "invalid email").into_response();
@@ -194,15 +248,24 @@ async fn register(State(state): State<AppState>, Json(credentials): Json<Credent
 		return (StatusCode::INTERNAL_SERVER_ERROR, "password hashing failed").into_response();
 	};
 	let user_id = new_id();
-	if let Err(error) = state.metadata.create_user(&user_id, &email, &password_hash, now()).await {
+	if let Err(error) = state
+		.metadata
+		.create_user(&user_id, &email, &password_hash, "member", now())
+		.await
+	{
 		return storage_error(error);
 	}
 	(StatusCode::CREATED, Json(RegisterReceipt { user_id })).into_response()
 }
 
-async fn login(State(state): State<AppState>, Json(credentials): Json<Credentials>) -> Response {
+async fn login(State(state): State<AppState>, client: ClientIp, Json(credentials): Json<Credentials>) -> Response {
 	let email = credentials.email.trim().to_lowercase();
-	if let Err(retry_after) = state.login_limiter.check(&email, now()) {
+	let key = format!(
+		"{}|{}",
+		email,
+		client.0.map(|address| address.to_string()).unwrap_or_default()
+	);
+	if let Err(retry_after) = state.login_limiter.check(&key, now()) {
 		let mut response = (StatusCode::TOO_MANY_REQUESTS, "too many login attempts").into_response();
 		response.headers_mut().insert(
 			header::RETRY_AFTER,
@@ -212,14 +275,17 @@ async fn login(State(state): State<AppState>, Json(credentials): Json<Credential
 	}
 	let user = match state.metadata.user_by_email(&email).await {
 		Ok(Some(user)) => user,
-		Ok(None) => return (StatusCode::UNAUTHORIZED, "invalid credentials").into_response(),
+		Ok(None) => {
+			let _ = password::verify_password(&credentials.password, dummy_hash());
+			return (StatusCode::UNAUTHORIZED, "invalid credentials").into_response();
+		}
 		Err(error) => return storage_error(error),
 	};
 	if !password::verify_password(&credentials.password, &user.password_hash) {
-		state.login_limiter.record_failure(&email, now());
+		state.login_limiter.record_failure(&key, now());
 		return (StatusCode::UNAUTHORIZED, "invalid credentials").into_response();
 	}
-	state.login_limiter.clear(&email);
+	state.login_limiter.clear(&key);
 	let token = random_token();
 	let csrf = random_token();
 	let current = now();
@@ -344,6 +410,10 @@ async fn create_key(State(state): State<AppState>, user: AuthenticatedUser, Json
 	}
 	if let Some(scope) = request.scopes.iter().find(|scope| !KNOWN_SCOPES.contains(&scope.as_str())) {
 		return (StatusCode::BAD_REQUEST, format!("unknown scope `{scope}`")).into_response();
+	}
+	let mintable = user.mintable_scopes();
+	if let Some(scope) = request.scopes.iter().find(|scope| !mintable.contains(&scope.as_str())) {
+		return (StatusCode::FORBIDDEN, format!("you cannot grant `{scope}`")).into_response();
 	}
 	let secret = format!("mrn_{}", random_token());
 	let prefix = secret[..12].to_string();

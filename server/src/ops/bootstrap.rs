@@ -27,7 +27,7 @@ pub async fn run(config: &Config, email: &str) -> Result<Bootstrapped, String> {
 	let hash = crate::auth::password::hash_password(&password).map_err(|_| "could not hash the password".to_string())?;
 	let user_id = random_id();
 	metadata
-		.create_user(&user_id, &email, &hash, unix_now())
+		.create_user(&user_id, &email, &hash, crate::auth::OPERATOR_ROLE, unix_now())
 		.await
 		.map_err(|error| error.to_string())?;
 	let capability = crate::capability::Capability::discover(config);
@@ -74,6 +74,8 @@ mod tests {
 			tls_terminated: false,
 			allow_insecure_http: false,
 			web_origins: Vec::new(),
+			registration: crate::config::Registration::Open,
+			max_definitions: 1_000,
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,

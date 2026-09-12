@@ -30,6 +30,7 @@ async fn state() -> (AppState, tempfile::TempDir) {
 			.await
 			.expect("metadata"),
 	);
+	crate::test_support::seed_operators(&metadata).await;
 	let config = crate::config::Config {
 		bind: "127.0.0.1:0".parse().expect("addr"),
 		data_dir: directory.path().to_path_buf(),
@@ -39,6 +40,8 @@ async fn state() -> (AppState, tempfile::TempDir) {
 		tls_terminated: false,
 		allow_insecure_http: false,
 		web_origins: Vec::new(),
+		registration: crate::config::Registration::Open,
+		max_definitions: 1_000,
 		max_mirror_probes_per_cycle: 20,
 		max_mirror_probe_bytes: 268_435_456,
 		max_feed_page_entries: 100,

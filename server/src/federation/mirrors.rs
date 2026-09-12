@@ -243,6 +243,9 @@ async fn pin_mirror(
 	Path(mirror_id): Path<String>,
 	Json(request): Json<MirrorKey>,
 ) -> Response {
+	if !user.allows("federation:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
 	let mirror_id = mirror_id.trim().to_string();
 	if mirror_id.is_empty() || mirror_id.len() > 128 {
 		return (StatusCode::BAD_REQUEST, "invalid mirror id").into_response();
