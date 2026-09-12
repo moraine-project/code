@@ -26,6 +26,8 @@ pub struct Capability {
 	#[serde(skip)]
 	pub max_definitions: u64,
 	#[serde(skip)]
+	pub max_sync_entries: u32,
+	#[serde(skip)]
 	pub max_mirror_probes_per_cycle: u32,
 	#[serde(skip)]
 	pub max_mirror_probe_bytes: u64,
@@ -70,6 +72,7 @@ impl Capability {
 			max_concurrent_syncs: config.max_concurrent_syncs,
 			max_projects: config.max_projects,
 			max_definitions: config.max_definitions,
+			max_sync_entries: config.max_sync_entries,
 			max_mirror_probes_per_cycle: config.max_mirror_probes_per_cycle,
 			max_mirror_probe_bytes: config.max_mirror_probe_bytes,
 			maintenance_interval_seconds: config.maintenance_interval_seconds,

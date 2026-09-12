@@ -530,7 +530,7 @@ pub(crate) async fn load_delegations(
 	project_id: &str,
 	root: &RootSet,
 ) -> Result<Vec<KeyDelegation>, Box<Response>> {
-	let stored = match state.metadata.objects_of_kind("delegation", 500).await {
+	let stored = match state.metadata.project_delegations(project_id, 500).await {
 		Ok(stored) => stored,
 		Err(error) => return Err(Box::new(storage_error(error))),
 	};
@@ -579,6 +579,15 @@ pub(crate) fn parse_hex_digest(value: &str) -> Option<[u8; 32]> {
 
 pub(crate) async fn store_object_record(state: &AppState, object: &verify::VerifiedObject) -> Result<(), sqlx::Error> {
 	state.metadata.put_object(&stored(object)).await?;
+	if object.kind == ObjectKind::Delegation
+		&& let Ok(moraine_model::delegation::Delegation::Key(key)) =
+			moraine_model::delegation::Delegation::from_canonical_bytes(&object.payload_bytes)
+	{
+		state
+			.metadata
+			.index_project_delegation(&key.project_id, &object.digest)
+			.await?;
+	}
 	if object.kind == ObjectKind::Profile
 		&& let Ok(profile) = moraine_model::profile::ProfileRevision::from_canonical_bytes(&object.payload_bytes)
 		&& let Some(game) = crate::registry::search_index::game_vocabulary(state, &profile.game_id).await?

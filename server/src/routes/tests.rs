@@ -56,6 +56,7 @@ async fn state_with(store: BlobStore, directory: &std::path::Path, web_dir: Opti
 		web_origins: Vec::new(),
 		registration: crate::config::Registration::Open,
 		max_definitions: 1_000,
+		max_sync_entries: 10_000,
 		max_mirror_probes_per_cycle: 20,
 		max_mirror_probe_bytes: 268_435_456,
 		max_feed_page_entries: 100,

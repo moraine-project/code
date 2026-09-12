@@ -515,11 +515,6 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 		Some(subscription) => subscription.cursor_seq,
 		None => 0,
 	};
-	state
-		.metadata
-		.upsert_subscription(home_url, project_id, "active", now())
-		.await
-		.map_err(storage)?;
 
 	match state.metadata.project(project_id).await.map_err(storage)? {
 		Some(existing) => {
@@ -556,6 +551,11 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 				.map_err(storage)?;
 		}
 	}
+	state
+		.metadata
+		.upsert_subscription(home_url, project_id, "active", now())
+		.await
+		.map_err(storage)?;
 
 	let mut applied = 0;
 	let mut head_seq;
@@ -570,6 +570,11 @@ pub async fn sync(state: &AppState, home_url: &str, project_id: &str) -> Result<
 			return Err(FederationError::Rejected(format!(
 				"the home's feed went backwards from {cursor} to {head_seq}"
 			)));
+		}
+		if page.entries.len() > state.capability.max_feed_page_entries as usize {
+			return Err(FederationError::Verify(
+				"the home returned more entries in a page than the requested limit".to_string(),
+			));
 		}
 		let Some(last) = page.entries.last() else {
 			break;
@@ -665,6 +670,11 @@ async fn sync_loader_releases(
 	let releases = client
 		.get_json::<Vec<LoaderReleaseSummary>>(&format!("/v1/loaders/{loader_id}/releases"))
 		.await?;
+	if releases.len() > state.capability.max_sync_entries as usize {
+		return Err(FederationError::Verify(
+			"the home lists more loader releases than one sync will follow".to_string(),
+		));
+	}
 	for release in releases {
 		let wire = client
 			.get_bytes(&format!("/v1/objects/{}", hex_of(&release.release)?))

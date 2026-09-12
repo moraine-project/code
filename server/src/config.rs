@@ -98,6 +98,9 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_MAX_DEFINITIONS", default_value_t = 1_000)]
 	pub max_definitions: u64,
 
+	#[arg(long, env = "MORAINE_MAX_SYNC_ENTRIES", default_value_t = 10_000)]
+	pub max_sync_entries: u32,
+
 	#[arg(long, env = "MORAINE_MAX_MIRROR_PROBES_PER_CYCLE", default_value_t = 20)]
 	pub max_mirror_probes_per_cycle: u32,
 
@@ -226,6 +229,7 @@ mod tests {
 			web_origins: Vec::new(),
 			registration: crate::config::Registration::Open,
 			max_definitions: 1_000,
+			max_sync_entries: 10_000,
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,

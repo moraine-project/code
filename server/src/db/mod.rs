@@ -153,6 +153,35 @@ impl MetadataStore {
 			.collect())
 	}
 
+	pub async fn index_project_delegation(&self, project_id: &str, digest: &[u8]) -> Result<(), sqlx::Error> {
+		sqlx::query("INSERT INTO project_delegations (project_id, digest) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+			.bind(project_id)
+			.bind(digest)
+			.execute(&self.pool)
+			.await?;
+		Ok(())
+	}
+
+	pub async fn project_delegations(&self, project_id: &str, limit: i64) -> Result<Vec<StoredObject>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT o.digest, o.kind, o.payload, o.wire FROM objects o
+			 JOIN project_delegations d ON d.digest = o.digest WHERE d.project_id = $1 LIMIT $2",
+		)
+		.bind(project_id)
+		.bind(limit)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows
+			.into_iter()
+			.map(|row| StoredObject {
+				digest: row.get("digest"),
+				kind: row.get("kind"),
+				payload: row.get("payload"),
+				wire: row.get("wire"),
+			})
+			.collect())
+	}
+
 	pub async fn project(&self, id: &str) -> Result<Option<ProjectRow>, sqlx::Error> {
 		let row = sqlx::query(
 			"SELECT id, genesis_digest, head_seq, head_digest, profile_digest, owner_kind, owner_id FROM projects WHERE id = $1",
