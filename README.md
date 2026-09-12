@@ -335,13 +335,13 @@ one with a key of your own; the identity is the genesis, so its ID is derived
 rather than chosen.
 
 A definition can be authored as a readable TOML file and compiled to canonical
-signed bytes, which keeps a definition reviewable and diffable. `examples/`
-holds starting points:
+signed bytes, which keeps a definition reviewable and diffable. `definitions/`
+holds the authoring files:
 
 ```sh
 cargo run -p moraine-publish -- keygen --key definitions.key
 cargo run -p moraine-publish -- define --key definitions.key \
-  --dir examples/definitions/minecraft --out data/definitions
+  --dir definitions/minecraft --out data/definitions
 ```
 
 `--dir` compiles every file under a directory, signing the whole set with one
@@ -351,7 +351,7 @@ resolves those as it goes — game and runtime first, then loaders, then loader
 versions and mappings — so a bundle is one command with no IDs to paste. Use
 `--file` instead to define a single file when the referenced IDs already exist.
 
-`examples/definitions/minecraft/` is a worked set for one game, laid out the way
+`definitions/minecraft/` is a worked set for one game, laid out the way
 the data is: the game definition with Minecraft's version table and category
 vocabulary, a runtime, one file per loader under `loaders/`, each loader's
 versions under `loaders/<loader>/<version>.toml`, and a `mapping` that says
@@ -442,6 +442,16 @@ A definition is signed by the operator who authors it, so this repository ships
 no pre-signed seed: a shipped definition would need a shipped private key, and
 a game definition's `loader_authorities` would then name an identity nobody
 else can extend. Author your own once and reuse the key.
+
+Because identity is the genesis digest, two instances that each compile this
+directory get *different* game IDs, and releases published against one will not
+match the other. Instances agree by sharing the same signed genesis: one home
+authors and serves the definition, and others pull it with
+`POST /v1/federation/sync-definition` (also `moraine-publish sync-definition`
+and the settings page) so they store it under the same ID. `definitions/curated.lock`
+pins a set of IDs and their homes, and `moraine-publish sync-definitions` applies
+it in one command. Each instance lists what it holds and marks it local or
+federated, so it is clear which identity a release is talking about.
 
 Each command writes the signed bytes the definitions directory loads; drop them
 in and restart, or `POST` them to `/v1/games`, `/v1/loaders`, or `/v1/runtimes`
@@ -603,6 +613,7 @@ web/            SvelteKit website with static and Cloudflare build targets
 protocol/
   spec/         notes that pin implementation decisions
   vectors/      the test-vector corpus
+definitions/    readable game, loader, and runtime definitions and a curated lock
 interop/        independent Python checker for the vector corpus
 docs/           operator, security, and author guides, and a policy template
 deploy/

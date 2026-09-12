@@ -67,3 +67,21 @@ export async function resetCursor(homeUrl: string, projectId: string, cursor = 0
 		throw new Error(await failure(response));
 	}
 }
+
+export async function syncDefinition(
+	homeUrl: string,
+	id: string,
+	kind: 'game' | 'loader' | 'runtime',
+): Promise<{ id: string; kind: string; definition: string }> {
+	const response = await authorizedFetch('/v1/federation/sync-definition', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ home_url: homeUrl, id, kind }),
+	});
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+	return z
+		.object({ id: z.string(), kind: z.string(), definition: z.string() })
+		.parse(await response.json());
+}

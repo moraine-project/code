@@ -912,10 +912,11 @@ import a signed genesis of that kind; the object's digest becomes the ID, and
 importing the same ID with different genesis bytes is a `409`.
 
 `GET /v1/games`, `GET /v1/loaders`, and `GET /v1/runtimes` list the served
-identities of that kind as `{ id, kind, current, display_name }`. `current` is
-the current definition ID or null before one is published, and `display_name`
-comes from that definition's payload so a browser can label an entry without a
-second request.
+identities of that kind as `{ id, kind, current, display_name, source_home }`.
+`current` is the current definition ID or null before one is published,
+`display_name` comes from that definition's payload so a browser can label an
+entry without a second request, and `source_home` is null for a definition
+authored or imported here and the home URL for one pulled from another instance.
 
 `GET /v1/loaders?game=&game_version=` narrows that list to loaders for one game
 or to loaders whose family `game_versions` predicate is satisfied by a game
@@ -977,6 +978,12 @@ A definition is not part of a project feed, so it syncs on its own:
 definition, verifies both against the genesis root, and stores them. A loader
 sync also pulls every published loader release, so a follower can resolve
 loader versions rather than holding only the family definition.
+
+A pulled definition is marked with the home it came from, visible as
+`source_home` on the definition routes; a definition already held locally keeps
+its local mark. The `moraine-publish sync-definition` and
+`sync-definitions --lock` commands drive the same route, so an operator can pull
+one identity or apply a pinned set from a file.
 
 `POST /v1/federation/subscribe-definition` syncs once and records the identity,
 so a periodic task refreshes it; `GET /v1/definition-subscriptions` lists the

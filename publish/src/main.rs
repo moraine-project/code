@@ -172,6 +172,30 @@ enum Command {
 		out: PathBuf,
 	},
 
+	SyncDefinition {
+		#[arg(long)]
+		home: String,
+		#[arg(long = "from")]
+		from: String,
+		#[arg(long)]
+		kind: String,
+		#[arg(long)]
+		id: String,
+		#[arg(long, env = "MORAINE_API_KEY")]
+		api_key: Option<String>,
+	},
+
+	SyncDefinitions {
+		#[arg(long)]
+		home: String,
+		#[arg(long)]
+		lock: PathBuf,
+		#[arg(long = "from")]
+		from: Option<String>,
+		#[arg(long, env = "MORAINE_API_KEY")]
+		api_key: Option<String>,
+	},
+
 	Provider {
 		#[arg(long)]
 		key: PathBuf,
@@ -443,6 +467,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			declared_by.as_deref(),
 			&out,
 		),
+		Command::SyncDefinition {
+			home,
+			from,
+			kind,
+			id,
+			api_key,
+		} => commands::sync_definition(&home, &from, &kind, &id, api_key.as_deref()).await,
+		Command::SyncDefinitions {
+			home,
+			lock,
+			from,
+			api_key,
+		} => commands::sync_definitions(&home, &lock, from.as_deref(), api_key.as_deref()).await,
 		Command::DefineLoaderRelease {
 			key,
 			loader,

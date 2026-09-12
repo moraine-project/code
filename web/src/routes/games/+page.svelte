@@ -3,6 +3,7 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import GameCard from '$lib/components/GameCard.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import SourceBadge from '$lib/components/SourceBadge.svelte';
 	import { shortDigest } from '$lib/api/registry';
 	import type { PageProps } from './$types';
 
@@ -76,9 +77,12 @@
 						<div class="flex items-center gap-3 rounded-box border border-base-300 bg-base-200 p-3">
 							<Avatar name={runtime.display_name ?? 'Runtime'} id={runtime.id} size={36} />
 							<div class="min-w-0">
-								<p class="truncate font-medium">
-									{runtime.display_name ?? shortDigest(runtime.id)}
-								</p>
+								<div class="flex items-center gap-2">
+									<p class="truncate font-medium">
+										{runtime.display_name ?? shortDigest(runtime.id)}
+									</p>
+									<SourceBadge sourceHome={runtime.source_home} />
+								</div>
 								<p class="text-xs text-base-content/60">
 									{runtime.current ? 'Ready' : 'No definition'}
 								</p>

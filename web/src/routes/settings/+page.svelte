@@ -1,18 +1,28 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
-	import { Plus, RefreshCw, RotateCcw, Server, Unlink } from '@lucide/svelte';
+	import { DownloadCloud, Plus, RefreshCw, RotateCcw, Server, Unlink } from '@lucide/svelte';
 	import {
 		follow,
 		resync,
 		resetCursor,
 		subscriptions,
+		syncDefinition,
 		unfollow,
 		type Subscription,
 	} from '$lib/api/federation';
+	import {
+		listDefinitions,
+		normalizeBase,
+		shortDigest,
+		type DefinitionSummary,
+	} from '$lib/api/registry';
+	import { apiOrigin } from '$lib/api/session';
 	import Digest from '$lib/components/Digest.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import SelectField, { type SelectOption } from '$lib/components/SelectField.svelte';
+	import SourceBadge from '$lib/components/SourceBadge.svelte';
 
 	let homes = $state<Subscription[]>([]);
 	let error = $state<string | null>(null);
@@ -22,7 +32,51 @@
 	let busy = $state(false);
 	let notice = $state<string | null>(null);
 
-	onMount(load);
+	let definitions = $state<DefinitionSummary[]>([]);
+	let definitionKind = $state<'game' | 'loader' | 'runtime'>('game');
+	let definitionId = $state('');
+	let definitionHome = $state('');
+
+	const kindOptions: SelectOption[] = [
+		{ value: 'game', label: 'Game' },
+		{ value: 'loader', label: 'Loader' },
+		{ value: 'runtime', label: 'Runtime' },
+	];
+
+	onMount(() => {
+		void load();
+		void loadDefinitions();
+	});
+
+	async function loadDefinitions() {
+		const base = normalizeBase(apiOrigin());
+		const [games, loaders, runtimes] = await Promise.all([
+			listDefinitions(base, 'games').catch(() => []),
+			listDefinitions(base, 'loaders').catch(() => []),
+			listDefinitions(base, 'runtimes').catch(() => []),
+		]);
+		definitions = [...games, ...loaders, ...runtimes];
+	}
+
+	async function pullDefinition(event: SubmitEvent) {
+		event.preventDefault();
+		busy = true;
+		notice = null;
+		try {
+			const pulled = await syncDefinition(
+				definitionHome.trim(),
+				definitionId.trim(),
+				definitionKind,
+			);
+			notice = `pulled ${pulled.kind} ${shortDigest(pulled.id, 16)}`;
+			definitionId = '';
+			await loadDefinitions();
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'the pull failed';
+		} finally {
+			busy = false;
+		}
+	}
 
 	async function load() {
 		loading = true;
@@ -233,6 +287,90 @@
 			<p class="text-xs text-base-content/50">
 				Following fetches and verifies the project's genesis and feed. It grants the home no
 				authority over your copy.
+			</p>
+		</div>
+	</section>
+
+	<section class="card card-border bg-base-200">
+		<div class="card-body gap-4">
+			<h2 class="card-title"><DownloadCloud size={18} /> Definitions</h2>
+			<p class="text-sm text-base-content/70">
+				Games, loaders, and runtimes this instance knows. A definition is either authored here (<span
+					class="font-medium">Local</span
+				>) or pulled from another home (<span class="font-medium">Federated</span>); both keep the
+				same ID wherever they are served.
+			</p>
+
+			{#if definitions.length === 0}
+				<EmptyState
+					title="No definitions yet"
+					message="Author one from a file, or pull one below."
+				/>
+			{:else}
+				<div class="overflow-x-auto">
+					<table class="table table-sm">
+						<thead>
+							<tr>
+								<th scope="col">Kind</th>
+								<th scope="col">Name</th>
+								<th scope="col">ID</th>
+								<th scope="col">Source</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each definitions as definition (definition.id)}
+								<tr>
+									<td><span class="badge badge-ghost badge-sm">{definition.kind}</span></td>
+									<td class="truncate">{definition.display_name ?? '—'}</td>
+									<td>
+										<a
+											class="link link-hover font-mono text-xs"
+											href={`/definitions/${definition.kind}/${encodeURIComponent(definition.id)}`}
+										>
+											{shortDigest(definition.id, 16)}
+										</a>
+									</td>
+									<td><SourceBadge sourceHome={definition.source_home} /></td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+
+			<form class="flex flex-wrap items-end gap-3" onsubmit={pullDefinition}>
+				<div class="w-36">
+					<SelectField label="Kind" bind:value={definitionKind} options={kindOptions} />
+				</div>
+				<label class="floating-label">
+					<span>Definition ID</span>
+					<input
+						class="input w-72 font-mono text-xs"
+						bind:value={definitionId}
+						required
+						placeholder="gd:sha256:…"
+						aria-label="Definition ID"
+					/>
+				</label>
+				<label class="floating-label">
+					<span>From home</span>
+					<input
+						class="input w-64"
+						type="url"
+						bind:value={definitionHome}
+						required
+						placeholder="https://definitions.example"
+						aria-label="Source home URL"
+					/>
+				</label>
+				<button class="btn" type="submit" disabled={busy}>
+					<DownloadCloud size={16} />
+					Pull definition
+				</button>
+			</form>
+			<p class="text-xs text-base-content/50">
+				Pulling fetches the definition and its genesis from that home, verifies both, and stores
+				them under the same ID. A local definition with the same ID is left as it is.
 			</p>
 		</div>
 	</section>

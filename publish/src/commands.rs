@@ -11,6 +11,7 @@ use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::profile::ProfileRevision;
 use moraine_model::release::{ReleasePayload, Withdrawal};
 use moraine_model::signed::sign_payload;
+use serde::Deserialize;
 
 use crate::home::Home;
 use crate::{artifacts, keyfile};
@@ -563,9 +564,113 @@ fn now() -> i64 {
 		.unwrap_or(0)
 }
 
+#[derive(Deserialize)]
+struct DefinitionLock {
+	#[serde(default)]
+	definition: Vec<LockedDefinition>,
+}
+
+#[derive(Deserialize)]
+struct LockedDefinition {
+	kind: String,
+	id: String,
+	#[serde(default)]
+	home: Option<String>,
+}
+
+fn definition_kind(kind: &str) -> Result<(), String> {
+	if matches!(kind, "game" | "loader" | "runtime") {
+		Ok(())
+	} else {
+		Err(format!("unknown definition kind `{kind}` (game, loader, or runtime)"))
+	}
+}
+
+async fn pull_definition(
+	home: &Home,
+	from_home: &str,
+	kind: &str,
+	id: &str,
+	api_key: Option<&str>,
+) -> Result<serde_json::Value, String> {
+	let body = serde_json::json!({ "home_url": from_home, "id": id, "kind": kind }).to_string();
+	home.post_json_with_token("/v1/federation/sync-definition", body, api_key)
+		.await
+}
+
+pub async fn sync_definition(
+	home_url: &str,
+	from_home: &str,
+	kind: &str,
+	id: &str,
+	api_key: Option<&str>,
+) -> Result<(), String> {
+	definition_kind(kind)?;
+	let home = Home::new(home_url)?;
+	let receipt = pull_definition(&home, from_home, kind, id, api_key).await?;
+	println!("{kind}: {}", receipt["id"].as_str().unwrap_or(id));
+	println!("from: {from_home}");
+	Ok(())
+}
+
+pub async fn sync_definitions(
+	home_url: &str,
+	lock_path: &Path,
+	default_home: Option<&str>,
+	api_key: Option<&str>,
+) -> Result<(), String> {
+	let text = std::fs::read_to_string(lock_path).map_err(|error| format!("{}: {error}", lock_path.display()))?;
+	let lock: DefinitionLock = toml::from_str(&text).map_err(|error| format!("{}: {error}", lock_path.display()))?;
+	if lock.definition.is_empty() {
+		return Err(format!("{}: no definitions listed", lock_path.display()));
+	}
+	let home = Home::new(home_url)?;
+	let mut pulled = 0;
+	for entry in &lock.definition {
+		definition_kind(&entry.kind)?;
+		let from = entry
+			.home
+			.as_deref()
+			.or(default_home)
+			.ok_or_else(|| format!("{}: no home on the entry and no --from given", entry.id))?;
+		pull_definition(&home, from, &entry.kind, &entry.id, api_key).await?;
+		println!("{}: {} from {}", entry.kind, entry.id, from);
+		pulled += 1;
+	}
+	println!("pulled {pulled} definition(s)");
+	Ok(())
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn parses_a_definition_lock() {
+		let lock: DefinitionLock = toml::from_str(
+			r#"
+[[definition]]
+kind = "game"
+id = "gd:sha256:aa"
+home = "https://definitions.example"
+
+[[definition]]
+kind = "loader"
+id = "gd:sha256:bb"
+"#,
+		)
+		.expect("parse");
+		assert_eq!(lock.definition.len(), 2);
+		assert_eq!(lock.definition[0].kind, "game");
+		assert_eq!(lock.definition[0].home.as_deref(), Some("https://definitions.example"));
+		assert!(lock.definition[1].home.is_none());
+	}
+
+	#[test]
+	fn rejects_an_unknown_definition_kind() {
+		assert!(definition_kind("widget").is_err());
+		assert!(definition_kind("game").is_ok());
+	}
 
 	#[test]
 	fn object_ids_round_trip() {

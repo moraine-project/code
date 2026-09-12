@@ -311,14 +311,24 @@ async fn federation_syncs_a_game_definition() {
 	let response = directory.clone().oneshot(sync).await.expect("response");
 	assert_eq!(response.status(), StatusCode::OK);
 
+	let home_url = format!("http://127.0.0.1:{}", address.port());
 	let get = axum::http::Request::get(format!("/v1/games/{game_id}"))
 		.body(Body::empty())
 		.expect("request");
-	let response = directory.oneshot(get).await.expect("response");
+	let response = directory.clone().oneshot(get).await.expect("response");
 	assert_eq!(response.status(), StatusCode::OK);
 	let view = body_json(response).await;
 	assert_eq!(view["payload"]["display_name"], "Minecraft");
 	assert_eq!(view["payload"]["version_ordering"], "semver");
+	assert_eq!(
+		view["source_home"], home_url,
+		"a synced definition records the home it came from"
+	);
+
+	let listing = axum::http::Request::get("/v1/games").body(Body::empty()).expect("request");
+	let response = directory.oneshot(listing).await.expect("response");
+	let games = body_json(response).await;
+	assert_eq!(games[0]["source_home"], home_url);
 }
 
 #[tokio::test]

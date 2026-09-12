@@ -175,6 +175,36 @@ If the site and the API share one hostname, for example a proxy that forwards
 `/api` to the server, leave the list empty: requests are same-origin, the
 cookies stay `SameSite=Lax`, and none of this applies.
 
+## Game and loader definitions
+
+A game, loader, or runtime is a signed identity, not a name. Its ID is the
+digest of its signed genesis, so two instances that each compile the same
+authoring file with their own key get *different* IDs, and releases published
+against one will not match the other.
+
+Instances agree by sharing the same signed genesis. One home authors the
+definition and serves it; others pull it and store it under the same ID:
+
+```sh
+moraine-publish sync-definition --home https://your-instance \
+  --from https://definitions.example --kind game --id gd:sha256:... \
+  --api-key "$MORAINE_API_KEY"
+```
+
+To pin a whole set, list the IDs and their homes in a lock file and apply it in
+one command. `definitions/curated.lock` is a template:
+
+```sh
+moraine-publish sync-definitions --home https://your-instance \
+  --lock definitions/curated.lock --api-key "$MORAINE_API_KEY"
+```
+
+The settings page shows every definition the instance holds, marked **Local**
+(authored or imported here) or **Federated** (pulled from the home named on the
+row), and can pull one from the UI. Adding a version to a definition is a
+revision, not a new identity: set `revision_of` in the authoring file, as
+described in `definitions/README.md`.
+
 ## Policy
 
 Every instance publishes its own rules: what it will host, how long it keeps

@@ -1,0 +1,26 @@
+# A curated definition set. Apply it to an instance with:
+#
+#   moraine-publish sync-definitions --home https://your-instance \
+#     --lock definitions/curated.lock --api-key "$MORAINE_API_KEY"
+#
+# Each entry pins a definition's stable ID and the home that serves it. Pulling
+# fetches the definition and its genesis, verifies both, and stores them under
+# the same ID, so every instance that applies the same lock agrees on the same
+# game and loader identities.
+#
+# The IDs below are placeholders. Replace them with the set you trust.
+
+# [[definition]]
+# kind = "game"
+# id = "gd:sha256:0000000000000000000000000000000000000000000000000000000000000000"
+# home = "https://definitions.example"
+
+# [[definition]]
+# kind = "runtime"
+# id = "gd:sha256:1111111111111111111111111111111111111111111111111111111111111111"
+# home = "https://definitions.example"
+
+# [[definition]]
+# kind = "loader"
+# id = "gd:sha256:2222222222222222222222222222222222222222222222222222222222222222"
+# home = "https://definitions.example"

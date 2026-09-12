@@ -285,7 +285,7 @@ pub(crate) async fn sync_definition(
 				.map_err(storage)?;
 			state
 				.metadata
-				.create_definition(id, kind, &genesis_object.digest, now())
+				.create_definition(id, kind, &genesis_object.digest, Some(home_url), now())
 				.await
 				.map_err(storage)?;
 		}

@@ -115,6 +115,31 @@ profile revision naming an identifier outside it is refused, so a facet cannot
 be populated by an identifier the game never declared. A game with no declared
 vocabulary constrains nothing.
 
+## Local and federated definitions
+
+An instance holds definitions it authored or imported locally, and definitions
+it pulled from other homes. Both are signed records stored under their own ID;
+the difference is where the instance first saw them.
+
+The definition list routes (`GET /v1/games`, `/v1/loaders`, `/v1/runtimes`) and
+the detail routes return a `source_home` field: `null` when the definition is
+local, and the home's URL when it was pulled from that home. The distinction is
+informational — verification always runs against the definition's genesis — but
+it tells an operator which identities their instance serves and where they came
+from.
+
+A definition is pulled with `POST /v1/federation/sync-definition`, which fetches
+the genesis and the current definition from a home, verifies both, and stores
+them under the same ID. Pulling a definition the instance already holds locally
+leaves the local record and its source untouched.
+`POST /v1/federation/subscribe-definition` does the same and records a
+subscription, so the maintenance task refreshes it.
+
+Because identity is the genesis digest, a shared game means a shared signed
+genesis, not a shared name. An operator that wants its "Minecraft" to be the
+same game as another home's pins that home's definition by ID and pulls it,
+rather than compiling the authoring files with its own key.
+
 ## Loader objects carry a `type` discriminant
 
 A loader publishes three different shapes under the one object kind

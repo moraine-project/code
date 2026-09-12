@@ -23,6 +23,7 @@ pub struct DefinitionRow {
 	pub kind: String,
 	pub genesis_digest: Vec<u8>,
 	pub current_digest: Option<Vec<u8>>,
+	pub source_home: Option<String>,
 }
 
 impl MetadataStore {
@@ -31,20 +32,24 @@ impl MetadataStore {
 		id: &str,
 		kind: &str,
 		genesis_digest: &[u8],
+		source_home: Option<&str>,
 		created_at: i64,
 	) -> Result<(), sqlx::Error> {
-		sqlx::query("INSERT INTO definitions (id, kind, genesis_digest, created_at) VALUES ($1, $2, $3, $4)")
-			.bind(id)
-			.bind(kind)
-			.bind(genesis_digest)
-			.bind(created_at)
-			.execute(&self.pool)
-			.await?;
+		sqlx::query(
+			"INSERT INTO definitions (id, kind, genesis_digest, source_home, created_at) VALUES ($1, $2, $3, $4, $5)",
+		)
+		.bind(id)
+		.bind(kind)
+		.bind(genesis_digest)
+		.bind(source_home)
+		.bind(created_at)
+		.execute(&self.pool)
+		.await?;
 		Ok(())
 	}
 
 	pub async fn definition(&self, id: &str) -> Result<Option<DefinitionRow>, sqlx::Error> {
-		let row = sqlx::query("SELECT id, kind, genesis_digest, current_digest FROM definitions WHERE id = $1")
+		let row = sqlx::query("SELECT id, kind, genesis_digest, current_digest, source_home FROM definitions WHERE id = $1")
 			.bind(id)
 			.fetch_optional(&self.pool)
 			.await?;
@@ -53,15 +58,17 @@ impl MetadataStore {
 			kind: row.get("kind"),
 			genesis_digest: row.get("genesis_digest"),
 			current_digest: row.get("current_digest"),
+			source_home: row.get("source_home"),
 		}))
 	}
 
 	pub async fn definitions_by_kind(&self, kind: &str) -> Result<Vec<DefinitionRow>, sqlx::Error> {
-		let rows =
-			sqlx::query("SELECT id, kind, genesis_digest, current_digest FROM definitions WHERE kind = $1 ORDER BY id ASC")
-				.bind(kind)
-				.fetch_all(&self.pool)
-				.await?;
+		let rows = sqlx::query(
+			"SELECT id, kind, genesis_digest, current_digest, source_home FROM definitions WHERE kind = $1 ORDER BY id ASC",
+		)
+		.bind(kind)
+		.fetch_all(&self.pool)
+		.await?;
 		Ok(rows
 			.into_iter()
 			.map(|row| DefinitionRow {
@@ -69,6 +76,7 @@ impl MetadataStore {
 				kind: row.get("kind"),
 				genesis_digest: row.get("genesis_digest"),
 				current_digest: row.get("current_digest"),
+				source_home: row.get("source_home"),
 			})
 			.collect())
 	}
@@ -152,6 +160,7 @@ async fn list_loader_definitions(state: &AppState, query: &LoaderQuery) -> Respo
 					kind: GenesisKind::Loader.as_str(),
 					current: None,
 					display_name: None,
+					source_home: row.source_home,
 				});
 			}
 			continue;
@@ -182,6 +191,7 @@ async fn list_loader_definitions(state: &AppState, query: &LoaderQuery) -> Respo
 			kind: GenesisKind::Loader.as_str(),
 			current: Some(id_for(current)),
 			display_name: Some(definition.display_name),
+			source_home: row.source_home,
 		});
 	}
 	Json(summaries).into_response()
@@ -197,6 +207,7 @@ struct DefinitionSummary {
 	kind: &'static str,
 	current: Option<String>,
 	display_name: Option<String>,
+	source_home: Option<String>,
 }
 
 async fn list_definitions(state: &AppState, expected: GenesisKind) -> Response {
@@ -215,6 +226,7 @@ async fn list_definitions(state: &AppState, expected: GenesisKind) -> Response {
 			kind: expected.as_str(),
 			current: row.current_digest.as_deref().map(id_for),
 			display_name,
+			source_home: row.source_home,
 		});
 	}
 	Json(summaries).into_response()
@@ -293,7 +305,7 @@ async fn import_definition(
 			state.metadata.put_object(&stored(object)).await.map_err(store_failure)?;
 			state
 				.metadata
-				.create_definition(&object.id, expected.as_str(), &object.digest, now())
+				.create_definition(&object.id, expected.as_str(), &object.digest, None, now())
 				.await
 				.map_err(store_failure)?;
 			Ok(())
@@ -482,6 +494,7 @@ struct DefinitionView {
 	kind: &'static str,
 	genesis: String,
 	current: String,
+	source_home: Option<String>,
 	payload: serde_json::Value,
 }
 
@@ -606,6 +619,7 @@ async fn get_definition(state: &AppState, expected: GenesisKind, id: &str) -> Re
 		kind: expected.as_str(),
 		genesis: id_for(&definition.genesis_digest),
 		current: id_for(&current),
+		source_home: definition.source_home,
 		payload,
 	};
 	Json(view).into_response()

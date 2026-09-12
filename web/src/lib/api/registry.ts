@@ -216,6 +216,7 @@ export const definitionSummarySchema = z.object({
 	kind: z.string(),
 	current: z.string().nullable().optional(),
 	display_name: z.string().nullable().optional(),
+	source_home: z.string().nullable().optional(),
 });
 
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;

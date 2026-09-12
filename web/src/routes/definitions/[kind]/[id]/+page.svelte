@@ -2,6 +2,7 @@
 	import { ChevronLeft, FileCode } from '@lucide/svelte';
 	import Digest from '$lib/components/Digest.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import SourceBadge from '$lib/components/SourceBadge.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -38,6 +39,7 @@
 			subtitle="The current signed description installers use: which versions exist, how they order, and how mods are set up."
 		>
 			<span class="badge badge-outline">{data.definition.kind}</span>
+			<SourceBadge sourceHome={data.definition.source_home} />
 		</PageHeader>
 
 		<section class="card card-border bg-base-200">

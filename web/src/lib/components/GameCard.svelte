@@ -2,6 +2,7 @@
 	import type { DefinitionSummary } from '$lib/api/registry';
 	import { ChevronRight } from '@lucide/svelte';
 	import Avatar from './Avatar.svelte';
+	import SourceBadge from './SourceBadge.svelte';
 
 	let { game, count = null }: { game: DefinitionSummary; count?: number | null } = $props();
 </script>
@@ -13,7 +14,10 @@
 	<div class="card-body flex-row items-center gap-4">
 		<Avatar name={game.display_name ?? 'Game'} id={game.id} size={48} />
 		<div class="min-w-0 flex-1">
-			<p class="truncate font-semibold">{game.display_name ?? 'Unnamed game'}</p>
+			<div class="flex items-center gap-2">
+				<p class="truncate font-semibold">{game.display_name ?? 'Unnamed game'}</p>
+				<SourceBadge sourceHome={game.source_home} />
+			</div>
 			<p class="text-xs text-base-content/60">
 				{#if count !== null}
 					{count} {count === 1 ? 'mod' : 'mods'}
