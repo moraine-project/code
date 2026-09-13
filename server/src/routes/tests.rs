@@ -371,6 +371,11 @@ async fn serves_a_built_site_with_spa_fallback() {
 	let asset = axum::http::Request::get("/asset.txt").body(Body::empty()).expect("request");
 	let response = app.clone().oneshot(asset).await.expect("response");
 	assert_eq!(response.status(), StatusCode::OK);
+	assert_eq!(
+		response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+		"nosniff",
+		"the static fallback carries the security headers too"
+	);
 
 	let spa_route = axum::http::Request::get("/p/gd:sha256:deadbeef")
 		.body(Body::empty())

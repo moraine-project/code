@@ -12,6 +12,32 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 static STAGING_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+pub struct UploadLocks {
+	locks: std::sync::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+}
+
+impl UploadLocks {
+	pub fn new() -> Self {
+		Self {
+			locks: std::sync::Mutex::new(std::collections::HashMap::new()),
+		}
+	}
+
+	pub fn get(&self, user_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+		let mut locks = self.locks.lock().expect("upload locks");
+		if locks.len() > 1024 {
+			locks.retain(|_, lock| Arc::strong_count(lock) > 1);
+		}
+		locks.entry(user_id.to_string()).or_default().clone()
+	}
+}
+
+impl Default for UploadLocks {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 pub type BlobStream = futures_util::stream::BoxStream<'static, Result<Bytes, io::Error>>;
 
 pub struct BlobStore {

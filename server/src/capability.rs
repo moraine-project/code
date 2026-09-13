@@ -109,11 +109,17 @@ fn extra_roots(config: &Config) -> Vec<reqwest::Certificate> {
 
 fn load_or_create_webhook_key(config: &Config) -> Option<SigningKey> {
 	let path = config.data_dir.join("webhook.key");
-	if let Ok(text) = std::fs::read_to_string(&path)
-		&& let Ok(bytes) = hex::decode(text.trim())
-		&& let Ok(seed) = <[u8; 32]>::try_from(bytes.as_slice())
-	{
-		return Some(SigningKey::from_seed(&seed));
+	if path.exists() {
+		return match read_key_file(&path) {
+			Some(key) => Some(key),
+			None => {
+				tracing::error!(
+					path = %path.display(),
+					"the webhook key file is malformed; webhooks stay disabled rather than rotating the key"
+				);
+				None
+			}
+		};
 	}
 	let mut seed = [0u8; 32];
 	if getrandom::fill(&mut seed).is_err() {
@@ -122,8 +128,28 @@ fn load_or_create_webhook_key(config: &Config) -> Option<SigningKey> {
 	if std::fs::create_dir_all(&config.data_dir).is_err() {
 		return None;
 	}
-	if std::fs::write(&path, format!("{}\n", hex::encode(seed))).is_err() {
-		return None;
+	let mut options = std::fs::OpenOptions::new();
+	options.write(true).create_new(true);
+	#[cfg(unix)]
+	{
+		use std::os::unix::fs::OpenOptionsExt;
+		options.mode(0o600);
 	}
+	match options.open(&path) {
+		Ok(mut file) => {
+			use std::io::Write;
+			if file.write_all(format!("{}\n", hex::encode(seed)).as_bytes()).is_err() {
+				return None;
+			}
+			Some(SigningKey::from_seed(&seed))
+		}
+		Err(_) => read_key_file(&path),
+	}
+}
+
+fn read_key_file(path: &std::path::Path) -> Option<SigningKey> {
+	let text = std::fs::read_to_string(path).ok()?;
+	let bytes = hex::decode(text.trim()).ok()?;
+	let seed = <[u8; 32]>::try_from(bytes.as_slice()).ok()?;
 	Some(SigningKey::from_seed(&seed))
 }

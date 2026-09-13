@@ -8,7 +8,7 @@ use moraine_resolver::Lockfile;
 use sha2::{Digest, Sha256};
 
 pub trait BlobSource {
-	fn fetch(&self, digest: &[u8; 32]) -> Result<Vec<u8>, String>;
+	fn fetch(&self, digest: &[u8; 32], max_bytes: u64) -> Result<Vec<u8>, String>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,10 +103,12 @@ pub fn plan_install(
 			continue;
 		}
 		progress.event(InstallEvent::Verifying(release.artifact.digest.clone()));
-		let bytes = blobs.fetch(&digest).map_err(|detail| InstallError::Fetch {
-			digest: release.artifact.digest.clone(),
-			detail,
-		})?;
+		let bytes = blobs
+			.fetch(&digest, release.artifact.size)
+			.map_err(|detail| InstallError::Fetch {
+				digest: release.artifact.digest.clone(),
+				detail,
+			})?;
 		if bytes.len() as u64 != release.artifact.size {
 			return Err(InstallError::SizeMismatch {
 				digest: release.artifact.digest.clone(),
@@ -139,12 +141,13 @@ pub fn apply_install(
 	instance_root: &Path,
 	progress: &mut dyn Progress,
 ) -> Result<Vec<PathBuf>, InstallError> {
+	let root = std::fs::canonicalize(instance_root).map_err(|error| InstallError::Io(error.to_string()))?;
 	let mut written = Vec::with_capacity(prepared.report.placements.len());
 	for placement in &prepared.report.placements {
 		if progress.cancelled() {
 			return Err(InstallError::Cancelled);
 		}
-		let destination = safe_join(instance_root, &placement.relative_path)
+		let destination = safe_join(&root, &placement.relative_path)
 			.ok_or_else(|| InstallError::UnsafePath(placement.relative_path.display().to_string()))?;
 		let bytes = prepared.bytes.get(&placement.digest).ok_or_else(|| InstallError::Fetch {
 			digest: hex::encode(placement.digest),
@@ -152,6 +155,15 @@ pub fn apply_install(
 		})?;
 		if let Some(parent) = destination.parent() {
 			std::fs::create_dir_all(parent).map_err(|error| InstallError::Io(error.to_string()))?;
+			let resolved = std::fs::canonicalize(parent).map_err(|error| InstallError::Io(error.to_string()))?;
+			if !resolved.starts_with(&root) {
+				return Err(InstallError::UnsafePath(placement.relative_path.display().to_string()));
+			}
+		}
+		if let Ok(metadata) = std::fs::symlink_metadata(&destination)
+			&& metadata.file_type().is_symlink()
+		{
+			return Err(InstallError::UnsafePath(placement.relative_path.display().to_string()));
 		}
 		progress.event(InstallEvent::Placing(placement.relative_path.display().to_string()));
 		let staging = destination.with_extension("part");
@@ -185,8 +197,12 @@ impl FilesystemBlobs {
 }
 
 impl BlobSource for FilesystemBlobs {
-	fn fetch(&self, digest: &[u8; 32]) -> Result<Vec<u8>, String> {
-		std::fs::read(self.root.join(hex::encode(digest))).map_err(|error| error.to_string())
+	fn fetch(&self, digest: &[u8; 32], max_bytes: u64) -> Result<Vec<u8>, String> {
+		let bytes = std::fs::read(self.root.join(hex::encode(digest))).map_err(|error| error.to_string())?;
+		if bytes.len() as u64 > max_bytes {
+			return Err("artifact is larger than the release declares".to_string());
+		}
+		Ok(bytes)
 	}
 }
 
@@ -211,7 +227,8 @@ impl HttpBlobs {
 }
 
 impl BlobSource for HttpBlobs {
-	fn fetch(&self, digest: &[u8; 32]) -> Result<Vec<u8>, String> {
+	fn fetch(&self, digest: &[u8; 32], max_bytes: u64) -> Result<Vec<u8>, String> {
+		use std::io::Read;
 		let response = self
 			.client
 			.get(format!("{}/v1/blobs/sha256/{}", self.base, hex::encode(digest)))
@@ -220,10 +237,20 @@ impl BlobSource for HttpBlobs {
 		if !response.status().is_success() {
 			return Err(format!("home returned {}", response.status()));
 		}
+		if let Some(length) = response.content_length()
+			&& length > max_bytes
+		{
+			return Err("artifact is larger than the release declares".to_string());
+		}
+		let mut body = Vec::new();
 		response
-			.bytes()
-			.map(|bytes| bytes.to_vec())
-			.map_err(|error| error.to_string())
+			.take(max_bytes + 1)
+			.read_to_end(&mut body)
+			.map_err(|error| error.to_string())?;
+		if body.len() as u64 > max_bytes {
+			return Err("artifact is larger than the release declares".to_string());
+		}
+		Ok(body)
 	}
 }
 
@@ -272,8 +299,12 @@ mod tests {
 	}
 
 	impl BlobSource for MemoryBlobs {
-		fn fetch(&self, digest: &[u8; 32]) -> Result<Vec<u8>, String> {
-			self.entries.get(digest).cloned().ok_or_else(|| "missing".to_string())
+		fn fetch(&self, digest: &[u8; 32], max_bytes: u64) -> Result<Vec<u8>, String> {
+			let bytes = self.entries.get(digest).cloned().ok_or_else(|| "missing".to_string())?;
+			if bytes.len() as u64 > max_bytes {
+				return Err("artifact is larger than the release declares".to_string());
+			}
+			Ok(bytes)
 		}
 	}
 
@@ -319,6 +350,24 @@ mod tests {
 	}
 
 	#[test]
+	#[cfg(unix)]
+	fn refuses_to_write_through_a_symlinked_directory() {
+		let bytes = b"mod bytes".to_vec();
+		let digest: [u8; 32] = Sha256::digest(&bytes).into();
+		let mut blobs = MemoryBlobs::default();
+		blobs.entries.insert(digest, bytes);
+		let directory = tempfile::tempdir().expect("tempdir");
+		let outside = tempfile::tempdir().expect("outside");
+		std::os::unix::fs::symlink(outside.path(), directory.path().join("mods")).expect("symlink");
+
+		let prepared = plan_install(&lockfile(digest, 9), &blobs, "minecraft/default", &mut NoProgress).expect("plan");
+		let error = apply_install(&prepared, directory.path(), &mut NoProgress).expect_err("reject");
+
+		assert!(matches!(error, InstallError::UnsafePath(_)));
+		assert!(!outside.path().join("example.jar").exists());
+	}
+
+	#[test]
 	fn refuses_bytes_that_do_not_match_the_digest() {
 		let digest: [u8; 32] = Sha256::digest(b"real").into();
 		let mut blobs = MemoryBlobs::default();
@@ -344,7 +393,7 @@ mod tests {
 
 		let blobs = HttpBlobs::new(&format!("http://127.0.0.1:{}", address.port()), true).expect("client");
 		let digest: [u8; 32] = Sha256::digest(&body).into();
-		assert_eq!(blobs.fetch(&digest).expect("fetch"), body);
+		assert_eq!(blobs.fetch(&digest, body.len() as u64).expect("fetch"), body);
 		handle.join().expect("join");
 
 		assert!(HttpBlobs::new("http://example.org", false).is_err());

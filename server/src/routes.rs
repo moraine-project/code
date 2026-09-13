@@ -23,6 +23,8 @@ use crate::db::MetadataStore;
 const MAX_REQUEST_BODY_BYTES: usize = 256 * 1024;
 const REQUEST_TIMEOUT_SECONDS: u64 = 30;
 
+static UPLOAD_LOCKS: std::sync::OnceLock<crate::blob::UploadLocks> = std::sync::OnceLock::new();
+
 #[derive(Clone)]
 pub struct AppState {
 	pub store: Arc<BlobStore>,
@@ -36,6 +38,7 @@ pub struct AppState {
 
 pub fn router(state: AppState) -> Router {
 	let web_dir = state.web_dir.clone();
+	let web_origins = state.capability.web_origins.clone();
 	let app = Router::new()
 		.route("/.well-known/mod-registry", get(well_known))
 		.route("/healthz", get(|| async { "ok" }))
@@ -63,8 +66,15 @@ pub fn router(state: AppState) -> Router {
 			state.clone(),
 			crate::auth::ratelimit::limit,
 		))
-		.layer(cors(&state.capability.web_origins))
-		.with_state(state)
+		.with_state(state);
+	let app = match web_dir {
+		Some(directory) => {
+			let index = directory.join("index.html");
+			app.fallback_service(ServeDir::new(&*directory).fallback(ServeFile::new(index)))
+		}
+		None => app,
+	};
+	app.layer(cors(&web_origins))
 		.layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
 		.layer(TimeoutLayer::with_status_code(
 			StatusCode::REQUEST_TIMEOUT,
@@ -81,14 +91,7 @@ pub fn router(state: AppState) -> Router {
 		.layer(SetResponseHeaderLayer::if_not_present(
 			axum::http::header::REFERRER_POLICY,
 			HeaderValue::from_static("no-referrer"),
-		));
-	match web_dir {
-		Some(directory) => {
-			let index = directory.join("index.html");
-			app.fallback_service(ServeDir::new(&*directory).fallback(ServeFile::new(index)))
-		}
-		None => app,
-	}
+		))
 }
 
 fn cors(origins: &[String]) -> CorsLayer {
@@ -149,6 +152,9 @@ async fn blob_upload(State(state): State<AppState>, user: AuthenticatedUser, bod
 	if let Some(message) = crate::registry::sanctions::publishing_block(&state, &user.user_id).await {
 		return (StatusCode::FORBIDDEN, message).into_response();
 	}
+	let locks = UPLOAD_LOCKS.get_or_init(crate::blob::UploadLocks::new);
+	let account_lock = locks.get(&user.user_id);
+	let _guard = account_lock.lock().await;
 	let used = match state.metadata.upload_bytes_for(&user.user_id).await {
 		Ok(used) => used,
 		Err(error) => {
