@@ -4,7 +4,7 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import SelectField, { type SelectOption } from '$lib/components/SelectField.svelte';
-	import { shortDigest, type FeedEntry } from '$lib/api/registry';
+	import { safeExternalUrl, shortDigest, type FeedEntry } from '$lib/api/registry';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -36,6 +36,12 @@
 	const gameName = $derived(data.gamePayload?.display_name ?? '');
 
 	const releases = $derived((data.feed?.entries ?? []).toReversed());
+
+	const links = $derived(
+		[...(data.profile?.links ?? []), ...(data.profile?.communities ?? [])]
+			.map((link) => ({ kind: link.kind, url: safeExternalUrl(link.url) }))
+			.filter((link): link is { kind: string; url: string } => link.url !== null),
+	);
 
 	const latest = $derived(releases.find((entry) => entry.release) ?? null);
 

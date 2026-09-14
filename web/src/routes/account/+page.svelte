@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { login, logout, register } from '$lib/api/session';
+	import { registrationMode } from '$lib/api/registry';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { session } from '$lib/session.svelte';
@@ -12,8 +13,14 @@
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 	let notice = $state<string | null>(null);
+	let registrationOpen = $state(true);
 
-	onMount(refresh);
+	onMount(() => {
+		void refresh();
+		void registrationMode()
+			.then((mode) => (registrationOpen = mode === 'open'))
+			.catch(() => (registrationOpen = false));
+	});
 
 	async function refresh() {
 		user = await session.refresh();
@@ -92,28 +99,35 @@
 	{:else}
 		<section class="card card-border max-w-md bg-base-200">
 			<div class="card-body gap-4">
-				<div role="tablist" class="tabs tabs-box w-fit">
-					<button
-						role="tab"
-						class="tab"
-						class:tab-active={!creating}
-						onclick={() => {
-							creating = false;
-							notice = null;
-							error = null;
-						}}>Sign in</button
-					>
-					<button
-						role="tab"
-						class="tab"
-						class:tab-active={creating}
-						onclick={() => {
-							creating = true;
-							notice = null;
-							error = null;
-						}}>Create account</button
-					>
-				</div>
+				{#if registrationOpen}
+					<div role="tablist" class="tabs tabs-box w-fit">
+						<button
+							role="tab"
+							class="tab"
+							class:tab-active={!creating}
+							onclick={() => {
+								creating = false;
+								notice = null;
+								error = null;
+							}}>Sign in</button
+						>
+						<button
+							role="tab"
+							class="tab"
+							class:tab-active={creating}
+							onclick={() => {
+								creating = true;
+								notice = null;
+								error = null;
+							}}>Create account</button
+						>
+					</div>
+				{:else}
+					<h2 class="text-lg font-semibold">Sign in</h2>
+					<p class="text-sm text-base-content/60">
+						This instance is not accepting new accounts. Ask the operator for one.
+					</p>
+				{/if}
 				<form class="flex flex-col gap-3" onsubmit={submit}>
 					<label class="floating-label">
 						<span>Email</span>

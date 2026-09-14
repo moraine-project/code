@@ -60,6 +60,13 @@ pub fn plan(adapter: &str, mods: &[ModFile], overrides: &[OverrideFile]) -> Resu
 		SIMS4_ADAPTER => plan_sims4(mods, overrides)?,
 		other => return Err(InstallError::UnknownAdapter(other.to_string())),
 	};
+	let mut seen = std::collections::HashSet::new();
+	for placement in &placements {
+		let key = placement.relative_path.to_string_lossy().to_lowercase();
+		if !seen.insert(key) {
+			return Err(InstallError::UnsafePath(placement.relative_path.display().to_string()));
+		}
+	}
 	Ok(InstallPlan {
 		adapter: adapter.to_string(),
 		placements,
@@ -128,11 +135,23 @@ pub fn safe_filename(name: &str) -> Option<&str> {
 		|| name.contains('\\')
 		|| name.contains(':')
 		|| name.contains('\0')
+		|| name.chars().any(char::is_control)
+		|| name.ends_with('.')
+		|| name.ends_with(' ')
 	{
+		return None;
+	}
+	let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+	if RESERVED_NAMES.contains(&stem.as_str()) {
 		return None;
 	}
 	Some(name)
 }
+
+const RESERVED_NAMES: &[&str] = &[
+	"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2",
+	"LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
 
 #[cfg(test)]
 mod tests {

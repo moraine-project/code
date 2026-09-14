@@ -22,13 +22,22 @@ impl Signed {
 	}
 }
 
-fn seed(hex_seed: &str) -> Result<[u8; 32], String> {
-	let bytes = hex::decode(hex_seed.trim()).map_err(|_| "the key is not hex".to_string())?;
-	bytes.try_into().map_err(|_| "the key must be 32 bytes".to_string())
+fn seed(hex_seed: &str) -> Result<zeroize::Zeroizing<[u8; 32]>, String> {
+	let bytes = zeroize::Zeroizing::new(hex::decode(hex_seed.trim()).map_err(|_| "the key is not hex".to_string())?);
+	if bytes.len() != 32 {
+		return Err("the key must be 32 bytes".to_string());
+	}
+	let mut seed = zeroize::Zeroizing::new([0u8; 32]);
+	seed.copy_from_slice(&bytes);
+	Ok(seed)
 }
 
 fn bytes(value: &str, what: &str) -> Result<Vec<u8>, String> {
-	hex::decode(value.trim()).map_err(|_| format!("{what} is not hex"))
+	let trimmed = value.trim();
+	if trimmed.len() > 128 {
+		return Err(format!("{what} is too long"));
+	}
+	hex::decode(trimmed).map_err(|_| format!("{what} is not hex"))
 }
 
 fn digest(value: &str, what: &str) -> Result<Vec<u8>, String> {
@@ -398,7 +407,7 @@ mod tests {
 	const SEED: &str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 	const PROJECT: &str = "gd:sha256:1111111111111111111111111111111111111111111111111111111111111111";
 
-	fn seed_bytes() -> [u8; 32] {
+	fn seed_bytes() -> zeroize::Zeroizing<[u8; 32]> {
 		seed(SEED).expect("seed")
 	}
 

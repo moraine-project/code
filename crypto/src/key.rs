@@ -1,6 +1,6 @@
 use std::fmt;
 
-use ed25519_dalek::{Signer, Verifier};
+use ed25519_dalek::Signer;
 use sha2::{Digest, Sha256};
 
 use crate::CryptoError;
@@ -126,7 +126,7 @@ impl VerifyingKey {
 		let array: [u8; 64] = signature.try_into().map_err(|_| CryptoError::InvalidSignature)?;
 		let signature = ed25519_dalek::Signature::from_bytes(&array);
 		self.inner
-			.verify(message, &signature)
+			.verify_strict(message, &signature)
 			.map_err(|_| CryptoError::InvalidSignature)
 	}
 }

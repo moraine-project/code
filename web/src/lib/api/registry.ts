@@ -257,12 +257,57 @@ export type FeedPage = z.infer<typeof feedPageSchema>;
 
 export type Fetcher = typeof fetch;
 
+function isAllowedHomeHost(hostname: string): boolean {
+	const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+	if (host === 'localhost' || host.endsWith('.localhost')) {
+		return true;
+	}
+	const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+	if (ipv4) {
+		const [first, second] = ipv4.slice(1).map(Number);
+		if (first === 127) return true;
+		if (first === 0 || first === 10) return false;
+		if (first === 172 && second >= 16 && second <= 31) return false;
+		if (first === 192 && second === 168) return false;
+		if (first === 169 && second === 254) return false;
+		return true;
+	}
+	if (host.includes(':')) {
+		if (host === '::1') return true;
+		if (host === '::') return false;
+		if (host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) return false;
+		return true;
+	}
+	return true;
+}
+
 export function normalizeBase(base: string): string {
 	const trimmed = base.trim().replace(/\/+$/, '');
 	if (trimmed.length === 0) {
 		throw new Error('a home registry URL is required');
 	}
+	let url: URL;
+	try {
+		url = new URL(trimmed);
+	} catch {
+		throw new Error('the home must be an http(s) URL');
+	}
+	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+		throw new Error('the home must be an http(s) URL');
+	}
+	if (!isAllowedHomeHost(url.hostname)) {
+		throw new Error('the home must be a public host');
+	}
 	return trimmed;
+}
+
+export function safeExternalUrl(value: string): string | null {
+	try {
+		const url = new URL(value);
+		return url.protocol === 'http:' || url.protocol === 'https:' ? value : null;
+	} catch {
+		return null;
+	}
 }
 
 export async function fetchProject(
@@ -546,6 +591,15 @@ export async function publishingMode(fetchFn: Fetcher = fetch): Promise<string> 
 	}
 	const document = await response.json();
 	return typeof document.publishing === 'string' ? document.publishing : 'review';
+}
+
+export async function registrationMode(fetchFn: Fetcher = fetch): Promise<string> {
+	const response = await fetchFn('/.well-known/mod-registry');
+	if (!response.ok) {
+		return 'closed';
+	}
+	const document = await response.json();
+	return typeof document.registration === 'string' ? document.registration : 'closed';
 }
 
 export function shortDigest(id: string, length = 12): string {

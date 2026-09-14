@@ -14,6 +14,7 @@ path = "src/main.rs"
 clap.workspace = true
 getrandom = "0.4"
 hex.workspace = true
+zeroize = "1"
 moraine-crypto = { path = "../crypto" }
 moraine-install = { path = "../install" }
 moraine-metadata = { path = "../metadata" }

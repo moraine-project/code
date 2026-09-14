@@ -121,6 +121,9 @@ pub async fn verify(directory: &Path) -> Result<Verified, String> {
 			return Err(format!("`{line}` is not an inventory entry"));
 		};
 		let expected: u64 = size.parse().map_err(|_| format!("`{size}` is not a size"))?;
+		if name.len() != 64 || !name.chars().all(|character| character.is_ascii_hexdigit()) {
+			return Err(format!("`{name}` is not a blob digest"));
+		}
 		let path = directory.join("blobs").join(name);
 		let contents = std::fs::read(&path).map_err(|error| format!("{name}: {error}"))?;
 		if contents.len() as u64 != expected {
@@ -152,6 +155,7 @@ mod tests {
 			registration: crate::config::Registration::Open,
 			max_definitions: 1_000,
 			max_sync_entries: 10_000,
+			metrics_token: None,
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,

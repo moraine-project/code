@@ -24,6 +24,12 @@ impl RootSet {
 			.iter()
 			.map(|public_key| TrustedKey::new(public_key))
 			.collect::<Result<Vec<_>, _>>()?;
+		if keys.is_empty() || threshold == 0 || threshold > keys.len() {
+			return Err(ModelError::new(
+				RejectReason::InvalidFieldValue,
+				"a root set needs at least one key and a threshold within it",
+			));
+		}
 		Ok(Self {
 			keys,
 			threshold,

@@ -1471,6 +1471,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml",
+ "zeroize",
 ]
 
 [[package]]
@@ -1540,6 +1541,7 @@ dependencies = [
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-test",
+ "zeroize",
 ]
 
 [[package]]

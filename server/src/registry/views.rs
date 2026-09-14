@@ -423,7 +423,7 @@ fn serve_bytes(bytes: Vec<u8>, headers: &HeaderMap, head: bool) -> Response {
 		None => (StatusCode::OK, 0, length.saturating_sub(1)),
 	};
 	let content_length = if length == 0 { 0 } else { end - start + 1 };
-	let body = if head {
+	let body = if head || length == 0 {
 		Body::empty()
 	} else {
 		Body::from(bytes[start as usize..=end as usize].to_vec())

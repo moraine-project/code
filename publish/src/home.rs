@@ -50,7 +50,9 @@ impl Home {
 		if url.scheme() != "https" && url.scheme() != "http" {
 			return Err(format!("home url must use http or https, not `{}`", url.scheme()));
 		}
-		let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(30));
+		let mut builder = reqwest::Client::builder()
+			.timeout(Duration::from_secs(30))
+			.redirect(reqwest::redirect::Policy::none());
 		if let Ok(path) = std::env::var("MORAINE_TLS_EXTRA_ROOTS") {
 			for certificate in extra_roots(Path::new(&path))? {
 				builder = builder.add_root_certificate(certificate);

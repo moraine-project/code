@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use axum::Router;
 use axum::extract::{Request, State};
-use axum::http::header;
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -134,7 +134,16 @@ pub async fn track(State(state): State<AppState>, request: Request, next: Next) 
 	response
 }
 
-async fn render(State(state): State<AppState>) -> Response {
+async fn render(State(state): State<AppState>, headers: HeaderMap) -> Response {
+	if let Some(expected) = state.capability.metrics_token.as_deref() {
+		let provided = headers
+			.get(header::AUTHORIZATION)
+			.and_then(|value| value.to_str().ok())
+			.and_then(|value| value.strip_prefix("Bearer "));
+		if provided != Some(expected) {
+			return (StatusCode::UNAUTHORIZED, "metrics requires a token").into_response();
+		}
+	}
 	let snapshot = match state.metadata.metrics_snapshot().await {
 		Ok(snapshot) => snapshot,
 		Err(error) => {

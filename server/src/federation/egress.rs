@@ -66,7 +66,11 @@ pub fn is_public_address(address: IpAddr) -> bool {
 
 fn is_public_v4(address: Ipv4Addr) -> bool {
 	let octets = address.octets();
-	let shared = octets[0] == 100 && octets[1] & 0xc0 == 64;
+	let [first, second, ..] = octets;
+	let shared = first == 100 && second & 0xc0 == 64;
+	let this_network = first == 0;
+	let benchmarking = first == 198 && (second == 18 || second == 19);
+	let reserved = first >= 240;
 	!(address.is_private()
 		|| address.is_loopback()
 		|| address.is_link_local()
@@ -74,7 +78,10 @@ fn is_public_v4(address: Ipv4Addr) -> bool {
 		|| address.is_multicast()
 		|| address.is_broadcast()
 		|| address.is_documentation()
-		|| shared)
+		|| shared
+		|| this_network
+		|| benchmarking
+		|| reserved)
 }
 
 fn is_unique_local(address: Ipv6Addr) -> bool {
