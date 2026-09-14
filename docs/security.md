@@ -92,6 +92,15 @@ can be revoked without losing the project. And for a root key you care about,
 sign with the CLI on a machine you control. The console warns when the key in
 use is a project root.
 
+## Passwords and recovery
+
+Passwords are hashed with Argon2id and a random salt. Changing a password
+requires the current one and signs every other session out. Recovery codes are
+random, single-use, stored only as hashes, and also sign the account's sessions
+out when used. An instance without a mail server needs neither email
+verification nor a reset link to keep accounts recoverable: the user holds the
+codes, and the operator can issue a temporary password as a last resort.
+
 ## Reporting a problem
 
 See [`SECURITY.md`](../SECURITY.md) at the repository root. Do not open a public

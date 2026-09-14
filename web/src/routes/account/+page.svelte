@@ -1,6 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { login, logout, register } from '$lib/api/session';
+	import { KeyRound, ShieldCheck } from '@lucide/svelte';
+	import {
+		changePassword,
+		issueRecoveryCodes,
+		login,
+		logout,
+		recover,
+		register,
+	} from '$lib/api/session';
 	import { registrationMode } from '$lib/api/registry';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
@@ -10,10 +18,18 @@
 	let email = $state('');
 	let password = $state('');
 	let creating = $state(false);
+	let recovering = $state(false);
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 	let notice = $state<string | null>(null);
 	let registrationOpen = $state(true);
+
+	let current = $state('');
+	let next = $state('');
+	let codes = $state<string[]>([]);
+	let recoveryEmail = $state('');
+	let recoveryCode = $state('');
+	let recoveryNext = $state('');
 
 	onMount(() => {
 		void refresh();
@@ -26,10 +42,14 @@
 		user = await session.refresh();
 	}
 
-	async function submit(event: SubmitEvent) {
-		event.preventDefault();
+	function clear() {
 		error = null;
 		notice = null;
+	}
+
+	async function submit(event: SubmitEvent) {
+		event.preventDefault();
+		clear();
 		busy = true;
 		try {
 			if (creating) {
@@ -48,8 +68,54 @@
 		}
 	}
 
+	async function submitRecovery(event: SubmitEvent) {
+		event.preventDefault();
+		clear();
+		busy = true;
+		try {
+			await recover(recoveryEmail, recoveryCode, recoveryNext);
+			notice = 'Password changed. Sign in with the new one.';
+			recovering = false;
+			recoveryCode = '';
+			recoveryNext = '';
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'the request failed';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function submitChange(event: SubmitEvent) {
+		event.preventDefault();
+		clear();
+		busy = true;
+		try {
+			await changePassword(current, next);
+			notice = 'Password changed. Other sessions were signed out.';
+			current = '';
+			next = '';
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'the request failed';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function showCodes() {
+		clear();
+		busy = true;
+		try {
+			codes = await issueRecoveryCodes();
+			notice = 'Save these now. Each works once and is not shown again.';
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'the request failed';
+		} finally {
+			busy = false;
+		}
+	}
+
 	async function signOut() {
-		error = null;
+		clear();
 		busy = true;
 		try {
 			await logout();
@@ -96,69 +162,159 @@
 				</div>
 			</div>
 		</section>
-	{:else}
-		<section class="card card-border max-w-md bg-base-200">
+
+		<section class="card card-border max-w-xl bg-base-200">
 			<div class="card-body gap-4">
-				{#if registrationOpen}
-					<div role="tablist" class="tabs tabs-box w-fit">
-						<button
-							role="tab"
-							class="tab"
-							class:tab-active={!creating}
-							onclick={() => {
-								creating = false;
-								notice = null;
-								error = null;
-							}}>Sign in</button
-						>
-						<button
-							role="tab"
-							class="tab"
-							class:tab-active={creating}
-							onclick={() => {
-								creating = true;
-								notice = null;
-								error = null;
-							}}>Create account</button
-						>
-					</div>
-				{:else}
-					<h2 class="text-lg font-semibold">Sign in</h2>
-					<p class="text-sm text-base-content/60">
-						This instance is not accepting new accounts. Ask the operator for one.
-					</p>
-				{/if}
-				<form class="flex flex-col gap-3" onsubmit={submit}>
+				<h2 class="card-title"><KeyRound size={18} /> Change password</h2>
+				<form class="flex flex-col gap-3" onsubmit={submitChange}>
 					<label class="floating-label">
-						<span>Email</span>
-						<input
-							class="input w-full"
-							type="email"
-							bind:value={email}
-							placeholder="you@example.org"
-							aria-label="Email"
-							autocomplete="email"
-						/>
-					</label>
-					<label class="floating-label">
-						<span>Password</span>
+						<span>Current password</span>
 						<input
 							class="input w-full"
 							type="password"
-							bind:value={password}
-							placeholder={creating ? 'at least 12 characters' : 'password'}
-							aria-label="Password"
-							autocomplete={creating ? 'new-password' : 'current-password'}
+							bind:value={current}
+							required
+							autocomplete="current-password"
 						/>
 					</label>
-					<button class="btn btn-primary" type="submit" disabled={busy}>
-						{creating ? 'Create account' : 'Sign in'}
-					</button>
+					<label class="floating-label">
+						<span>New password</span>
+						<input
+							class="input w-full"
+							type="password"
+							bind:value={next}
+							required
+							placeholder="at least 12 characters"
+							autocomplete="new-password"
+						/>
+					</label>
+					<button class="btn btn-sm w-fit" type="submit" disabled={busy}>Change password</button>
 				</form>
-				<p class="text-xs text-base-content/50">
-					An account authenticates you to this server. It does not sign releases; your release key
-					does, and it stays on your device.
+			</div>
+		</section>
+
+		<section class="card card-border max-w-xl bg-base-200">
+			<div class="card-body gap-4">
+				<h2 class="card-title"><ShieldCheck size={18} /> Recovery codes</h2>
+				<p class="text-sm text-base-content/70">
+					If you forget your password and this instance has no email, a recovery code is how you get
+					back in. Generate them, save them somewhere safe, and use one to set a new password.
 				</p>
+				<button class="btn btn-sm w-fit" onclick={showCodes} disabled={busy}>
+					Generate new codes
+				</button>
+				{#if codes.length > 0}
+					<ul class="grid grid-cols-2 gap-2 font-mono text-sm">
+						{#each codes as code (code)}
+							<li class="rounded-field bg-base-300 px-2 py-1">{code}</li>
+						{/each}
+					</ul>
+					<p class="text-warning text-sm">
+						These replace any earlier codes and are shown only once.
+					</p>
+				{/if}
+			</div>
+		</section>
+	{:else}
+		<section class="card card-border max-w-md bg-base-200">
+			<div class="card-body gap-4">
+				{#if recovering}
+					<h2 class="text-lg font-semibold">Recover your account</h2>
+					<p class="text-sm text-base-content/60">
+						Enter one of your recovery codes and choose a new password.
+					</p>
+					<form class="flex flex-col gap-3" onsubmit={submitRecovery}>
+						<label class="floating-label">
+							<span>Email</span>
+							<input class="input w-full" type="email" bind:value={recoveryEmail} required />
+						</label>
+						<label class="floating-label">
+							<span>Recovery code</span>
+							<input class="input w-full font-mono text-sm" bind:value={recoveryCode} required />
+						</label>
+						<label class="floating-label">
+							<span>New password</span>
+							<input
+								class="input w-full"
+								type="password"
+								bind:value={recoveryNext}
+								required
+								autocomplete="new-password"
+							/>
+						</label>
+						<button class="btn btn-primary" type="submit" disabled={busy}>Set a new password</button
+						>
+						<button class="btn btn-ghost btn-sm" type="button" onclick={() => (recovering = false)}>
+							Back to sign in
+						</button>
+					</form>
+				{:else}
+					{#if registrationOpen}
+						<div role="tablist" class="tabs tabs-box w-fit">
+							<button
+								role="tab"
+								class="tab"
+								class:tab-active={!creating}
+								onclick={() => {
+									creating = false;
+									clear();
+								}}>Sign in</button
+							>
+							<button
+								role="tab"
+								class="tab"
+								class:tab-active={creating}
+								onclick={() => {
+									creating = true;
+									clear();
+								}}>Create account</button
+							>
+						</div>
+					{:else}
+						<h2 class="text-lg font-semibold">Sign in</h2>
+						<p class="text-sm text-base-content/60">
+							This instance is not accepting new accounts. Ask the operator for one.
+						</p>
+					{/if}
+					<form class="flex flex-col gap-3" onsubmit={submit}>
+						<label class="floating-label">
+							<span>Email</span>
+							<input
+								class="input w-full"
+								type="email"
+								bind:value={email}
+								placeholder="you@example.org"
+								aria-label="Email"
+								autocomplete="email"
+							/>
+						</label>
+						<label class="floating-label">
+							<span>Password</span>
+							<input
+								class="input w-full"
+								type="password"
+								bind:value={password}
+								placeholder={creating ? 'at least 12 characters' : 'password'}
+								aria-label="Password"
+								autocomplete={creating ? 'new-password' : 'current-password'}
+							/>
+						</label>
+						<button class="btn btn-primary" type="submit" disabled={busy}>
+							{creating ? 'Create account' : 'Sign in'}
+						</button>
+					</form>
+					<button
+						class="btn btn-ghost btn-sm w-fit"
+						type="button"
+						onclick={() => (recovering = true)}
+					>
+						Forgot your password?
+					</button>
+					<p class="text-xs text-base-content/50">
+						An account authenticates you to this server. It does not sign releases; your release key
+						does, and it stays on your device.
+					</p>
+				{/if}
 			</div>
 		</section>
 	{/if}

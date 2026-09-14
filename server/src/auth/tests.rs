@@ -313,6 +313,175 @@ async fn an_operator_session_reaches_an_operator_route() {
 	assert_eq!(response.status(), StatusCode::OK);
 }
 
+async fn sign_in(application: &Router, email: &str, password: &str) -> (String, String) {
+	let login = json_request(
+		"POST",
+		"/v1/auth/session",
+		serde_json::json!({ "email": email, "password": password }),
+	);
+	let response = application.clone().oneshot(login).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK, "sign in as {email}");
+	let session = cookie_token(&response, SESSION_COOKIE).expect("session cookie");
+	let csrf = cookie_token(&response, CSRF_COOKIE).expect("csrf cookie");
+	(session, csrf)
+}
+
+fn session_request(
+	method: &str,
+	path: &str,
+	session: &str,
+	csrf: &str,
+	body: serde_json::Value,
+) -> axum::http::Request<Body> {
+	axum::http::Request::builder()
+		.method(method)
+		.uri(path)
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, format!("{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}"))
+		.header("x-csrf-token", csrf)
+		.body(Body::from(body.to_string()))
+		.expect("request")
+}
+
+#[tokio::test]
+async fn changes_a_password_and_revokes_other_sessions() {
+	let (application, _directory) = app().await;
+	let register = json_request(
+		"POST",
+		"/v1/auth/register",
+		serde_json::json!({ "email": "rotate@example.org", "password": "correct horse battery" }),
+	);
+	application.clone().oneshot(register).await.expect("register");
+	let (first, _) = sign_in(&application, "rotate@example.org", "correct horse battery").await;
+	let (second, second_csrf) = sign_in(&application, "rotate@example.org", "correct horse battery").await;
+
+	let wrong = session_request(
+		"POST",
+		"/v1/auth/password",
+		&second,
+		&second_csrf,
+		serde_json::json!({ "current": "not the password", "new": "a much longer password" }),
+	);
+	let response = application.clone().oneshot(wrong).await.expect("response");
+	assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+	let change = session_request(
+		"POST",
+		"/v1/auth/password",
+		&second,
+		&second_csrf,
+		serde_json::json!({ "current": "correct horse battery", "new": "a much longer password" }),
+	);
+	let response = application.clone().oneshot(change).await.expect("response");
+	assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+	let stale = axum::http::Request::get("/v1/auth/me")
+		.header(header::COOKIE, format!("{SESSION_COOKIE}={first}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(stale).await.expect("response");
+	assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "the other session was revoked");
+
+	let old = json_request(
+		"POST",
+		"/v1/auth/session",
+		serde_json::json!({ "email": "rotate@example.org", "password": "correct horse battery" }),
+	);
+	let response = application.clone().oneshot(old).await.expect("response");
+	assert_eq!(
+		response.status(),
+		StatusCode::UNAUTHORIZED,
+		"the old password no longer works"
+	);
+
+	let _ = sign_in(&application, "rotate@example.org", "a much longer password").await;
+}
+
+#[tokio::test]
+async fn recovers_an_account_with_a_recovery_code() {
+	let (application, _directory) = app().await;
+	let register = json_request(
+		"POST",
+		"/v1/auth/register",
+		serde_json::json!({ "email": "lost@example.org", "password": "correct horse battery" }),
+	);
+	application.clone().oneshot(register).await.expect("register");
+	let (session, csrf) = sign_in(&application, "lost@example.org", "correct horse battery").await;
+
+	let issue = session_request("POST", "/v1/auth/recovery-codes", &session, &csrf, serde_json::json!({}));
+	let response = application.clone().oneshot(issue).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let body = json_body(response).await;
+	assert_eq!(body["codes"].as_array().expect("codes").len(), 8);
+	let code = body["codes"][0].as_str().expect("code").to_string();
+
+	let recover = json_request(
+		"POST",
+		"/v1/auth/recover",
+		serde_json::json!({ "email": "lost@example.org", "code": code, "new": "a brand new long password" }),
+	);
+	let response = application.clone().oneshot(recover).await.expect("response");
+	assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+	let _ = sign_in(&application, "lost@example.org", "a brand new long password").await;
+
+	let reuse = json_request(
+		"POST",
+		"/v1/auth/recover",
+		serde_json::json!({ "email": "lost@example.org", "code": code, "new": "yet another long password" }),
+	);
+	let response = application.oneshot(reuse).await.expect("response");
+	assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "a code is single use");
+}
+
+#[tokio::test]
+async fn an_operator_resets_a_members_password() {
+	let (application, _directory) = app().await;
+	let register = json_request(
+		"POST",
+		"/v1/auth/register",
+		serde_json::json!({ "email": "forgetful@example.org", "password": "correct horse battery" }),
+	);
+	application.clone().oneshot(register).await.expect("register");
+
+	let member = json_request(
+		"POST",
+		"/v1/auth/session",
+		serde_json::json!({ "email": "member@example.org", "password": "correct horse battery" }),
+	);
+	application.clone().oneshot(member).await.expect("response");
+	let member_register = json_request(
+		"POST",
+		"/v1/auth/register",
+		serde_json::json!({ "email": "member@example.org", "password": "correct horse battery" }),
+	);
+	application.clone().oneshot(member_register).await.expect("register");
+	let (member_session, member_csrf) = sign_in(&application, "member@example.org", "correct horse battery").await;
+	let denied = session_request(
+		"POST",
+		"/v1/auth/users/reset-password",
+		&member_session,
+		&member_csrf,
+		serde_json::json!({ "email": "forgetful@example.org" }),
+	);
+	let response = application.clone().oneshot(denied).await.expect("response");
+	assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+	let (operator_session, operator_csrf) = sign_in(&application, "ops@example.org", "correct horse battery").await;
+	let reset = session_request(
+		"POST",
+		"/v1/auth/users/reset-password",
+		&operator_session,
+		&operator_csrf,
+		serde_json::json!({ "email": "forgetful@example.org" }),
+	);
+	let response = application.clone().oneshot(reset).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let password = json_body(response).await["password"].as_str().expect("password").to_string();
+
+	let _ = sign_in(&application, "forgetful@example.org", &password).await;
+}
+
 #[tokio::test]
 async fn login_is_rate_limited_per_account() {
 	let (application, _directory) = app().await;

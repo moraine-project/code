@@ -129,6 +129,37 @@ export async function logout(): Promise<void> {
 	setCsrfToken(null);
 }
 
+export async function changePassword(current: string, next: string): Promise<void> {
+	const response = await authorizedFetch('/v1/auth/password', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ current, new: next }),
+	});
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+}
+
+export async function issueRecoveryCodes(): Promise<string[]> {
+	const response = await authorizedFetch('/v1/auth/recovery-codes', { method: 'POST' });
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+	const body = (await response.json()) as { codes?: string[] };
+	return body.codes ?? [];
+}
+
+export async function recover(email: string, code: string, next: string): Promise<void> {
+	const response = await authorizedFetch('/v1/auth/recover', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ email, code, new: next }),
+	});
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+}
+
 export async function failure(response: Response): Promise<string> {
 	const text = await response.text();
 	return text || `request failed (${response.status})`;

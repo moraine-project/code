@@ -151,6 +151,79 @@ impl MetadataStore {
 		Ok(())
 	}
 
+	pub async fn update_password(&self, user_id: &str, secret_hash: &str, updated_at: i64) -> Result<(), sqlx::Error> {
+		sqlx::query("UPDATE user_credentials SET secret_hash = $1, updated_at = $2 WHERE user_id = $3")
+			.bind(secret_hash)
+			.bind(updated_at)
+			.bind(user_id)
+			.execute(&self.pool)
+			.await?;
+		Ok(())
+	}
+
+	pub async fn revoke_sessions(&self, user_id: &str, revoked_at: i64) -> Result<(), sqlx::Error> {
+		sqlx::query("UPDATE user_sessions SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL")
+			.bind(revoked_at)
+			.bind(user_id)
+			.execute(&self.pool)
+			.await?;
+		Ok(())
+	}
+
+	pub async fn revoke_other_sessions(&self, user_id: &str, keep: &str, revoked_at: i64) -> Result<(), sqlx::Error> {
+		sqlx::query("UPDATE user_sessions SET revoked_at = $1 WHERE user_id = $2 AND id != $3 AND revoked_at IS NULL")
+			.bind(revoked_at)
+			.bind(user_id)
+			.bind(keep)
+			.execute(&self.pool)
+			.await?;
+		Ok(())
+	}
+
+	pub async fn replace_recovery_codes(
+		&self,
+		user_id: &str,
+		hashes: &[Vec<u8>],
+		created_at: i64,
+	) -> Result<(), sqlx::Error> {
+		let mut transaction = self.pool.begin().await?;
+		sqlx::query("DELETE FROM recovery_codes WHERE user_id = $1")
+			.bind(user_id)
+			.execute(&mut *transaction)
+			.await?;
+		for hash in hashes {
+			sqlx::query("INSERT INTO recovery_codes (user_id, code_hash, created_at) VALUES ($1, $2, $3)")
+				.bind(user_id)
+				.bind(hash)
+				.bind(created_at)
+				.execute(&mut *transaction)
+				.await?;
+		}
+		transaction.commit().await?;
+		Ok(())
+	}
+
+	pub async fn has_unused_recovery_code(&self, user_id: &str, hash: &[u8]) -> Result<bool, sqlx::Error> {
+		let found = sqlx::query_scalar::<_, i64>(
+			"SELECT COUNT(*) FROM recovery_codes WHERE user_id = $1 AND code_hash = $2 AND used_at IS NULL",
+		)
+		.bind(user_id)
+		.bind(hash)
+		.fetch_one(&self.pool)
+		.await?;
+		Ok(found > 0)
+	}
+
+	pub async fn consume_recovery_code(&self, user_id: &str, hash: &[u8], used_at: i64) -> Result<(), sqlx::Error> {
+		sqlx::query("UPDATE recovery_codes SET used_at = $1 WHERE user_id = $2 AND code_hash = $3")
+			.bind(used_at)
+			.bind(user_id)
+			.bind(hash)
+			.execute(&self.pool)
+			.await?;
+		Ok(())
+	}
+
 	pub async fn create_api_key(&self, key: &ApiKeyRow) -> Result<(), sqlx::Error> {
 		sqlx::query(
 			"INSERT INTO api_keys (id, user_id, name, prefix, secret_hash, scopes, created_at, expires_at)
