@@ -9,8 +9,30 @@ cargo run -p moraine-publish -- keygen --key definitions.key
 cargo run -p moraine-publish -- define --key definitions.key --dir definitions/minecraft --out data/definitions
 ```
 
-The server loads signed objects from `<data-dir>/definitions`, or you can POST
-them to `/v1/games`, `/v1/loaders`, and `/v1/runtimes`.
+That writes signed objects to `data/definitions`, which the server loads on
+startup. To import them into a **running** instance in one command, point the
+same command at a home:
+
+```sh
+cargo run -p moraine-publish -- define --key definitions.key \
+  --dir definitions/minecraft --out data/definitions \
+  --home https://your-instance
+```
+
+Compiling mints the identities once and writes them to `--out`; importing is a
+separate step that reads that directory, so re-importing is idempotent and never
+changes the IDs:
+
+```sh
+cargo run -p moraine-publish -- define --out data/definitions --home https://your-instance
+```
+
+If you do not want the whole default set, delete the files you do not want from
+`definitions/minecraft/` (for example, drop loaders you will not support) and
+compile again. Files refer to each other by `name`, so the compiler resolves the
+remaining IDs for you; you never paste an ID into a TOML. To attach a new
+version to an identity you already published, set `revision_of` instead of
+minting a new one.
 
 ## Identity is not a name
 

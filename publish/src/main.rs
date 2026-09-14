@@ -72,13 +72,17 @@ enum Command {
 
 	Define {
 		#[arg(long)]
-		key: PathBuf,
+		key: Option<PathBuf>,
 		#[arg(long)]
 		file: Option<PathBuf>,
 		#[arg(long)]
 		dir: Option<PathBuf>,
 		#[arg(long, default_value = "definitions")]
 		out: PathBuf,
+		#[arg(long)]
+		home: Option<String>,
+		#[arg(long, env = "MORAINE_API_KEY")]
+		api_key: Option<String>,
 	},
 
 	DefineGame {
@@ -402,11 +406,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			locale,
 			file,
 		} => commands::changelog(&key, &home, &project, release, &locale, &file).await,
-		Command::Define { key, file, dir, out } => match (file, dir) {
-			(Some(file), None) => definitions::from_file(&key, &file, &out),
-			(None, Some(dir)) => definitions::from_directory(&key, &dir, &out),
-			_ => Err("pass exactly one of --file or --dir".to_string()),
-		},
+		Command::Define {
+			key,
+			file,
+			dir,
+			out,
+			home,
+			api_key,
+		} => {
+			let compiling = file.is_some() || dir.is_some();
+			let compiled = if compiling {
+				let Some(key) = key else {
+					return Err("--key is required to compile a definition".into());
+				};
+				match (file, dir) {
+					(Some(file), None) => definitions::from_file(&key, &file, &out),
+					(None, Some(dir)) => definitions::from_directory(&key, &dir, &out),
+					_ => Err("pass exactly one of --file or --dir".to_string()),
+				}
+			} else {
+				Ok(())
+			};
+			match compiled {
+				Ok(()) => match home {
+					Some(home) => definitions::push(&home, &out, api_key.as_deref()).await.map(|_| ()),
+					None if compiling => Ok(()),
+					None => Err("pass --dir or --file to compile, or --home to import a compiled output".to_string()),
+				},
+				Err(error) => Err(error),
+			}
+		}
 		Command::DefineGame {
 			key,
 			name,

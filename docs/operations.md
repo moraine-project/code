@@ -199,8 +199,23 @@ digest of its signed genesis, so two instances that each compile the same
 authoring file with their own key get *different* IDs, and releases published
 against one will not match the other.
 
-Instances agree by sharing the same signed genesis. One home authors the
-definition and serves it; others pull it and store it under the same ID:
+The simplest path is to compile the bundled `definitions/` set and import it
+into a running instance in one command. Compiling mints the identities once into
+`--out`; importing reads that directory, so running it again is idempotent:
+
+```sh
+moraine-publish define --key definitions.key \
+  --dir definitions/minecraft --out data/definitions \
+  --home https://your-instance
+moraine-publish define --out data/definitions --home https://your-instance
+```
+
+Edit or delete files under `definitions/` first if you do not want the default
+set; the compiler resolves the remaining references by name, so no IDs need to
+be pasted anywhere.
+
+Instances can also agree by sharing the same signed genesis. One home authors
+the definition and serves it; others pull it and store it under the same ID:
 
 ```sh
 moraine-publish sync-definition --home https://your-instance \

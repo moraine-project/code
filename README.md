@@ -344,6 +344,11 @@ cargo run -p moraine-publish -- define --key definitions.key \
   --dir definitions/minecraft --out data/definitions
 ```
 
+Add `--home https://your-instance` to compile and import into a running instance
+in one command. The compile step mints the identities and writes them to
+`--out`; `define --out data/definitions --home …` re-imports the same IDs, so it
+is safe to run again.
+
 `--dir` compiles every file under a directory, signing the whole set with one
 key. Files refer to each other by name, not by ID: `game.toml` sets
 `name = "minecraft"`, and a loader says `game_id = "minecraft"`. The tool
