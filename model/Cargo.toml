@@ -7,6 +7,6 @@ rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-moraine-codec = { path = "../codec" }
-moraine-crypto = { path = "../crypto" }
+moraine-codec = { version = "0.1.0", path = "../codec" }
+moraine-crypto = { version = "0.1.0", path = "../crypto" }
 serde.workspace = true

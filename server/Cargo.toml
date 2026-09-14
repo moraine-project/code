@@ -16,9 +16,9 @@ axum = "0.8"
 futures-util = { version = "0.3", default-features = false }
 getrandom = "0.4"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "webpki-roots"] }
-moraine-codec = { path = "../codec" }
-moraine-crypto = { path = "../crypto" }
-moraine-model = { path = "../model" }
+moraine-codec = { version = "0.1.0", path = "../codec" }
+moraine-crypto = { version = "0.1.0", path = "../crypto" }
+moraine-model = { version = "0.1.0", path = "../model" }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower-http = { version = "0.7", features = ["cors", "fs", "set-header", "timeout"] }
@@ -26,7 +26,7 @@ bytes = "1"
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-object_store = { version = "0.13", default-features = false, features = ["aws"] }
+object_store = { version = "0.14", default-features = false, features = ["aws"] }
 sha2.workspace = true
 zip = { version = "8", default-features = false, features = ["deflate"] }
 hex.workspace = true

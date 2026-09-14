@@ -512,6 +512,9 @@ pnpm install
 pnpm dev
 ```
 
+CI runs the test suites, the vector corpus through both checkers, and
+`cargo deny check` plus `cargo audit` over the lockfile.
+
 Building the site needs `wasm-pack` and the `wasm32-unknown-unknown` target;
 `pnpm build:wasm` compiles the signer, and the build scripts run it first.
 `pnpm build:static` produces a static site. `pnpm build:cloudflare`

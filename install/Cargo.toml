@@ -7,4 +7,4 @@ rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-moraine-model = { path = "../model" }
+moraine-model = { version = "0.1.0", path = "../model" }

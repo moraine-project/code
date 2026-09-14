@@ -78,6 +78,7 @@ Every setting has a `MORAINE_*` environment variable and the same flag.
 | `MORAINE_S3_SECRET_ACCESS_KEY` | unset | S3 credential |
 | `MORAINE_S3_PREFIX` | `moraine` | Key prefix inside the bucket |
 | `MORAINE_PUBLISHING` | `review` | `review` gates new projects behind approval, `open` does not |
+| `MORAINE_REGISTRATION` | `closed` | `open` lets anyone create an account; `closed` only lets the operator add accounts |
 | `MORAINE_OPERATOR_EMAIL` | unset | Used by `bootstrap` |
 | `MORAINE_TLS_EXTRA_ROOTS` | unset | PEM bundle trusted in addition to the system roots, for federation |
 
@@ -88,6 +89,9 @@ Retention and limits:
 | `MORAINE_MAX_ARTIFACT_BYTES` | 512 MiB | Largest single artifact |
 | `MORAINE_MAX_UPLOAD_BYTES_PER_ACCOUNT` | 5 GiB | Per-account stored bytes; `0` disables |
 | `MORAINE_MAX_PROJECTS` | 10000 | Projects on this instance; `0` disables |
+| `MORAINE_MAX_DEFINITIONS` | 1000 | Game, loader, and runtime definitions this instance holds; `0` disables |
+| `MORAINE_MAX_SYNC_ENTRIES` | 10000 | Loader releases one federation sync will follow |
+| `MORAINE_METRICS_TOKEN` | unset | When set, `/metrics` requires `Authorization: Bearer <token>` |
 | `MORAINE_MAX_FEED_PAGE_ENTRIES` | 100 | Feed page size |
 | `MORAINE_MAX_FEED_SCAN_PAGES` | 50 | Pages a feed read will walk |
 | `MORAINE_MAX_SYNC_PAGES` | 200 | Pages one federation sync will walk |
@@ -104,6 +108,19 @@ Retention and limits:
 Set a limit to `0` to turn that limit off. An operator running a public
 instance wants the defaults; an operator running one for a small group may
 lower them.
+
+## Accounts and roles
+
+The first account is the **operator**, created with `bootstrap`; it holds every
+scope and can review submissions, manage federation, set directory policy, and
+pin provider and mirror keys. Ordinary accounts are **members**: they can
+publish, upload artifacts, submit releases, and mint API keys, but they cannot
+reach the operator routes.
+
+Registration is **closed by default**. Set `MORAINE_REGISTRATION=open` to let
+people create their own accounts, or keep it closed and create accounts for the
+people you trust. Either way, only the operator can grant operator-level
+access.
 
 ## Storage
 

@@ -11,9 +11,9 @@ name = "moraine-verify"
 path = "src/main.rs"
 
 [dependencies]
-moraine-codec = { path = "../codec" }
-moraine-crypto = { path = "../crypto" }
-moraine-model = { path = "../model" }
+moraine-codec = { version = "0.1.0", path = "../codec" }
+moraine-crypto = { version = "0.1.0", path = "../crypto" }
+moraine-model = { version = "0.1.0", path = "../model" }
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

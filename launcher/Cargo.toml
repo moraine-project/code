@@ -11,12 +11,12 @@ name = "moraine-launcher"
 path = "src/main.rs"
 
 [dependencies]
-moraine-codec = { path = "../codec" }
-moraine-crypto = { path = "../crypto" }
-moraine-install = { path = "../install" }
-moraine-metadata = { path = "../metadata" }
-moraine-model = { path = "../model" }
-moraine-resolver = { path = "../resolver" }
+moraine-codec = { version = "0.1.0", path = "../codec" }
+moraine-crypto = { version = "0.1.0", path = "../crypto" }
+moraine-install = { version = "0.1.0", path = "../install" }
+moraine-metadata = { version = "0.1.0", path = "../metadata" }
+moraine-model = { version = "0.1.0", path = "../model" }
+moraine-resolver = { version = "0.1.0", path = "../resolver" }
 clap.workspace = true
 hex.workspace = true
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "webpki-roots", "blocking"] }

@@ -21,7 +21,12 @@ cargo clippy --all-features --all-targets
 cargo test --workspace
 cargo run -q -p moraine-verify -- vectors
 python3 interop/verify_vectors.py
+cargo deny check
 ```
+
+`cargo deny check` runs the advisory, license, duplicate, and source checks
+against the lockfile. Install it once with `cargo install cargo-deny --locked`.
+CI runs it, and `cargo audit`, on every push.
 
 The server is tested against SQLite by default. To run the same suite on
 Postgres, start one and point the tests at it:
