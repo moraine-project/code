@@ -127,6 +127,11 @@ const MIGRATIONS: &[Migration] = &[
 		sqlite: include_str!("../../migrations/sqlite/0021_recovery_codes.sql"),
 		postgres: include_str!("../../migrations/postgres/0021_recovery_codes.sql"),
 	},
+	Migration {
+		name: "0022_email_verification",
+		sqlite: include_str!("../../migrations/sqlite/0022_email_verification.sql"),
+		postgres: include_str!("../../migrations/postgres/0022_email_verification.sql"),
+	},
 ];
 
 pub(super) async fn run_migrations(pool: &AnyPool, engine: Engine) -> Result<usize, sqlx::Error> {

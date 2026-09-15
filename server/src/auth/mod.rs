@@ -23,6 +23,7 @@ const ABSOLUTE_SECONDS: i64 = 90 * 24 * 3600;
 const API_KEY_DEFAULT_EXPIRY: i64 = 90 * 24 * 3600;
 const MIN_PASSWORD_LENGTH: usize = 12;
 const RECOVERY_CODE_COUNT: usize = 8;
+const VERIFICATION_SECONDS: i64 = 24 * 3600;
 const LOGIN_MAX_ATTEMPTS: u32 = 10;
 const LOGIN_WINDOW_SECONDS: i64 = 15 * 60;
 
@@ -99,13 +100,18 @@ pub fn routes() -> Router<AppState> {
 	Router::new()
 		.route("/v1/auth/register", post(register))
 		.route("/v1/auth/session", post(login).delete(logout))
-		.route("/v1/auth/me", get(me))
+		.route("/v1/auth/me", get(me).delete(delete_self))
 		.route("/v1/auth/keys", get(list_keys).post(create_key))
 		.route("/v1/auth/keys/{id}", delete(revoke_key))
 		.route("/v1/auth/password", post(change_password))
 		.route("/v1/auth/recovery-codes", post(issue_recovery_codes))
 		.route("/v1/auth/recover", post(recover))
+		.route("/v1/auth/users", get(list_accounts).post(create_account))
+		.route("/v1/auth/verify-email", post(verify_email))
+		.route("/v1/auth/verify-email/resend", post(resend_verification))
 		.route("/v1/auth/users/reset-password", post(reset_password))
+		.route("/v1/auth/users/{id}", delete(delete_account))
+		.route("/v1/auth/export", get(export_account))
 }
 
 pub struct AuthenticatedUser {
@@ -224,6 +230,7 @@ struct Credentials {
 #[derive(Serialize)]
 struct RegisterReceipt {
 	user_id: String,
+	verified: bool,
 }
 
 #[derive(Serialize)]
@@ -260,7 +267,90 @@ async fn register(State(state): State<AppState>, Json(credentials): Json<Credent
 	{
 		return storage_error(error);
 	}
-	(StatusCode::CREATED, Json(RegisterReceipt { user_id })).into_response()
+	let verified = if state.capability.email_verification {
+		if let Err(error) = send_verification(&state, &user_id, &email).await {
+			tracing::error!(%error, "the verification email could not be sent");
+		}
+		false
+	} else {
+		let _ = state.metadata.set_user_verified(&user_id, now()).await;
+		true
+	};
+	(StatusCode::CREATED, Json(RegisterReceipt { user_id, verified })).into_response()
+}
+
+async fn send_verification(state: &AppState, user_id: &str, email: &str) -> Result<(), String> {
+	let Some(mailer) = state.capability.mailer.as_ref() else {
+		return Ok(());
+	};
+	let Some(base) = state.capability.public_url.as_deref() else {
+		return Err("MORAINE_PUBLIC_URL is not set, so the verification link cannot be built".to_string());
+	};
+	let token = random_token();
+	let expires = now() + VERIFICATION_SECONDS;
+	state
+		.metadata
+		.replace_email_verification(user_id, &token_hash(&token), now(), expires)
+		.await
+		.map_err(|error| error.to_string())?;
+	let link = format!("{base}/account?verify={token}");
+	mailer
+		.send(
+			email,
+			"Verify your Moraine account",
+			format!("Open this link to verify your email:\n\n{link}\n\nThe link expires in 24 hours.\n"),
+		)
+		.await
+}
+
+#[derive(Deserialize)]
+struct VerifyToken {
+	token: String,
+}
+
+async fn verify_email(State(state): State<AppState>, Json(request): Json<VerifyToken>) -> Response {
+	let Some(user_id) = (match state
+		.metadata
+		.consume_email_verification(&token_hash(request.token.trim()), now())
+		.await
+	{
+		Ok(user_id) => user_id,
+		Err(error) => return storage_error(error),
+	}) else {
+		return (StatusCode::UNAUTHORIZED, "invalid or expired verification link").into_response();
+	};
+	match state.metadata.set_user_verified(&user_id, now()).await {
+		Ok(()) => StatusCode::NO_CONTENT.into_response(),
+		Err(error) => storage_error(error),
+	}
+}
+
+async fn resend_verification(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
+	if user.session_id.is_none() {
+		return (StatusCode::FORBIDDEN, "resend from a signed-in session").into_response();
+	}
+	let record = match state.metadata.user_by_id(&user.user_id).await {
+		Ok(Some(record)) => record,
+		Ok(None) => return (StatusCode::UNAUTHORIZED, "account no longer exists").into_response(),
+		Err(error) => return storage_error(error),
+	};
+	if record.verified_at.is_some() || !state.capability.email_verification {
+		return StatusCode::NO_CONTENT.into_response();
+	}
+	match send_verification(&state, &record.id, &record.email).await {
+		Ok(()) => StatusCode::NO_CONTENT.into_response(),
+		Err(error) => (StatusCode::SERVICE_UNAVAILABLE, error).into_response(),
+	}
+}
+
+pub(crate) async fn verified_or_error(state: &AppState, user_id: &str) -> Option<Response> {
+	if !state.capability.require_verified_email {
+		return None;
+	}
+	match state.metadata.user_verified(user_id).await {
+		Ok(true) => None,
+		_ => Some((StatusCode::FORBIDDEN, "verify your email before publishing").into_response()),
+	}
 }
 
 async fn login(State(state): State<AppState>, client: ClientIp, Json(credentials): Json<Credentials>) -> Response {
@@ -453,11 +543,198 @@ async fn reset_password(
 	Json(serde_json::json!({ "password": temporary })).into_response()
 }
 
+fn account_json(account: &crate::auth::accounts::AccountRow) -> serde_json::Value {
+	serde_json::json!({
+		"user_id": account.id,
+		"email": account.email,
+		"role": account.role,
+		"created_at": account.created_at,
+		"verified": account.verified_at.is_some(),
+	})
+}
+
+async fn list_accounts(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
+	if !user.allows("directory:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
+	match state.metadata.list_users(500).await {
+		Ok(accounts) => {
+			let view = accounts.iter().map(account_json).collect::<Vec<_>>();
+			Json(view).into_response()
+		}
+		Err(error) => storage_error(error),
+	}
+}
+
+#[derive(Deserialize)]
+struct NewAccount {
+	email: String,
+	#[serde(default)]
+	role: Option<String>,
+}
+
+async fn create_account(
+	State(state): State<AppState>,
+	user: AuthenticatedUser,
+	Json(request): Json<NewAccount>,
+) -> Response {
+	if !user.allows("directory:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
+	let email = request.email.trim().to_lowercase();
+	if !email.contains('@') {
+		return (StatusCode::BAD_REQUEST, "invalid email").into_response();
+	}
+	let role = request.role.as_deref().unwrap_or("member");
+	if !matches!(role, "member" | OPERATOR_ROLE) {
+		return (StatusCode::BAD_REQUEST, "role must be member or operator").into_response();
+	}
+	match state.metadata.user_by_email(&email).await {
+		Ok(Some(_)) => return (StatusCode::CONFLICT, "email already registered").into_response(),
+		Ok(None) => {}
+		Err(error) => return storage_error(error),
+	}
+	let temporary = random_token();
+	let Ok(password_hash) = password::hash_password(&temporary) else {
+		return (StatusCode::INTERNAL_SERVER_ERROR, "password hashing failed").into_response();
+	};
+	let user_id = new_id();
+	if let Err(error) = state
+		.metadata
+		.create_user(&user_id, &email, &password_hash, role, now())
+		.await
+	{
+		return storage_error(error);
+	}
+	let _ = state.metadata.set_user_verified(&user_id, now()).await;
+	(
+		StatusCode::CREATED,
+		Json(serde_json::json!({ "user_id": user_id, "password": temporary })),
+	)
+		.into_response()
+}
+
+async fn delete_account(State(state): State<AppState>, user: AuthenticatedUser, Path(id): Path<String>) -> Response {
+	if !user.allows("directory:manage") {
+		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
+	}
+	match state.metadata.last_owner_orgs(&id).await {
+		Ok(orgs) if !orgs.is_empty() => {
+			return (
+				StatusCode::CONFLICT,
+				format!("the account is the last owner of: {}", orgs.join(", ")),
+			)
+				.into_response();
+		}
+		Ok(_) => {}
+		Err(error) => return storage_error(error),
+	}
+	match state.metadata.delete_user(&id).await {
+		Ok(()) => StatusCode::NO_CONTENT.into_response(),
+		Err(error) => storage_error(error),
+	}
+}
+
+async fn delete_self(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
+	if user.session_id.is_none() {
+		return (StatusCode::FORBIDDEN, "delete an account from a signed-in session").into_response();
+	}
+	match state.metadata.last_owner_orgs(&user.user_id).await {
+		Ok(orgs) if !orgs.is_empty() => {
+			return (
+				StatusCode::CONFLICT,
+				format!("you are the last owner of: {}; transfer them first", orgs.join(", ")),
+			)
+				.into_response();
+		}
+		Ok(_) => {}
+		Err(error) => return storage_error(error),
+	}
+	match state.metadata.delete_user(&user.user_id).await {
+		Ok(()) => StatusCode::NO_CONTENT.into_response(),
+		Err(error) => storage_error(error),
+	}
+}
+
+async fn export_account(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
+	if user.session_id.is_none() {
+		return (StatusCode::FORBIDDEN, "export an account from a signed-in session").into_response();
+	}
+	let account = match state.metadata.user_by_id(&user.user_id).await {
+		Ok(Some(account)) => account,
+		Ok(None) => return (StatusCode::UNAUTHORIZED, "account no longer exists").into_response(),
+		Err(error) => return storage_error(error),
+	};
+	let orgs = state
+		.metadata
+		.orgs_for_user(&user.user_id)
+		.await
+		.map(|orgs| {
+			orgs.into_iter()
+				.map(|org| serde_json::json!({ "handle": org.handle, "role": org.role }))
+				.collect::<Vec<_>>()
+		})
+		.unwrap_or_default();
+	let keys = state
+		.metadata
+		.api_keys_for_user(&user.user_id)
+		.await
+		.map(|keys| {
+			keys.into_iter()
+				.map(|key| {
+					serde_json::json!({
+						"name": key.name,
+						"prefix": key.prefix,
+						"scopes": key.scopes,
+						"created_at": key.created_at,
+						"expires_at": key.expires_at,
+					})
+				})
+				.collect::<Vec<_>>()
+		})
+		.unwrap_or_default();
+	let follows = state.metadata.follows(&user.user_id).await.unwrap_or_default();
+	let submissions = state
+		.metadata
+		.submissions_by_submitter(&user.user_id, 500, None)
+		.await
+		.map(|rows| {
+			rows.into_iter()
+				.map(|row| {
+					serde_json::json!({
+						"id": row.id,
+						"project_id": row.project_id,
+						"state": row.state,
+						"created_at": row.created_at,
+					})
+				})
+				.collect::<Vec<_>>()
+		})
+		.unwrap_or_default();
+	Json(serde_json::json!({
+		"account": {
+			"user_id": account.id,
+			"email": account.email,
+			"role": account.role,
+			"created_at": account.created_at,
+			"verified": account.verified_at.is_some(),
+		},
+		"organizations": orgs,
+		"api_keys": keys,
+		"follows": follows,
+		"submissions": submissions,
+	}))
+	.into_response()
+}
+
 #[derive(Serialize)]
 struct AccountView {
 	user_id: String,
 	email: String,
 	via: &'static str,
+	role: String,
+	verified: bool,
+	created_at: i64,
 }
 
 async fn me(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
@@ -466,6 +743,9 @@ async fn me(State(state): State<AppState>, user: AuthenticatedUser) -> Response 
 			user_id: record.id,
 			email: record.email,
 			via: user.via(),
+			role: record.role,
+			verified: record.verified_at.is_some(),
+			created_at: record.created_at,
 		})
 		.into_response(),
 		Ok(None) => (StatusCode::UNAUTHORIZED, "account no longer exists").into_response(),

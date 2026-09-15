@@ -30,6 +30,10 @@ async fn app() -> (Router, tempfile::TempDir) {
 		max_definitions: 1_000,
 		max_sync_entries: 10_000,
 		metrics_token: None,
+		smtp_url: None,
+		mail_from: None,
+		public_url: None,
+		require_verified_email: false,
 		max_mirror_probes_per_cycle: 20,
 		max_mirror_probe_bytes: 268_435_456,
 		max_feed_page_entries: 100,
@@ -480,6 +484,119 @@ async fn an_operator_resets_a_members_password() {
 	let password = json_body(response).await["password"].as_str().expect("password").to_string();
 
 	let _ = sign_in(&application, "forgetful@example.org", &password).await;
+}
+
+#[tokio::test]
+async fn an_operator_creates_and_deletes_an_account() {
+	let (application, _directory) = app().await;
+	let (session, csrf) = sign_in(&application, "ops@example.org", "correct horse battery").await;
+
+	let create = session_request(
+		"POST",
+		"/v1/auth/users",
+		&session,
+		&csrf,
+		serde_json::json!({ "email": "invited@example.org", "role": "member" }),
+	);
+	let response = application.clone().oneshot(create).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+	let body = json_body(response).await;
+	let user_id = body["user_id"].as_str().expect("user id").to_string();
+	let password = body["password"].as_str().expect("password").to_string();
+	let _ = sign_in(&application, "invited@example.org", &password).await;
+
+	let list = axum::http::Request::get("/v1/auth/users")
+		.header(header::COOKIE, format!("{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(list).await.expect("response");
+	let accounts = json_body(response).await;
+	assert!(
+		accounts
+			.as_array()
+			.expect("accounts")
+			.iter()
+			.any(|account| account["email"] == "invited@example.org")
+	);
+
+	let delete = axum::http::Request::builder()
+		.method("DELETE")
+		.uri(format!("/v1/auth/users/{user_id}"))
+		.header(header::COOKIE, format!("{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}"))
+		.header("x-csrf-token", &csrf)
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(delete).await.expect("response");
+	assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+	let gone = json_request(
+		"POST",
+		"/v1/auth/session",
+		serde_json::json!({ "email": "invited@example.org", "password": password }),
+	);
+	let response = application.oneshot(gone).await.expect("response");
+	assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "the account is gone");
+}
+
+#[tokio::test]
+async fn a_member_cannot_manage_accounts() {
+	let (application, _directory) = app().await;
+	let register = json_request(
+		"POST",
+		"/v1/auth/register",
+		serde_json::json!({ "email": "plain@example.org", "password": "correct horse battery" }),
+	);
+	application.clone().oneshot(register).await.expect("register");
+	let (session, csrf) = sign_in(&application, "plain@example.org", "correct horse battery").await;
+	let create = session_request(
+		"POST",
+		"/v1/auth/users",
+		&session,
+		&csrf,
+		serde_json::json!({ "email": "sneaky@example.org" }),
+	);
+	let response = application.oneshot(create).await.expect("response");
+	assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn exports_and_deletes_your_own_account() {
+	let (application, _directory) = app().await;
+	let register = json_request(
+		"POST",
+		"/v1/auth/register",
+		serde_json::json!({ "email": "leaving@example.org", "password": "correct horse battery" }),
+	);
+	application.clone().oneshot(register).await.expect("register");
+	let (session, csrf) = sign_in(&application, "leaving@example.org", "correct horse battery").await;
+
+	let export = axum::http::Request::get("/v1/auth/export")
+		.header(header::COOKIE, format!("{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(export).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let body = json_body(response).await;
+	assert_eq!(body["account"]["email"], "leaving@example.org");
+	assert!(body["organizations"].is_array());
+
+	let delete = axum::http::Request::builder()
+		.method("DELETE")
+		.uri("/v1/auth/me")
+		.header(header::COOKIE, format!("{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}"))
+		.header("x-csrf-token", &csrf)
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(delete).await.expect("response");
+	assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+	let gone = json_request(
+		"POST",
+		"/v1/auth/session",
+		serde_json::json!({ "email": "leaving@example.org", "password": "correct horse battery" }),
+	);
+	let response = application.oneshot(gone).await.expect("response");
+	assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]

@@ -104,6 +104,18 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_METRICS_TOKEN")]
 	pub metrics_token: Option<String>,
 
+	#[arg(long, env = "MORAINE_SMTP_URL")]
+	pub smtp_url: Option<String>,
+
+	#[arg(long, env = "MORAINE_MAIL_FROM")]
+	pub mail_from: Option<String>,
+
+	#[arg(long, env = "MORAINE_PUBLIC_URL")]
+	pub public_url: Option<String>,
+
+	#[arg(long, env = "MORAINE_REQUIRE_VERIFIED_EMAIL", default_value_t = false)]
+	pub require_verified_email: bool,
+
 	#[arg(long, env = "MORAINE_MAX_MIRROR_PROBES_PER_CYCLE", default_value_t = 20)]
 	pub max_mirror_probes_per_cycle: u32,
 
@@ -234,6 +246,10 @@ mod tests {
 			max_definitions: 1_000,
 			max_sync_entries: 10_000,
 			metrics_token: None,
+			smtp_url: None,
+			mail_from: None,
+			public_url: None,
+			require_verified_email: false,
 			max_mirror_probes_per_cycle: 20,
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,

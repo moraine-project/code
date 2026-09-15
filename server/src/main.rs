@@ -4,6 +4,7 @@ mod capability;
 mod config;
 mod db;
 mod federation;
+mod mail;
 mod ops;
 mod registry;
 mod routes;

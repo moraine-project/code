@@ -7,6 +7,17 @@ pub struct UserRow {
 	pub id: String,
 	pub email: String,
 	pub password_hash: String,
+	pub role: String,
+	pub created_at: i64,
+	pub verified_at: Option<i64>,
+}
+
+pub struct AccountRow {
+	pub id: String,
+	pub email: String,
+	pub role: String,
+	pub created_at: i64,
+	pub verified_at: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,7 +72,7 @@ impl MetadataStore {
 
 	pub async fn user_by_email(&self, email: &str) -> Result<Option<UserRow>, sqlx::Error> {
 		let row = sqlx::query(
-			"SELECT u.id, u.email, c.secret_hash
+			"SELECT u.id, u.email, u.role, u.created_at, u.verified_at, c.secret_hash
 			 FROM users u JOIN user_credentials c ON c.user_id = u.id WHERE u.email = $1",
 		)
 		.bind(email)
@@ -71,12 +82,15 @@ impl MetadataStore {
 			id: row.get("id"),
 			email: row.get("email"),
 			password_hash: row.get("secret_hash"),
+			role: row.get("role"),
+			created_at: row.get("created_at"),
+			verified_at: row.get("verified_at"),
 		}))
 	}
 
 	pub async fn user_by_id(&self, id: &str) -> Result<Option<UserRow>, sqlx::Error> {
 		let row = sqlx::query(
-			"SELECT u.id, u.email, c.secret_hash
+			"SELECT u.id, u.email, u.role, u.created_at, u.verified_at, c.secret_hash
 			 FROM users u JOIN user_credentials c ON c.user_id = u.id WHERE u.id = $1",
 		)
 		.bind(id)
@@ -86,7 +100,119 @@ impl MetadataStore {
 			id: row.get("id"),
 			email: row.get("email"),
 			password_hash: row.get("secret_hash"),
+			role: row.get("role"),
+			created_at: row.get("created_at"),
+			verified_at: row.get("verified_at"),
 		}))
+	}
+
+	pub async fn user_verified(&self, id: &str) -> Result<bool, sqlx::Error> {
+		let verified = sqlx::query_scalar::<_, Option<i64>>("SELECT verified_at FROM users WHERE id = $1")
+			.bind(id)
+			.fetch_optional(&self.pool)
+			.await?;
+		Ok(matches!(verified, Some(Some(_))))
+	}
+
+	pub async fn list_users(&self, limit: i64) -> Result<Vec<AccountRow>, sqlx::Error> {
+		let rows =
+			sqlx::query("SELECT id, email, role, created_at, verified_at FROM users ORDER BY created_at, id LIMIT $1")
+				.bind(limit)
+				.fetch_all(&self.pool)
+				.await?;
+		Ok(rows
+			.into_iter()
+			.map(|row| AccountRow {
+				id: row.get("id"),
+				email: row.get("email"),
+				role: row.get("role"),
+				created_at: row.get("created_at"),
+				verified_at: row.get("verified_at"),
+			})
+			.collect())
+	}
+
+	pub async fn set_user_verified(&self, user_id: &str, verified_at: i64) -> Result<(), sqlx::Error> {
+		sqlx::query("UPDATE users SET verified_at = $1 WHERE id = $2")
+			.bind(verified_at)
+			.bind(user_id)
+			.execute(&self.pool)
+			.await?;
+		Ok(())
+	}
+
+	pub async fn last_owner_orgs(&self, user_id: &str) -> Result<Vec<String>, sqlx::Error> {
+		let rows = sqlx::query(
+			"SELECT o.handle FROM org_members m JOIN orgs o ON o.id = m.org_id
+			 WHERE m.user_id = $1 AND m.role = 'owner'
+			 AND (SELECT COUNT(*) FROM org_members o2 WHERE o2.org_id = m.org_id AND o2.role = 'owner') <= 1",
+		)
+		.bind(user_id)
+		.fetch_all(&self.pool)
+		.await?;
+		Ok(rows.into_iter().map(|row| row.get("handle")).collect())
+	}
+
+	pub async fn delete_user(&self, user_id: &str) -> Result<(), sqlx::Error> {
+		let mut transaction = self.pool.begin().await?;
+		for statement in [
+			"DELETE FROM recovery_codes WHERE user_id = $1",
+			"DELETE FROM email_verifications WHERE user_id = $1",
+			"DELETE FROM api_keys WHERE user_id = $1",
+			"DELETE FROM user_sessions WHERE user_id = $1",
+			"DELETE FROM follows WHERE user_id = $1",
+			"DELETE FROM notifications WHERE user_id = $1",
+			"DELETE FROM org_members WHERE user_id = $1",
+			"DELETE FROM blob_uploads WHERE user_id = $1",
+			"DELETE FROM user_credentials WHERE user_id = $1",
+			"DELETE FROM users WHERE id = $1",
+		] {
+			sqlx::query(statement).bind(user_id).execute(&mut *transaction).await?;
+		}
+		transaction.commit().await?;
+		Ok(())
+	}
+
+	pub async fn replace_email_verification(
+		&self,
+		user_id: &str,
+		token_hash: &[u8],
+		created_at: i64,
+		expires_at: i64,
+	) -> Result<(), sqlx::Error> {
+		let mut transaction = self.pool.begin().await?;
+		sqlx::query("DELETE FROM email_verifications WHERE user_id = $1")
+			.bind(user_id)
+			.execute(&mut *transaction)
+			.await?;
+		sqlx::query("INSERT INTO email_verifications (user_id, token_hash, created_at, expires_at) VALUES ($1, $2, $3, $4)")
+			.bind(user_id)
+			.bind(token_hash)
+			.bind(created_at)
+			.bind(expires_at)
+			.execute(&mut *transaction)
+			.await?;
+		transaction.commit().await?;
+		Ok(())
+	}
+
+	pub async fn consume_email_verification(&self, token_hash: &[u8], now: i64) -> Result<Option<String>, sqlx::Error> {
+		let mut transaction = self.pool.begin().await?;
+		let user_id = sqlx::query_scalar::<_, String>(
+			"SELECT user_id FROM email_verifications WHERE token_hash = $1 AND expires_at > $2",
+		)
+		.bind(token_hash)
+		.bind(now)
+		.fetch_optional(&mut *transaction)
+		.await?;
+		if let Some(user_id) = &user_id {
+			sqlx::query("DELETE FROM email_verifications WHERE user_id = $1")
+				.bind(user_id)
+				.execute(&mut *transaction)
+				.await?;
+		}
+		transaction.commit().await?;
+		Ok(user_id)
 	}
 
 	pub async fn user_role(&self, id: &str) -> Result<Option<String>, sqlx::Error> {

@@ -152,6 +152,9 @@ async fn blob_upload(State(state): State<AppState>, user: AuthenticatedUser, bod
 	if let Some(message) = crate::registry::sanctions::publishing_block(&state, &user.user_id).await {
 		return (StatusCode::FORBIDDEN, message).into_response();
 	}
+	if let Some(response) = crate::auth::verified_or_error(&state, &user.user_id).await {
+		return response;
+	}
 	let locks = UPLOAD_LOCKS.get_or_init(crate::blob::UploadLocks::new);
 	let account_lock = locks.get(&user.user_id);
 	let _guard = account_lock.lock().await;

@@ -20,6 +20,7 @@ pub struct Capability {
 	pub server_role: Vec<String>,
 	pub publishing: String,
 	pub registration: String,
+	pub email_verification: bool,
 	pub webhook_public_key: Option<String>,
 	#[serde(skip)]
 	pub max_projects: u64,
@@ -29,6 +30,12 @@ pub struct Capability {
 	pub max_sync_entries: u32,
 	#[serde(skip)]
 	pub metrics_token: Option<String>,
+	#[serde(skip)]
+	pub require_verified_email: bool,
+	#[serde(skip)]
+	pub public_url: Option<String>,
+	#[serde(skip)]
+	pub mailer: Option<crate::mail::Mailer>,
 	#[serde(skip)]
 	pub max_mirror_probes_per_cycle: u32,
 	#[serde(skip)]
@@ -60,6 +67,17 @@ impl Capability {
 	}
 
 	pub fn discover(config: &Config) -> Self {
+		let mailer = match (config.smtp_url.as_deref(), config.mail_from.as_deref()) {
+			(Some(url), Some(from)) => match crate::mail::Mailer::new(url, from) {
+				Ok(mailer) => Some(mailer),
+				Err(error) => {
+					tracing::error!(%error, "the SMTP settings are invalid; email verification is off");
+					None
+				}
+			},
+			_ => None,
+		};
+		let email_verification = mailer.is_some();
 		let webhook_signer = load_or_create_webhook_key(config);
 		let webhook_public_key = webhook_signer.as_ref().map(|key| hex::encode(key.verifying_key().to_bytes()));
 		Self {
@@ -76,6 +94,9 @@ impl Capability {
 			max_definitions: config.max_definitions,
 			max_sync_entries: config.max_sync_entries,
 			metrics_token: config.metrics_token.clone(),
+			require_verified_email: config.require_verified_email,
+			public_url: config.public_url.clone().map(|url| url.trim_end_matches('/').to_string()),
+			mailer,
 			max_mirror_probes_per_cycle: config.max_mirror_probes_per_cycle,
 			max_mirror_probe_bytes: config.max_mirror_probe_bytes,
 			maintenance_interval_seconds: config.maintenance_interval_seconds,
@@ -84,6 +105,7 @@ impl Capability {
 			server_role: vec!["home".to_string(), "directory".to_string()],
 			publishing: config.publishing.as_str().to_string(),
 			registration: config.registration.as_str().to_string(),
+			email_verification,
 			webhook_public_key,
 			allow_insecure_federation_local: config.allow_insecure_federation_local,
 			registration_open: config.registration.is_open(),
