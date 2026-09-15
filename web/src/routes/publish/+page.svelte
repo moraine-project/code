@@ -379,7 +379,7 @@
 				<div class="max-w-xl">
 					<SelectField
 						label="Game"
-						value={gameId}
+						bind:value={gameId}
 						options={gameOptions}
 						placeholder="Choose a game"
 						onchange={(value) => {
@@ -398,7 +398,7 @@
 							<div class="grid gap-3 sm:grid-cols-2">
 								<MultiSelectField
 									label="Categories"
-									value={selectedCategories}
+									bind:value={selectedCategories}
 									options={(info.payload.categories ?? []).map((category) => ({
 										value: category.id,
 										label: category.label,
@@ -407,7 +407,7 @@
 								/>
 								<MultiSelectField
 									label="Tags"
-									value={selectedTags}
+									bind:value={selectedTags}
 									options={(info.payload.tags ?? []).map((tag) => ({
 										value: tag.id,
 										label: tag.label,
@@ -465,7 +465,7 @@
 					<div class="grid gap-3 sm:grid-cols-2">
 						<MultiSelectField
 							label="Game versions"
-							value={gameVersions}
+							bind:value={gameVersions}
 							options={(info.payload?.version_catalog ?? []).map((value) => ({
 								value,
 								label: value,
@@ -477,7 +477,7 @@
 						/>
 						<SelectField
 							label="Loader"
-							value={loaderId}
+							bind:value={loaderId}
 							options={info.loaders.map((loader) => ({
 								value: loader.id,
 								label: loader.display_name ?? loader.id,

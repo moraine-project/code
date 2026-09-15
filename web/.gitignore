@@ -27,3 +27,7 @@ vite.config.ts.timestamp-*
 
 # Built by wasm-pack
 src/lib/signer/pkg
+
+# Playwright
+/test-results
+/playwright-report

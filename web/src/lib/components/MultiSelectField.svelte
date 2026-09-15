@@ -34,6 +34,7 @@
 	>
 		<Select.Trigger
 			class="input flex h-auto min-h-10 w-full items-center justify-between gap-2 py-1.5 text-left data-[disabled]:opacity-50"
+			aria-label={label}
 		>
 			<Select.Value>
 				{#snippet child({ selection, placeholder: empty })}

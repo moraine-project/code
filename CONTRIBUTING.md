@@ -52,6 +52,15 @@ pnpm fmt && pnpm lint && pnpm check && pnpm test
 pnpm build:static
 ```
 
+End-to-end tests drive a real browser against a real server. They build the
+site, start a server on a temporary data directory with the bundled
+definitions, and exercise sign-in, publishing, and account recovery:
+
+```sh
+pnpm exec playwright install chromium   # once
+pnpm test:e2e
+```
+
 ## The rule for signed formats
 
 If you touch anything that produces or checks signed bytes, three things move

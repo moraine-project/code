@@ -33,12 +33,12 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo +nightly fmt --all -- --check
       - run: cargo clippy --all-features --all-targets -- -D warnings
@@ -72,6 +72,33 @@ jobs:
       - name: The crate builds for the browser target
         run: cargo build -p moraine-wasm --target wasm32-unknown-unknown
 
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: cargo build -p moraine-server -p moraine-publish
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: web
+      - run: pnpm test:e2e
+        working-directory: web
+
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -87,7 +114,7 @@ jobs:
           version: latest
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 12
       - uses: actions/setup-node@v4
         with:
           node-version: 22

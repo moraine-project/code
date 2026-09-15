@@ -18,28 +18,31 @@
 		"lint:fix": "oxlint --fix",
 		"fmt": "oxfmt",
 		"fmt:check": "oxfmt --check",
-		"test": "vitest run"
+		"test": "vitest run",
+		"test:e2e": "playwright test",
+		"pretest:e2e": "PUBLIC_MORAINE_REGISTRY=http://127.0.0.1:${MORAINE_E2E_PORT:-8137} pnpm build:static && cargo build --manifest-path ../Cargo.toml -p moraine-server -p moraine-publish"
 	},
 	"dependencies": {
 		"@lucide/svelte": "^1.47.0",
 		"bits-ui": "^2.19.2",
-		"zod": "^4.0.0"
+		"zod": "^4.6.5"
 	},
 	"devDependencies": {
-		"@sveltejs/adapter-cloudflare": "^7.0.0",
-		"@sveltejs/adapter-static": "^3.0.0",
-		"@sveltejs/kit": "^2.63.0",
-		"@sveltejs/vite-plugin-svelte": "^7.1.2",
-		"@tailwindcss/vite": "^4.0.0",
-		"@types/node": "^26.6.0",
-		"daisyui": "^5.0.0",
+		"@playwright/test": "^1.63.0",
+		"@sveltejs/adapter-cloudflare": "^7.2.9",
+		"@sveltejs/adapter-static": "^3.0.10",
+		"@sveltejs/kit": "^2.70.3",
+		"@sveltejs/vite-plugin-svelte": "^7.3.0",
+		"@tailwindcss/vite": "^4.3.3",
+		"@types/node": "^26.6.2",
+		"daisyui": "^5.7.42",
 		"oxfmt": "^0.68.0",
 		"oxlint": "^1.83.0",
-		"svelte": "^5.56.1",
-		"svelte-check": "^4.6.0",
-		"tailwindcss": "^4.0.0",
+		"svelte": "^5.57.1",
+		"svelte-check": "^4.7.6",
+		"tailwindcss": "^4.3.3",
 		"typescript": "^6.0.3",
-		"vite": "^8.0.16",
+		"vite": "^8.3.0",
 		"vitest": "^5.0.1"
 	}
 }

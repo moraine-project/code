@@ -35,6 +35,7 @@
 	>
 		<Select.Trigger
 			class="input flex w-full items-center justify-between gap-2 text-left data-[disabled]:opacity-50"
+			aria-label={label}
 		>
 			<Select.Value {placeholder} />
 			<ChevronDown size={16} class="shrink-0 opacity-60" />
