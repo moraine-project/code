@@ -593,6 +593,15 @@ export async function publishingMode(fetchFn: Fetcher = fetch): Promise<string> 
 	return typeof document.publishing === 'string' ? document.publishing : 'review';
 }
 
+export async function emailVerificationMode(fetchFn: Fetcher = fetch): Promise<boolean> {
+	const response = await fetchFn('/.well-known/mod-registry');
+	if (!response.ok) {
+		return false;
+	}
+	const document = await response.json();
+	return document.email_verification === true;
+}
+
 export async function registrationMode(fetchFn: Fetcher = fetch): Promise<string> {
 	const response = await fetchFn('/.well-known/mod-registry');
 	if (!response.ok) {

@@ -92,6 +92,10 @@ Retention and limits:
 | `MORAINE_MAX_DEFINITIONS` | 1000 | Game, loader, and runtime definitions this instance holds; `0` disables |
 | `MORAINE_MAX_SYNC_ENTRIES` | 10000 | Loader releases one federation sync will follow |
 | `MORAINE_METRICS_TOKEN` | unset | When set, `/metrics` requires `Authorization: Bearer <token>` |
+| `MORAINE_SMTP_URL` | unset | SMTP URL (`smtp://user:pass@host:587`); enables email verification |
+| `MORAINE_MAIL_FROM` | unset | From address for outgoing mail |
+| `MORAINE_PUBLIC_URL` | unset | Public base URL, used to build the verification link |
+| `MORAINE_REQUIRE_VERIFIED_EMAIL` | `false` | When true, unverified accounts cannot upload or submit |
 | `MORAINE_MAX_FEED_PAGE_ENTRIES` | 100 | Feed page size |
 | `MORAINE_MAX_FEED_SCAN_PAGES` | 50 | Pages a feed read will walk |
 | `MORAINE_MAX_SYNC_PAGES` | 200 | Pages one federation sync will walk |
@@ -108,6 +112,24 @@ Retention and limits:
 Set a limit to `0` to turn that limit off. An operator running a public
 instance wants the defaults; an operator running one for a small group may
 lower them.
+
+## The dashboard
+
+Operators get a dashboard at `/dashboard` with an overview of the instance,
+account management, definition import and federation. The navbar links to it for
+operators; members never see it. Accounts are created there, or through
+`POST /v1/auth/users`, which returns a temporary password shown once. Accounts
+can export their own data and delete themselves from the account page; a
+deletion is refused while the account is the last owner of an organization.
+
+## Email verification (optional)
+
+Email is off unless you configure it. Set `MORAINE_SMTP_URL`, `MORAINE_MAIL_FROM`,
+and `MORAINE_PUBLIC_URL`, and registration starts sending a verification link
+that expires in 24 hours. Without those, accounts are created already verified
+and recovery codes cover password reset, so a self-hosted instance needs no mail
+server at all. With `MORAINE_REQUIRE_VERIFIED_EMAIL=true`, an unverified account
+cannot upload or submit until it follows the link.
 
 ## Accounts and roles
 

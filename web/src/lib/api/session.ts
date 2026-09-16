@@ -5,6 +5,8 @@ export const accountSchema = z.object({
 	user_id: z.string(),
 	email: z.string(),
 	via: z.string(),
+	role: z.string().optional(),
+	verified: z.boolean().optional(),
 });
 
 export type Account = z.infer<typeof accountSchema>;
@@ -155,6 +157,39 @@ export async function recover(email: string, code: string, next: string): Promis
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ email, code, new: next }),
 	});
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+}
+
+export async function exportAccount(): Promise<unknown> {
+	const response = await authorizedFetch('/v1/auth/export');
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+	return response.json();
+}
+
+export async function deleteAccount(): Promise<void> {
+	const response = await authorizedFetch('/v1/auth/me', { method: 'DELETE' });
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+}
+
+export async function verifyEmail(token: string): Promise<void> {
+	const response = await authorizedFetch('/v1/auth/verify-email', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ token }),
+	});
+	if (!response.ok) {
+		throw new Error(await failure(response));
+	}
+}
+
+export async function resendVerification(): Promise<void> {
+	const response = await authorizedFetch('/v1/auth/verify-email/resend', { method: 'POST' });
 	if (!response.ok) {
 		throw new Error(await failure(response));
 	}

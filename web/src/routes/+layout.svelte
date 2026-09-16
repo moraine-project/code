@@ -4,7 +4,8 @@
 	import { onMount } from 'svelte';
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
-	import { logout } from '$lib/api/session';
+	import { emailVerificationMode } from '$lib/api/registry';
+	import { logout, resendVerification } from '$lib/api/session';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Logo from '$lib/components/Logo.svelte';
 	import SearchBar from '$lib/components/SearchBar.svelte';
@@ -12,9 +13,25 @@
 
 	let { children } = $props();
 
+	let verifyEnabled = $state(false);
+	let verifyNotice = $state<string | null>(null);
+
 	onMount(() => {
 		session.refresh();
+		void emailVerificationMode()
+			.then((enabled) => (verifyEnabled = enabled))
+			.catch(() => (verifyEnabled = false));
 	});
+
+	async function resendVerificationEmail() {
+		verifyNotice = null;
+		try {
+			await resendVerification();
+			verifyNotice = 'Sent.';
+		} catch (cause) {
+			verifyNotice = cause instanceof Error ? cause.message : 'could not send';
+		}
+	}
 
 	let userMenu = $state<HTMLDetailsElement | null>(null);
 	let mobileMenu = $state<HTMLDetailsElement | null>(null);
@@ -61,7 +78,6 @@
 		['/submissions', 'Submissions'],
 		['/orgs', 'Organizations'],
 		['/notifications', 'Notifications'],
-		['/settings', 'Settings'],
 	] as const;
 </script>
 
@@ -119,6 +135,9 @@
 							class="menu dropdown-content z-50 mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2 shadow-xl"
 						>
 							<li class="menu-title truncate">{session.user.email}</li>
+							{#if session.user.role === 'operator'}
+								<li><a href="/dashboard" onclick={closeMenus}>Dashboard</a></li>
+							{/if}
 							{#each accountLinks as [href, label] (href)}
 								<li><a {href} onclick={closeMenus}>{label}</a></li>
 							{/each}
@@ -141,6 +160,9 @@
 							<li><a {href} onclick={closeMenus}>{label}</a></li>
 						{/each}
 						<li><a href="/publish" onclick={closeMenus}>Publish a mod</a></li>
+						{#if session.user?.role === 'operator'}
+							<li><a href="/dashboard" onclick={closeMenus}>Dashboard</a></li>
+						{/if}
 						<li class="menu-title">Your account</li>
 						{#each accountLinks as [href, label] (href)}
 							<li><a {href} onclick={closeMenus}>{label}</a></li>
@@ -154,6 +176,18 @@
 			<SearchBar />
 		</div>
 	</header>
+
+	{#if verifyEnabled && session.user?.verified === false}
+		<div class="border-b border-warning/40 bg-warning/10">
+			<div class="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-3 px-4 py-2 text-sm">
+				<span>Verify your email to publish.</span>
+				<button class="btn btn-xs" onclick={resendVerificationEmail}>Resend</button>
+				{#if verifyNotice}
+					<span class="text-base-content/60">{verifyNotice}</span>
+				{/if}
+			</div>
+		</div>
+	{/if}
 
 	<main id="content" class="mx-auto w-full max-w-7xl flex-1 px-3 py-6 sm:px-4 lg:px-6">
 		{@render children()}
@@ -184,7 +218,7 @@
 				<p class="font-medium text-base-content/60">About</p>
 				<a class="link link-hover w-fit" href="/about">How it works</a>
 				<a class="link link-hover w-fit" href="/security">What checks prove</a>
-				<a class="link link-hover w-fit" href="/settings">Instance settings</a>
+				<a class="link link-hover w-fit" href="/dashboard">Dashboard</a>
 			</nav>
 		</div>
 		<div class="border-t border-base-300">

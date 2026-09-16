@@ -1,13 +1,18 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { KeyRound, ShieldCheck } from '@lucide/svelte';
+	import { page } from '$app/state';
+	import { Database, KeyRound, ShieldCheck, Trash2 } from '@lucide/svelte';
 	import {
 		changePassword,
+		deleteAccount,
+		exportAccount,
 		issueRecoveryCodes,
 		login,
 		logout,
 		recover,
 		register,
+		resendVerification,
+		verifyEmail,
 	} from '$lib/api/session';
 	import { registrationMode } from '$lib/api/registry';
 	import Avatar from '$lib/components/Avatar.svelte';
@@ -36,7 +41,68 @@
 		void registrationMode()
 			.then((mode) => (registrationOpen = mode === 'open'))
 			.catch(() => (registrationOpen = false));
+		const token = page.url.searchParams.get('verify');
+		if (token) {
+			void verifyEmail(token)
+				.then(() => {
+					notice = 'Email verified.';
+					return refresh();
+				})
+				.catch((cause) => {
+					error = cause instanceof Error ? cause.message : 'the verification failed';
+				});
+		}
 	});
+
+	async function exportData() {
+		clear();
+		busy = true;
+		try {
+			const data = await exportAccount();
+			const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+			const url = URL.createObjectURL(blob);
+			const anchor = document.createElement('a');
+			anchor.href = url;
+			anchor.download = 'moraine-account.json';
+			anchor.click();
+			URL.revokeObjectURL(url);
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'the export failed';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function resend() {
+		clear();
+		busy = true;
+		try {
+			await resendVerification();
+			notice = 'Verification email sent.';
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not resend';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function deleteSelf() {
+		if (!confirm('Delete your account? This cannot be undone.')) {
+			return;
+		}
+		clear();
+		busy = true;
+		try {
+			await deleteAccount();
+			session.set(null);
+			user = null;
+			notice = 'Your account was deleted.';
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not delete the account';
+		} finally {
+			busy = false;
+		}
+	}
 
 	async function refresh() {
 		user = await session.refresh();
@@ -150,9 +216,19 @@
 					<Avatar name={user.email} id={user.user_id} size={56} />
 					<div>
 						<h2 class="text-lg font-semibold">{user.email}</h2>
-						<p class="text-sm text-base-content/60">Signed in by {user.via}</p>
+						<p class="text-sm text-base-content/60">
+							Signed in by {user.via}
+							{#if user.verified === false}
+								· <span class="text-warning">email not verified</span>
+							{/if}
+						</p>
 					</div>
 				</div>
+				{#if user.verified === false}
+					<button class="btn btn-sm btn-outline w-fit" onclick={resend} disabled={busy}>
+						Resend the verification email
+					</button>
+				{/if}
 				<div class="flex flex-wrap gap-2">
 					<a class="btn btn-sm" href="/publish">Publish a mod</a>
 					<a class="btn btn-sm btn-outline" href="/submissions">Submissions</a>
@@ -190,6 +266,26 @@
 					</label>
 					<button class="btn btn-sm w-fit" type="submit" disabled={busy}>Change password</button>
 				</form>
+			</div>
+		</section>
+
+		<section class="card card-border max-w-xl bg-base-200">
+			<div class="card-body gap-4">
+				<h2 class="card-title"><Database size={18} /> Your data</h2>
+				<p class="text-sm text-base-content/70">
+					Download everything this instance holds about your account, or delete the account. Signed
+					projects and releases stay, because they are published under your key, not your account.
+				</p>
+				<div class="flex flex-wrap gap-2">
+					<button class="btn btn-sm btn-outline" onclick={exportData} disabled={busy}>
+						<Database size={15} />
+						Export my data
+					</button>
+					<button class="btn btn-sm btn-outline" onclick={deleteSelf} disabled={busy}>
+						<Trash2 size={15} />
+						Delete my account
+					</button>
+				</div>
 			</div>
 		</section>
 

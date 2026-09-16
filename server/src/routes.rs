@@ -58,6 +58,7 @@ pub fn router(state: AppState) -> Router {
 		.merge(crate::federation::webhooks::routes())
 		.merge(crate::registry::definitions::routes())
 		.merge(crate::ops::metrics::routes())
+		.merge(crate::ops::overview::routes())
 		.layer(axum::middleware::from_fn_with_state(
 			state.clone(),
 			crate::ops::metrics::track,

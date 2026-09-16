@@ -99,7 +99,11 @@ requires the current one and signs every other session out. Recovery codes are
 random, single-use, stored only as hashes, and also sign the account's sessions
 out when used. An instance without a mail server needs neither email
 verification nor a reset link to keep accounts recoverable: the user holds the
-codes, and the operator can issue a temporary password as a last resort.
+codes, and the operator can issue a temporary password as a last resort. When
+SMTP is configured, registration additionally sends a single-use, 24-hour
+verification link, and an operator can require it before publishing. Accounts
+can export their data and delete themselves; a deletion is refused while the
+account is the last owner of an organization.
 
 ## Reporting a problem
 
