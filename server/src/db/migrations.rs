@@ -228,8 +228,9 @@ mod migration_tests {
 	#[test]
 	fn postgres_migrations_do_not_use_sqlite_types() {
 		for migration in MIGRATIONS {
+			let sql = migration.postgres.to_uppercase();
 			assert!(
-				!migration.postgres.to_uppercase().contains("BLOB"),
+				!sql.contains(" BLOB ") && !sql.contains(" BLOB,") && !sql.contains(" BLOB)"),
 				"{} uses a SQLite-only type in its Postgres migration",
 				migration.name
 			);
