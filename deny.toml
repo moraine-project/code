@@ -21,6 +21,7 @@ allow = [
 	"CC0-1.0",
 	"Unlicense",
 	"BSL-1.0",
+	"0BSD",
 	"AGPL-3.0-or-later",
 	"CDLA-Permissive-2.0",
 ]

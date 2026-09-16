@@ -225,6 +225,17 @@ mod migration_tests {
 	use super::*;
 	use crate::db::{MetadataStore, sqlite_url};
 
+	#[test]
+	fn postgres_migrations_do_not_use_sqlite_types() {
+		for migration in MIGRATIONS {
+			assert!(
+				!migration.postgres.to_uppercase().contains("BLOB"),
+				"{} uses a SQLite-only type in its Postgres migration",
+				migration.name
+			);
+		}
+	}
+
 	#[tokio::test]
 	async fn migrations_are_pending_until_applied() {
 		let directory = tempfile::tempdir().expect("tempdir");
