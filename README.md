@@ -558,6 +558,17 @@ delegated release key, and offers the key file for download, because a browser
 key that is not backed up is a project you cannot recover. The CLI remains the
 better choice for a root key you care about.
 
+## Running an instance
+
+An operator account is created with `bootstrap`, and the dashboard at
+`/dashboard` shows the instance overview and manages accounts, definitions, and
+federation. Registration is closed by default; accounts are created from the
+dashboard, or by setting `MORAINE_REGISTRATION=open`. Accounts change their own
+password, generate one-time recovery codes, export their data, and delete
+themselves. When `MORAINE_SMTP_URL` and `MORAINE_PUBLIC_URL` are set, new
+accounts also get a verification email; without them, no mail server is needed.
+See `docs/operations.md` for the full set of settings.
+
 ## Operator limits
 
 A few environment variables bound what one instance will do. They are not
