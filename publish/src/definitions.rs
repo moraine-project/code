@@ -371,7 +371,11 @@ fn compile(
 	};
 	if !definition_id.is_empty() {
 		let name = source.name.clone().unwrap_or_else(|| default_name.to_string());
-		names.insert(name, definition_id.clone());
+		if names.insert(name.clone(), definition_id.clone()).is_some() {
+			return Err(format!(
+				"`{name}` is defined more than once in this bundle; give each game, loader, and runtime a unique name"
+			));
+		}
 	}
 	Ok(definition_id)
 }

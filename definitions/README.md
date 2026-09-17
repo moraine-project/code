@@ -102,3 +102,37 @@ moraine-publish lock-definitions --dir definitions/canonical --out definitions/c
 
 Keep that key safe. If it is lost, the set can only be replaced under a new
 identity, which breaks the shared IDs.
+
+## Multiple games, and what an ID is
+
+A lock is a flat list and holds any number of games, runtimes, and loaders. Each
+entry names a `kind` and an `id`; the compiler walks the whole directory, so a
+tree with several games compiles into one set and one lock:
+
+```toml
+[[definition]]
+kind = "game"     # one game
+id = "gd:sha256:…"
+
+[[definition]]
+kind = "game"     # another
+id = "gd:sha256:…"
+
+[[definition]]
+kind = "loader"   # a loader for one of them
+id = "gd:sha256:…"
+```
+
+A loader names the game it targets inside its own signed definition, so the lock
+does not need to express that link, and loader versions and acceptance mappings
+are pulled along with their loader rather than listed.
+
+An ID is a content digest, not a name lookup: `gd:sha256:` plus
+`sha256("GAMEDIST/v1/" + kind + 0x00 + canonical payload bytes)`. The server
+stores every object in a content-addressed table and keeps a small index of
+`id → kind, genesis digest, current digest`. Given an ID it looks up that row,
+loads the genesis, and checks the definition against that genesis root; the
+signed payload names itself (`display_name`, `game_id`). Nothing maps a hash to a
+name globally, which is the point: identity is separate from naming, so a game
+called "Minecraft" on one home is the same identity as another home's only if the
+bytes, and therefore the ID, match.

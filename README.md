@@ -428,20 +428,20 @@ client does not hard-code a game:
 
 ```toml
 kind = "game"
-display_name = "The Sims 4"
+name = "example"
+display_name = "Example Game"
 version_ordering = "opaque"
 loaders_allowed = false
-install_adapter = "sims4/default"
+install_adapter = "example/default"
 ```
 
 `metadata_extractor` names how to read a mod archive's own manifest, and
 `install_adapter` names where its files go. Both are identifiers resolved by
 the consuming tool, not code in signed bytes, so publishing a definition that
-names an adapter does not execute it. Two install adapters ship:
-`minecraft/default` places files under `mods/`, and `sims4/default` places them
-under `Mods/`, the folder The Sims 4 loads from. A launcher reads the name from
-the definition and refuses an adapter this build does not implement rather than
-placing files somewhere plausible-looking.
+names an adapter does not execute it. One adapter ships, `minecraft/default`,
+which places files under `mods/`. A launcher reads the name from the definition
+and refuses an adapter this build does not implement rather than placing files
+somewhere plausible-looking.
 
 A definition is signed by the operator who authors it, so this repository ships
 no pre-signed seed: a shipped definition would need a shipped private key, and

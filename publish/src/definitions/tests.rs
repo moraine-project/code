@@ -16,7 +16,7 @@ fn writes_a_game_genesis_and_definition_pair() {
 		&[],
 		true,
 		None,
-		Some("sims4/default"),
+		Some("minecraft/default"),
 		None,
 		&out,
 	)
@@ -77,7 +77,7 @@ fn the_definition_id_matches_the_genesis_id() {
 		&[],
 		true,
 		None,
-		Some("sims4/default"),
+		Some("minecraft/default"),
 		None,
 		&out,
 	)
@@ -149,15 +149,16 @@ fn reads_the_named_extractor_and_adapter_from_a_file() {
 	let directory = tempfile::tempdir().expect("tempdir");
 	let key_path = directory.path().join("game.key");
 	keyfile::create(&key_path).expect("key");
-	let source = directory.path().join("sims4.toml");
+	let source = directory.path().join("example.toml");
 	std::fs::write(
 		&source,
 		r#"kind = "game"
-display_name = "The Sims 4"
+name = "example"
+display_name = "Example Game"
 version_ordering = "opaque"
 loaders_allowed = false
 metadata_extractor = "  "
-install_adapter = "sims4/default"
+install_adapter = "minecraft/default"
 "#,
 	)
 	.expect("write");
@@ -176,7 +177,7 @@ install_adapter = "sims4/default"
 			.payload_bytes,
 	)
 	.expect("game def");
-	assert_eq!(definition.install_adapter.as_deref(), Some("sims4/default"));
+	assert_eq!(definition.install_adapter.as_deref(), Some("minecraft/default"));
 	assert_eq!(definition.metadata_extractor, None, "a blank value means unset");
 }
 
@@ -620,4 +621,26 @@ fn writes_a_lock_from_a_compiled_set() {
 	assert_eq!(lock.definition[0].kind, "game");
 	assert_eq!(lock.definition[0].home.as_deref(), Some("https://home.example"));
 	assert!(lock.definition[0].id.starts_with("gd:sha256:"));
+}
+
+#[test]
+fn rejects_a_bundle_with_a_duplicate_definition_name() {
+	let directory = tempfile::tempdir().expect("tempdir");
+	let key_path = directory.path().join("bundle.key");
+	keyfile::create(&key_path).expect("key");
+	let source = directory.path().join("bundle");
+	std::fs::create_dir_all(&source).expect("mkdir");
+	std::fs::write(
+		source.join("one.toml"),
+		"kind = \"game\"\nname = \"shared\"\ndisplay_name = \"One\"\nversion_ordering = \"semver\"\n",
+	)
+	.expect("write");
+	std::fs::write(
+		source.join("two.toml"),
+		"kind = \"game\"\nname = \"shared\"\ndisplay_name = \"Two\"\nversion_ordering = \"semver\"\n",
+	)
+	.expect("write");
+
+	let error = from_directory(&key_path, &source, &directory.path().join("out")).expect_err("error");
+	assert!(error.contains("more than once"), "{error}");
 }
