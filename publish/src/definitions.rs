@@ -1,9 +1,11 @@
+pub(crate) mod lock;
 mod push;
 mod signing;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+pub use lock::write_lock;
 use moraine_crypto::ObjectKind;
 use moraine_model::compatibility::Predicate;
 use moraine_model::definition::{

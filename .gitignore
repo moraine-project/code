@@ -2,3 +2,6 @@ local/
 .opencode
 target/
 __pycache__
+
+# The canonical definition set's authority key
+/definitions/canonical.key

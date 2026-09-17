@@ -11,8 +11,8 @@ use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::profile::ProfileRevision;
 use moraine_model::release::{ReleasePayload, Withdrawal};
 use moraine_model::signed::sign_payload;
-use serde::Deserialize;
 
+use crate::definitions::lock::DefinitionLock;
 use crate::home::Home;
 use crate::{artifacts, keyfile};
 
@@ -562,20 +562,6 @@ fn now() -> i64 {
 		.duration_since(std::time::UNIX_EPOCH)
 		.map(|duration| duration.as_secs() as i64)
 		.unwrap_or(0)
-}
-
-#[derive(Deserialize)]
-struct DefinitionLock {
-	#[serde(default)]
-	definition: Vec<LockedDefinition>,
-}
-
-#[derive(Deserialize)]
-struct LockedDefinition {
-	kind: String,
-	id: String,
-	#[serde(default)]
-	home: Option<String>,
 }
 
 fn definition_kind(kind: &str) -> Result<(), String> {

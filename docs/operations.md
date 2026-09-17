@@ -227,8 +227,22 @@ digest of its signed genesis, so two instances that each compile the same
 authoring file with their own key get *different* IDs, and releases published
 against one will not match the other.
 
-The simplest path is to compile the bundled `definitions/` set and import it
-into a running instance in one command. Compiling mints the identities once into
+The repository ships a **canonical signed set** under `definitions/canonical/`,
+with the IDs listed in `definitions/curated.lock`. Importing those objects gives
+an instance the same game and loader IDs as every other instance that took them,
+so federation matches out of the box:
+
+```sh
+moraine-publish define --out definitions/canonical --home https://your-instance
+```
+
+Or pull the set from a home that serves it:
+`moraine-publish sync-definitions --home … --from … --lock definitions/curated.lock`.
+An instance that does not want the default set compiles the TOML itself and gets
+local IDs. See `definitions/README.md`.
+
+The simplest path for a custom set is to compile the bundled `definitions/` set
+and import it into a running instance in one command. Compiling mints the identities once into
 `--out`; importing reads that directory, so running it again is idempotent:
 
 ```sh

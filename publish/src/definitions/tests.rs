@@ -591,3 +591,33 @@ version_ordering = "ordered-list"
 	let error = from_file(&key_path, &source, &directory.path().join("out")).expect_err("error");
 	assert!(error.contains("not a definition id"), "{error}");
 }
+
+#[test]
+fn writes_a_lock_from_a_compiled_set() {
+	let directory = tempfile::tempdir().expect("tempdir");
+	let key_path = directory.path().join("game.key");
+	keyfile::create(&key_path).expect("key");
+	let out = directory.path().join("definitions");
+	game(
+		&key_path,
+		"Minecraft",
+		"ordered-list",
+		&["1.20.1".to_string()],
+		true,
+		None,
+		None,
+		None,
+		&out,
+	)
+	.expect("game");
+	let lock_path = directory.path().join("curated.lock");
+
+	write_lock(&out, Some("https://home.example/"), &lock_path).expect("lock");
+
+	let text = std::fs::read_to_string(&lock_path).expect("read");
+	let lock: crate::definitions::lock::DefinitionLock = toml::from_str(&text).expect("parse");
+	assert_eq!(lock.definition.len(), 1);
+	assert_eq!(lock.definition[0].kind, "game");
+	assert_eq!(lock.definition[0].home.as_deref(), Some("https://home.example"));
+	assert!(lock.definition[0].id.starts_with("gd:sha256:"));
+}

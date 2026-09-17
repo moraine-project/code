@@ -189,6 +189,15 @@ enum Command {
 		api_key: Option<String>,
 	},
 
+	LockDefinitions {
+		#[arg(long)]
+		dir: PathBuf,
+		#[arg(long)]
+		home: Option<String>,
+		#[arg(long, default_value = "definitions/curated.lock")]
+		out: PathBuf,
+	},
+
 	SyncDefinitions {
 		#[arg(long)]
 		home: String,
@@ -496,6 +505,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			declared_by.as_deref(),
 			&out,
 		),
+		Command::LockDefinitions { dir, home, out } => definitions::write_lock(&dir, home.as_deref(), &out).map(|_| ()),
 		Command::SyncDefinition {
 			home,
 			from,

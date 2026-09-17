@@ -65,19 +65,40 @@ version_ordering = "ordered-list"
 versions = ["1.20", "1.21", "1.22"]
 ```
 
-## A curated set
+## The canonical set
 
-`curated.lock` is a template for pinning a set of definitions to a home and
-applying it to an instance in one command:
+`definitions/minecraft/` is the content. `definitions/canonical/` is that content
+compiled to signed objects, so every instance that takes it shares the *same*
+game, loader, and runtime IDs, and releases published against one match the
+other. `definitions/curated.lock` lists those IDs.
+
+Two ways to take it, both one command:
 
 ```sh
-cargo run -p moraine-publish -- sync-definitions \
-  --home https://your-instance \
-  --lock definitions/curated.lock \
+# import the shipped signed objects directly; no home required
+moraine-publish define --out definitions/canonical --home https://your-instance
+
+# or pull the same set from a home that serves it
+moraine-publish sync-definitions --home https://your-instance \
+  --from https://the-home --lock definitions/curated.lock \
   --api-key "$MORAINE_API_KEY"
 ```
 
-Each entry names a definition's stable ID and the home that serves it. Fill it
-in with a set you trust; the IDs come from whichever authority you sync from.
-`sync-definition` pulls one at a time, and the settings page lists every
-definition this instance holds, marked local or federated.
+Importing the shipped objects is idempotent: the identities are already fixed,
+so running it again changes nothing. An instance that does not want this set
+compiles its own from the TOML instead and gets its own local IDs.
+
+## Regenerating the canonical set
+
+The authority key is `definitions/canonical.key`; it is git-ignored and not part
+of the repository. Whoever holds it authors the next revision, using `revision_of`
+to add versions without changing the IDs, then rebuilds:
+
+```sh
+moraine-publish define --key definitions/canonical.key \
+  --dir definitions/minecraft --out definitions/canonical
+moraine-publish lock-definitions --dir definitions/canonical --out definitions/curated.lock
+```
+
+Keep that key safe. If it is lost, the set can only be replaced under a new
+identity, which breaks the shared IDs.
