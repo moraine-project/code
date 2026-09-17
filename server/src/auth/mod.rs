@@ -96,22 +96,28 @@ pub const SESSION_SCOPES: &[&str] = &[
 	"notifications:read",
 ];
 
+mod admin;
+mod recovery;
+mod verification;
+
+pub(crate) use verification::verified_or_error;
+
 pub fn routes() -> Router<AppState> {
 	Router::new()
 		.route("/v1/auth/register", post(register))
 		.route("/v1/auth/session", post(login).delete(logout))
-		.route("/v1/auth/me", get(me).delete(delete_self))
+		.route("/v1/auth/me", get(me).delete(admin::delete_self))
 		.route("/v1/auth/keys", get(list_keys).post(create_key))
 		.route("/v1/auth/keys/{id}", delete(revoke_key))
-		.route("/v1/auth/password", post(change_password))
-		.route("/v1/auth/recovery-codes", post(issue_recovery_codes))
-		.route("/v1/auth/recover", post(recover))
-		.route("/v1/auth/users", get(list_accounts).post(create_account))
-		.route("/v1/auth/verify-email", post(verify_email))
-		.route("/v1/auth/verify-email/resend", post(resend_verification))
-		.route("/v1/auth/users/reset-password", post(reset_password))
-		.route("/v1/auth/users/{id}", delete(delete_account))
-		.route("/v1/auth/export", get(export_account))
+		.route("/v1/auth/password", post(recovery::change_password))
+		.route("/v1/auth/recovery-codes", post(recovery::issue_recovery_codes))
+		.route("/v1/auth/recover", post(recovery::recover))
+		.route("/v1/auth/users", get(admin::list_accounts).post(admin::create_account))
+		.route("/v1/auth/verify-email", post(verification::verify_email))
+		.route("/v1/auth/verify-email/resend", post(verification::resend_verification))
+		.route("/v1/auth/users/reset-password", post(recovery::reset_password))
+		.route("/v1/auth/users/{id}", delete(admin::delete_account))
+		.route("/v1/auth/export", get(admin::export_account))
 }
 
 pub struct AuthenticatedUser {
@@ -268,7 +274,7 @@ async fn register(State(state): State<AppState>, Json(credentials): Json<Credent
 		return storage_error(error);
 	}
 	let verified = if state.capability.email_verification {
-		if let Err(error) = send_verification(&state, &user_id, &email).await {
+		if let Err(error) = verification::send_verification(&state, &user_id, &email).await {
 			tracing::error!(%error, "the verification email could not be sent");
 		}
 		false
@@ -277,80 +283,6 @@ async fn register(State(state): State<AppState>, Json(credentials): Json<Credent
 		true
 	};
 	(StatusCode::CREATED, Json(RegisterReceipt { user_id, verified })).into_response()
-}
-
-async fn send_verification(state: &AppState, user_id: &str, email: &str) -> Result<(), String> {
-	let Some(mailer) = state.capability.mailer.as_ref() else {
-		return Ok(());
-	};
-	let Some(base) = state.capability.public_url.as_deref() else {
-		return Err("MORAINE_PUBLIC_URL is not set, so the verification link cannot be built".to_string());
-	};
-	let token = random_token();
-	let expires = now() + VERIFICATION_SECONDS;
-	state
-		.metadata
-		.replace_email_verification(user_id, &token_hash(&token), now(), expires)
-		.await
-		.map_err(|error| error.to_string())?;
-	let link = format!("{base}/account?verify={token}");
-	mailer
-		.send(
-			email,
-			"Verify your Moraine account",
-			format!("Open this link to verify your email:\n\n{link}\n\nThe link expires in 24 hours.\n"),
-		)
-		.await
-}
-
-#[derive(Deserialize)]
-struct VerifyToken {
-	token: String,
-}
-
-async fn verify_email(State(state): State<AppState>, Json(request): Json<VerifyToken>) -> Response {
-	let Some(user_id) = (match state
-		.metadata
-		.consume_email_verification(&token_hash(request.token.trim()), now())
-		.await
-	{
-		Ok(user_id) => user_id,
-		Err(error) => return storage_error(error),
-	}) else {
-		return (StatusCode::UNAUTHORIZED, "invalid or expired verification link").into_response();
-	};
-	match state.metadata.set_user_verified(&user_id, now()).await {
-		Ok(()) => StatusCode::NO_CONTENT.into_response(),
-		Err(error) => storage_error(error),
-	}
-}
-
-async fn resend_verification(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
-	if user.session_id.is_none() {
-		return (StatusCode::FORBIDDEN, "resend from a signed-in session").into_response();
-	}
-	let record = match state.metadata.user_by_id(&user.user_id).await {
-		Ok(Some(record)) => record,
-		Ok(None) => return (StatusCode::UNAUTHORIZED, "account no longer exists").into_response(),
-		Err(error) => return storage_error(error),
-	};
-	if record.verified_at.is_some() || !state.capability.email_verification {
-		return StatusCode::NO_CONTENT.into_response();
-	}
-	match send_verification(&state, &record.id, &record.email).await {
-		Ok(()) => StatusCode::NO_CONTENT.into_response(),
-		Err(error) => (StatusCode::SERVICE_UNAVAILABLE, error).into_response(),
-	}
-}
-
-pub(crate) async fn verified_or_error(state: &AppState, user_id: &str) -> Option<Response> {
-	if !state.capability.require_verified_email {
-		return None;
-	}
-	match state.metadata.user_verified(user_id).await {
-		Ok(true) => None,
-		_ => Some((StatusCode::FORBIDDEN, "verify your email before publishing").into_response()),
-	}
 }
 
 async fn login(State(state): State<AppState>, client: ClientIp, Json(credentials): Json<Credentials>) -> Response {
@@ -420,311 +352,6 @@ async fn logout(State(state): State<AppState>, user: AuthenticatedUser) -> Respo
 	append_cookie(&mut response, &clear_cookie(SESSION_COOKIE, true, cross_origin));
 	append_cookie(&mut response, &clear_cookie(CSRF_COOKIE, false, cross_origin));
 	response
-}
-
-#[derive(Deserialize)]
-struct PasswordChange {
-	current: String,
-	new: String,
-}
-
-async fn change_password(
-	State(state): State<AppState>,
-	user: AuthenticatedUser,
-	Json(request): Json<PasswordChange>,
-) -> Response {
-	let Some(session_id) = user.session_id.clone() else {
-		return (StatusCode::FORBIDDEN, "change a password from a signed-in session").into_response();
-	};
-	if request.new.len() < MIN_PASSWORD_LENGTH {
-		return (StatusCode::BAD_REQUEST, "the new password is too short").into_response();
-	}
-	let record = match state.metadata.user_by_id(&user.user_id).await {
-		Ok(Some(record)) => record,
-		Ok(None) => return (StatusCode::UNAUTHORIZED, "account no longer exists").into_response(),
-		Err(error) => return storage_error(error),
-	};
-	if !password::verify_password(&request.current, &record.password_hash) {
-		return (StatusCode::UNAUTHORIZED, "the current password is wrong").into_response();
-	}
-	let Ok(hash) = password::hash_password(&request.new) else {
-		return (StatusCode::INTERNAL_SERVER_ERROR, "password hashing failed").into_response();
-	};
-	if let Err(error) = state.metadata.update_password(&user.user_id, &hash, now()).await {
-		return storage_error(error);
-	}
-	if let Err(error) = state.metadata.revoke_other_sessions(&user.user_id, &session_id, now()).await {
-		return storage_error(error);
-	}
-	StatusCode::NO_CONTENT.into_response()
-}
-
-async fn issue_recovery_codes(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
-	if user.session_id.is_none() {
-		return (StatusCode::FORBIDDEN, "issue recovery codes from a signed-in session").into_response();
-	}
-	let codes: Vec<String> = (0..RECOVERY_CODE_COUNT).map(|_| random_token()).collect();
-	let hashes: Vec<Vec<u8>> = codes.iter().map(|code| token_hash(code).to_vec()).collect();
-	if let Err(error) = state.metadata.replace_recovery_codes(&user.user_id, &hashes, now()).await {
-		return storage_error(error);
-	}
-	Json(serde_json::json!({ "codes": codes })).into_response()
-}
-
-#[derive(Deserialize)]
-struct RecoverRequest {
-	email: String,
-	code: String,
-	new: String,
-}
-
-async fn recover(State(state): State<AppState>, Json(request): Json<RecoverRequest>) -> Response {
-	let email = request.email.trim().to_lowercase();
-	if request.new.len() < MIN_PASSWORD_LENGTH {
-		return (StatusCode::BAD_REQUEST, "the new password is too short").into_response();
-	}
-	let Some(record) = (match state.metadata.user_by_email(&email).await {
-		Ok(record) => record,
-		Err(error) => return storage_error(error),
-	}) else {
-		return (StatusCode::UNAUTHORIZED, "invalid recovery code").into_response();
-	};
-	let hash = token_hash(request.code.trim());
-	let valid = match state.metadata.has_unused_recovery_code(&record.id, &hash).await {
-		Ok(valid) => valid,
-		Err(error) => return storage_error(error),
-	};
-	if !valid {
-		return (StatusCode::UNAUTHORIZED, "invalid recovery code").into_response();
-	}
-	let Ok(password_hash) = password::hash_password(&request.new) else {
-		return (StatusCode::INTERNAL_SERVER_ERROR, "password hashing failed").into_response();
-	};
-	if let Err(error) = state.metadata.update_password(&record.id, &password_hash, now()).await {
-		return storage_error(error);
-	}
-	let _ = state.metadata.consume_recovery_code(&record.id, &hash, now()).await;
-	if let Err(error) = state.metadata.revoke_sessions(&record.id, now()).await {
-		return storage_error(error);
-	}
-	StatusCode::NO_CONTENT.into_response()
-}
-
-#[derive(Deserialize)]
-struct ResetPasswordRequest {
-	email: String,
-}
-
-async fn reset_password(
-	State(state): State<AppState>,
-	user: AuthenticatedUser,
-	Json(request): Json<ResetPasswordRequest>,
-) -> Response {
-	if !user.allows("directory:manage") {
-		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
-	}
-	let email = request.email.trim().to_lowercase();
-	let Some(record) = (match state.metadata.user_by_email(&email).await {
-		Ok(record) => record,
-		Err(error) => return storage_error(error),
-	}) else {
-		return (StatusCode::NOT_FOUND, "no account with that email").into_response();
-	};
-	let temporary = random_token();
-	let Ok(password_hash) = password::hash_password(&temporary) else {
-		return (StatusCode::INTERNAL_SERVER_ERROR, "password hashing failed").into_response();
-	};
-	if let Err(error) = state.metadata.update_password(&record.id, &password_hash, now()).await {
-		return storage_error(error);
-	}
-	if let Err(error) = state.metadata.revoke_sessions(&record.id, now()).await {
-		return storage_error(error);
-	}
-	Json(serde_json::json!({ "password": temporary })).into_response()
-}
-
-fn account_json(account: &crate::auth::accounts::AccountRow) -> serde_json::Value {
-	serde_json::json!({
-		"user_id": account.id,
-		"email": account.email,
-		"role": account.role,
-		"created_at": account.created_at,
-		"verified": account.verified_at.is_some(),
-	})
-}
-
-async fn list_accounts(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
-	if !user.allows("directory:manage") {
-		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
-	}
-	match state.metadata.list_users(500).await {
-		Ok(accounts) => {
-			let view = accounts.iter().map(account_json).collect::<Vec<_>>();
-			Json(view).into_response()
-		}
-		Err(error) => storage_error(error),
-	}
-}
-
-#[derive(Deserialize)]
-struct NewAccount {
-	email: String,
-	#[serde(default)]
-	role: Option<String>,
-}
-
-async fn create_account(
-	State(state): State<AppState>,
-	user: AuthenticatedUser,
-	Json(request): Json<NewAccount>,
-) -> Response {
-	if !user.allows("directory:manage") {
-		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
-	}
-	let email = request.email.trim().to_lowercase();
-	if !email.contains('@') {
-		return (StatusCode::BAD_REQUEST, "invalid email").into_response();
-	}
-	let role = request.role.as_deref().unwrap_or("member");
-	if !matches!(role, "member" | OPERATOR_ROLE) {
-		return (StatusCode::BAD_REQUEST, "role must be member or operator").into_response();
-	}
-	match state.metadata.user_by_email(&email).await {
-		Ok(Some(_)) => return (StatusCode::CONFLICT, "email already registered").into_response(),
-		Ok(None) => {}
-		Err(error) => return storage_error(error),
-	}
-	let temporary = random_token();
-	let Ok(password_hash) = password::hash_password(&temporary) else {
-		return (StatusCode::INTERNAL_SERVER_ERROR, "password hashing failed").into_response();
-	};
-	let user_id = new_id();
-	if let Err(error) = state
-		.metadata
-		.create_user(&user_id, &email, &password_hash, role, now())
-		.await
-	{
-		return storage_error(error);
-	}
-	let _ = state.metadata.set_user_verified(&user_id, now()).await;
-	(
-		StatusCode::CREATED,
-		Json(serde_json::json!({ "user_id": user_id, "password": temporary })),
-	)
-		.into_response()
-}
-
-async fn delete_account(State(state): State<AppState>, user: AuthenticatedUser, Path(id): Path<String>) -> Response {
-	if !user.allows("directory:manage") {
-		return (StatusCode::FORBIDDEN, "the credential does not grant this scope").into_response();
-	}
-	match state.metadata.last_owner_orgs(&id).await {
-		Ok(orgs) if !orgs.is_empty() => {
-			return (
-				StatusCode::CONFLICT,
-				format!("the account is the last owner of: {}", orgs.join(", ")),
-			)
-				.into_response();
-		}
-		Ok(_) => {}
-		Err(error) => return storage_error(error),
-	}
-	match state.metadata.delete_user(&id).await {
-		Ok(()) => StatusCode::NO_CONTENT.into_response(),
-		Err(error) => storage_error(error),
-	}
-}
-
-async fn delete_self(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
-	if user.session_id.is_none() {
-		return (StatusCode::FORBIDDEN, "delete an account from a signed-in session").into_response();
-	}
-	match state.metadata.last_owner_orgs(&user.user_id).await {
-		Ok(orgs) if !orgs.is_empty() => {
-			return (
-				StatusCode::CONFLICT,
-				format!("you are the last owner of: {}; transfer them first", orgs.join(", ")),
-			)
-				.into_response();
-		}
-		Ok(_) => {}
-		Err(error) => return storage_error(error),
-	}
-	match state.metadata.delete_user(&user.user_id).await {
-		Ok(()) => StatusCode::NO_CONTENT.into_response(),
-		Err(error) => storage_error(error),
-	}
-}
-
-async fn export_account(State(state): State<AppState>, user: AuthenticatedUser) -> Response {
-	if user.session_id.is_none() {
-		return (StatusCode::FORBIDDEN, "export an account from a signed-in session").into_response();
-	}
-	let account = match state.metadata.user_by_id(&user.user_id).await {
-		Ok(Some(account)) => account,
-		Ok(None) => return (StatusCode::UNAUTHORIZED, "account no longer exists").into_response(),
-		Err(error) => return storage_error(error),
-	};
-	let orgs = state
-		.metadata
-		.orgs_for_user(&user.user_id)
-		.await
-		.map(|orgs| {
-			orgs.into_iter()
-				.map(|org| serde_json::json!({ "handle": org.handle, "role": org.role }))
-				.collect::<Vec<_>>()
-		})
-		.unwrap_or_default();
-	let keys = state
-		.metadata
-		.api_keys_for_user(&user.user_id)
-		.await
-		.map(|keys| {
-			keys.into_iter()
-				.map(|key| {
-					serde_json::json!({
-						"name": key.name,
-						"prefix": key.prefix,
-						"scopes": key.scopes,
-						"created_at": key.created_at,
-						"expires_at": key.expires_at,
-					})
-				})
-				.collect::<Vec<_>>()
-		})
-		.unwrap_or_default();
-	let follows = state.metadata.follows(&user.user_id).await.unwrap_or_default();
-	let submissions = state
-		.metadata
-		.submissions_by_submitter(&user.user_id, 500, None)
-		.await
-		.map(|rows| {
-			rows.into_iter()
-				.map(|row| {
-					serde_json::json!({
-						"id": row.id,
-						"project_id": row.project_id,
-						"state": row.state,
-						"created_at": row.created_at,
-					})
-				})
-				.collect::<Vec<_>>()
-		})
-		.unwrap_or_default();
-	Json(serde_json::json!({
-		"account": {
-			"user_id": account.id,
-			"email": account.email,
-			"role": account.role,
-			"created_at": account.created_at,
-			"verified": account.verified_at.is_some(),
-		},
-		"organizations": orgs,
-		"api_keys": keys,
-		"follows": follows,
-		"submissions": submissions,
-	}))
-	.into_response()
 }
 
 #[derive(Serialize)]
