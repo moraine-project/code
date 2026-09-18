@@ -67,8 +67,9 @@ versions = ["1.20", "1.21", "1.22"]
 
 ## The canonical set
 
-`definitions/minecraft/` is the content. `definitions/canonical/` is that content
-compiled to signed objects, so every instance that takes it shares the *same*
+`definitions/minecraft/` is the content (the whole `definitions/` tree is
+compiled, so another game added beside it joins the same set).
+`definitions/canonical/` is that content compiled to signed objects, so every instance that takes it shares the *same*
 game, loader, and runtime IDs, and releases published against one match the
 other. `definitions/curated.lock` lists those IDs.
 
@@ -96,7 +97,7 @@ to add versions without changing the IDs, then rebuilds:
 
 ```sh
 moraine-publish define --key definitions/canonical.key \
-  --dir definitions/minecraft --out definitions/canonical
+  --dir definitions --out definitions/canonical
 moraine-publish lock-definitions --dir definitions/canonical --out definitions/curated.lock
 ```
 
