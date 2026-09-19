@@ -23,24 +23,27 @@ file does not count against the metadata body limit.
 
 ## Outbound requests
 
-When the server fetches a home or delivers a webhook it resolves the target
+When the server fetches a home or delivers a webhook, it resolves the target
 host and refuses the request if any resolved address is loopback, private,
-link-local, shared (carrier-grade NAT), unspecified, or multicast. This keeps a
+link-local, shared (carrier-grade NAT), unspecified, or multicast. That keeps a
 publisher-supplied URL from reaching internal services or cloud instance
-metadata. Loopback is permitted only when the operator explicitly enables
-insecure local federation. The resolution happens once and the connection is
-pinned to the addresses that were checked, so a host whose name changes between
-the check and the connection cannot swap a public address for an internal one.
-Redirects are never followed, so a target cannot bounce a request to an address
-that the initial check allowed. Outbound TLS
-anchors are the bundled public roots; `MORAINE_TLS_EXTRA_ROOTS` names a PEM
-bundle whose certificates are added as additional roots, which is how a
-deployment reaches a home behind a private certificate authority. Both the
-server and the publishing CLI read a bundle of one or more certificates; the
-server reports how many blocks it could not parse, and the CLI refuses a file
-with no certificates rather than silently trusting the public roots alone. A home response
-is additionally capped at the advertised `max_response_bytes` budget; the
-worker refuses a response whose declared or streamed length exceeds it.
+metadata. Loopback is allowed only when the operator explicitly enables
+insecure local federation.
+
+The resolution happens once, and the connection is pinned to the addresses that
+were checked. So a host whose name changes between the check and the connection
+cannot swap a public address for an internal one. Redirects are never followed,
+so a target cannot bounce a request to an address the initial check allowed.
+
+Outbound TLS anchors are the bundled public roots. `MORAINE_TLS_EXTRA_ROOTS`
+names a PEM bundle whose certificates are added as additional roots, which is
+how a deployment reaches a home behind a private certificate authority. Both
+the server and the publishing CLI read a bundle of one or more certificates.
+The server reports how many blocks it could not parse, and the CLI refuses a
+file with no certificates rather than silently trusting the public roots alone.
+A home response is additionally capped at the advertised `max_response_bytes`
+budget; the worker refuses a response whose declared or streamed length exceeds
+it.
 
 Each credential or client address gets a request budget of
 `requests_per_minute` (600 by default, `0` disables it) counted over a sliding
@@ -143,14 +146,17 @@ prefix, and credentials; a local instance needs only its data directory.
 `POST /v1/blobs` streams the request body into private staging, computes the
 digest as it goes, and refuses anything over the advertised artifact limit with
 `413`. It requires the `artifacts:write` scope, so an unauthenticated caller
-cannot fill the store; a session grants it, and an API key needs it explicitly.
+cannot fill the store. A session grants it; an API key needs it explicitly.
+
 Each account also has a total stored-bytes quota, five GiB by default and set
 with `MORAINE_MAX_UPLOAD_BYTES_PER_ACCOUNT`, advertised in the capability
 document. An upload that would cross it is refused with `403` before the body
-is read; the quota is charged once the bytes commit and released when an
-unreferenced blob is collected. On success it commits the object and returns `201`, a `Location` header
-of `/v1/blobs/sha256/<hex>`, and a receipt `{ "digest": "sha256:<hex>", "size":
-N }`. Committing the same bytes again is a no-op because the address is the
+is read. The quota is charged once the bytes commit and released when an
+unreferenced blob is collected.
+
+On success it commits the object and returns `201`, a `Location` header of
+`/v1/blobs/sha256/<hex>`, and a receipt `{ "digest": "sha256:<hex>", "size":
+N }`. Committing the same bytes again is a no-op, because the address is the
 digest.
 
 A blob is served only once a signed release location, an artifact index entry,
@@ -169,17 +175,17 @@ the full stream and happens in the client.
 An unknown or malformed digest returns `404` or `400` and never a substituted
 object.
 
-Staging files left by an aborted upload are removed after an hour, and a
-committed but still unreferenced draft is not served. A committed
+Staging files left by an aborted upload are removed after an hour. A committed
 blob that no release location, artifact index entry, or mirror commitment
 references is removed after a seven-day window, which leaves a fresh upload
 time to be published. Both windows are operator settings
-(`MORAINE_STAGING_RETENTION_SECONDS`, `MORAINE_BLOB_RETENTION_SECONDS`). The
-collection, the retention prune of notifications and webhook deliveries, and
-the periodic definition and subscription resync all run on one maintenance
-tick, an hour by default and set with `MORAINE_MAINTENANCE_INTERVAL_SECONDS`; a
+(`MORAINE_STAGING_RETENTION_SECONDS`, `MORAINE_BLOB_RETENTION_SECONDS`).
+
+The collection, the retention prune of notifications and webhook deliveries,
+and the periodic definition and subscription resync all run on one maintenance
+tick, an hour by default and set with `MORAINE_MAINTENANCE_INTERVAL_SECONDS`. A
 value of zero turns the background loop off, which leaves those jobs to be
-triggered externally. A release whose bytes were collected still resolves; its
+triggered externally. A release whose bytes were collected still resolves. Its
 artifact is simply unavailable at this host, and byte serving answers `404`
 rather than a substitute.
 
@@ -234,35 +240,38 @@ references the transfer object is accepted. The same rule runs on the home, in
 review acceptance, and during federation sync, and it re-verifies the transfer
 and requires that it start from the currently recorded owner. Ownership is
 therefore a feed fact: a directory learns it by verifying the same signed
-material, not by trusting the home's summary. `GET /v1/projects/{id}/feed?after=N&limit=M` returns a
-bounded page of entries. Optional `game_version`, `loader`, `loader_version`,
-`runtime`, and `runtime_version` filters restrict the page to release entries
-whose declared compatibility matches them. The game version is evaluated
-through the game's declared version ordering, the loader version through the
-loader definition's declared ordering, and the runtime version through the
-runtime definition's declared ordering, rather than string comparison; the
+material, not by trusting the home's summary.
+
+`GET /v1/projects/{id}/feed?after=N&limit=M` returns a bounded page of
+entries. Optional `game_version`, `loader`, `loader_version`, `runtime`, and
+`runtime_version` filters restrict the page to release entries whose declared
+compatibility matches them. Version matching goes through the declared ordering
+— the game's for `game_version`, the loader definition's for `loader_version`,
+the runtime definition's for `runtime_version` — not string comparison. The
 loader is matched by the loader ID a release declares. A `runtime_version`
 without a `runtime` matches nothing, and the runtime filter matches a release
 whose `runtime_predicate` accepts the version. A version range is only
-evaluated when the definition that declares its ordering is hosted here;
-without it the entry is treated as unsatisfied rather than assumed to be
-semver, so a range that cannot be evaluated without an ordered list of versions
-is treated as unsatisfied. Non-release entries are kept. The page reads
-further when a full batch yields fewer than the requested entries, up to
-`max_feed_scan_pages` batches (50 by default, advertised in the capability
-document), so a filter does not return a short page while matching entries sit
-immediately after. When the scan stops at that bound with the page still
-short, the page sets `truncated` and a client continues from `next`. Each entry carries a human `title` derived from the
-referenced object (a release's version and channel, a profile's display name,
-an advisory's severity and category, a delegation's purpose), so a page can say
-what changed without fetching every object. A release entry also carries a
-`release` summary with its channel, game ID, and the loaders its compatibility
-entries declare, so a client can filter a feed by loader without fetching each
-release. Both are conveniences for display; the object digest next to them is
-the fact. `GET /v1/objects/{hex}` returns the exact signed wire
-bytes with immutable caching, and supports `HEAD` and single byte ranges, so a
-large object can be resumed like a blob. A `416` reports an unsatisfiable
-range.
+evaluated when the definition that declares its ordering is hosted here.
+Without it the entry is treated as unsatisfied rather than assumed to be
+semver. Non-release entries are kept.
+
+The page reads further when a full batch yields fewer than the requested
+entries, up to `max_feed_scan_pages` batches (50 by default, advertised in the
+capability document), so a filter does not return a short page while matching
+entries sit immediately after. When the scan stops at that bound with the page
+still short, the page sets `truncated` and a client continues from `next`.
+
+Each entry carries a human `title` derived from the referenced object (a
+release's version and channel, a profile's display name, an advisory's severity
+and category, a delegation's purpose), so a page can say what changed without
+fetching every object. A release entry also carries a `release` summary with
+its channel, game ID, and the loaders its compatibility entries declare, so a
+client can filter a feed by loader without fetching each release. Both are
+conveniences for display; the object digest next to them is the fact.
+
+`GET /v1/objects/{hex}` returns the exact signed wire bytes with immutable
+caching, and supports `HEAD` and single byte ranges, so a large object can be
+resumed like a blob. A `416` reports an unsatisfiable range.
 
 Two read-only projections decode a stored signed object into JSON so a browser
 does not have to reimplement the canonical decoder. They are display views, not
@@ -538,13 +547,15 @@ observations and any sequence where two observations disagree:
 ```
 
 A sequence maps to one entry, so two different entries recorded at the same
-sequence is evidence that a home rewrote history, and it stays visible after the
+sequence is evidence that a home rewrote history. It stays visible after the
 head has moved on. The log is per instance and database-backed, deduplicated by
-project, home, sequence, and entry. It is a local record, not an exchange: this
-instance does not publish its log to other instances or fetch theirs, so it can
-detect equivocation it observed itself and cannot corroborate what it did not
-see. The route needs the `federation:manage` scope, like the subscription list,
-so following choices stay private to the operator.
+project, home, sequence, and entry.
+
+It is a local record, not an exchange. This instance does not publish its log
+to other instances or fetch theirs, so it can detect equivocation it observed
+itself and cannot corroborate what it did not see. The route needs the
+`federation:manage` scope, like the subscription list, so following choices
+stay private to the operator.
 
 A game, loader, or runtime identity is pulled the same way with
 `POST /v1/federation/sync-definition`.
@@ -857,13 +868,14 @@ from any hint because it checks the digest, but the decision to distribute
 still belongs to the operator and the publisher.
 
 Because a commitment is a claim, the maintenance tick re-checks each one
-against its endpoint: it fetches `/v1/blobs/sha256/{digest}`, hashes the stream,
-and records whether the length and digest matched. Each commitment carries
-`last_checked_at` and `reachable` when a check has run, and `null` before the
-first one. A failed check is evidence that the bytes are unreachable now, not a
-deletion; the commitment stands until the mirror or the operator withdraws it.
-Endpoints must be HTTPS, or loopback HTTP when insecure local federation is
-enabled, and the same public-address rule as other outbound requests applies.
+against its endpoint. It fetches `/v1/blobs/sha256/{digest}`, hashes the
+stream, and records whether the length and digest matched. Each commitment
+carries `last_checked_at` and `reachable` when a check has run, and `null`
+before the first one. A failed check is evidence that the bytes are unreachable
+now, not a deletion; the commitment stands until the mirror or the operator
+withdraws it. Endpoints must be HTTPS, or loopback HTTP when insecure local
+federation is enabled, and the same public-address rule as other outbound
+requests applies.
 
 ## Follows and notifications
 
@@ -959,11 +971,11 @@ the recorded one is refused with `409` rather than rewinding the statement.
 
 At startup the server reads every regular file in a `definitions` directory
 beside the data directory. A file holding a game, loader, or runtime genesis is
-imported as that identity; a file holding a signed definition object is
+imported as that identity. A file holding a signed definition object is
 verified against its identity's root and becomes its current definition.
 Genesis files are applied before definition files regardless of filename order,
 so a single directory can seed an identity and its first definition. Files that
-are neither are ignored, and a file that fails to import is reported and does
+are neither are ignored, and a file that fails to import is reported. It does
 not stop the server.
 
 `GET /v1/{games|loaders|runtimes}/{id}` returns the identity, its genesis ID,

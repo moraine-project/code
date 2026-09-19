@@ -1,8 +1,8 @@
 # Search responses
 
 Search results are JSON, not signed objects. A directory builds them from
-validated signed records plus its own local policy, and the index is
-disposable: it can be rebuilt at any time and never becomes an authority.
+validated signed records plus its own local policy. The index is disposable: it
+can be rebuilt at any time and never becomes an authority.
 
 ## The portable shape
 
@@ -19,22 +19,22 @@ it from elsewhere; a project served locally has no recorded home. When a
 project is followed from several homes, the most recently synced one is
 reported.
 
-Mapping a project ID to a result and a result to its source is what makes the
+Mapping a project ID to a result, and a result to its source, is what makes the
 shape portable across directories.
 
 ## Listing states
 
-`listed`, `unlisted`, `quarantined`, `blocked`, `withdrawn`, `unavailable`.
-A directory decides these locally. A release can be listed by one directory
-and blocked by another at the same time, and both decisions are legitimate.
+`listed`, `unlisted`, `quarantined`, `blocked`, `withdrawn`, `unavailable`. A
+directory decides these locally. A release can be listed by one directory and
+blocked by another at the same time. Both decisions are legitimate.
 
 ## Instance popularity
 
 Popularity is a count of that instance's own observed downloads and follows,
 windowed (30 days) and labeled. A full byte-serving `GET` of an artifact counts
-as a download for every project whose signed release references that digest,
-and a follow counts from the moment it was made. The window is a rolling 30
-days ending today, recorded per day so a later interval can be computed without
+as a download for every project whose signed release references that digest. A
+follow counts from the moment it was made. The window is a rolling 30 days
+ending today, recorded per day so a later interval can be computed without
 rewriting history. It is never federated, summed, or averaged across instances,
 because no shared user identity exists to deduplicate it. When results from
 several instances are merged, popularity stays attached to its source listing.
@@ -50,34 +50,34 @@ implementation.
 The sorts this implementation offers are `relevance`, `updated`, `created`,
 `name`, and `popularity`. Its relevance input is the text-match score below,
 weighting the display name above the summary above the description, with a
-changelog match scoring alongside the description; when a query carries no
-text, `relevance` falls back to recency, and `sort=updated`
-always means recency. `created` is when this instance first indexed the
-project, which is not the same as when the publisher declared it; `name` is
-case-insensitive; and `popularity` orders by the instance-local count below,
-highest first. Any other value is rejected with `400` rather than silently
-treated as a different order, because an echoed sort that the server did not
-honour would contradict the published inputs. Text matching covers the display
-name, summary, description, and the text of any changelog this instance holds.
-A changelog is a signed object referenced by a release's `changelog_digest`, so
-its text is indexed only where the object itself was published here.
+changelog match scoring alongside the description. When a query carries no
+text, `relevance` falls back to recency, and `sort=updated` always means
+recency. `created` is when this instance first indexed the project, which is
+not the same as when the publisher declared it. `name` is case-insensitive,
+and `popularity` orders by the instance-local count below, highest first. Any
+other value is rejected with `400` rather than silently treated as a different
+order, because an echoed sort the server did not honour would contradict the
+published inputs. Text matching covers the display name, summary, description,
+and the text of any changelog this instance holds. A changelog is a signed
+object referenced by a release's `changelog_digest`, so its text is indexed
+only where the object itself was published here.
 
 Matching is case-insensitive and tiered, so a query is a prefix match as well
-as a substring one: an exact field scores above a field that starts with the
-query, which scores above a field that merely contains it, and every tier still
+as a substring one. An exact field scores above a field that starts with the
+query, which scores above a field that merely contains it. Every tier still
 respects the field weighting above. A query is treated as literal text, so `%`
 and `_` match themselves instead of behaving as wildcards.
 
 When a text query matches fewer rows than the page can hold, the instance also
-offers near matches from a trigram index over the display name and summary: a
+offers near matches from a trigram index over the display name and summary. A
 term's three-character windows are looked up, a project must share enough of
 them, and the shared weight orders the candidates. These results are appended
-after the strict ones and every one carries an `approximate-match` annotation,
-so a near match is never silently presented as the project the user typed.
-That is a convenience with real limits. It cannot recover a typo that changes
-most of a short name's trigrams, it does not run at all when the strict match
+after the strict ones, and every one carries an `approximate-match` annotation,
+so a near match is never silently presented as the project the user typed. That
+is a convenience with real limits. It cannot recover a typo that changes most
+of a short name's trigrams, it does not run at all when the strict match
 already fills the page, and it exists precisely because a near match may be a
-lookalike, which is why the annotation tells the reader to compare project IDs
+lookalike. That is why the annotation tells the reader to compare project IDs
 rather than trust the result.
 
 The facets this implementation serves are `game`, `loader`, `category`, `tag`,
@@ -90,8 +90,8 @@ loader or runtime version, released on that channel, or shipped for that
 platform. A `loader_version` is only meaningful together with a `loader`, and a
 request that supplies one without the other is rejected with `400`. Only
 `exact` and `set` predicates contribute concrete versions; a range is left out
-rather than expanded, because a comparator is not a version a facet can offer,
-and the whole-range evaluation of a compatibility predicate is served by the
+rather than expanded, because a comparator is not a version a facet can offer.
+The whole-range evaluation of a compatibility predicate is served by the
 release feed, which can consult the referenced definition's declared ordering.
 A project whose state this instance does not list cannot be recovered with
 `state`, because the filter narrows what search already shows.
@@ -99,10 +99,10 @@ A project whose state this instance does not list cannot be recovered with
 ## Facet counts
 
 `GET /v1/search/facets` takes the same filters as `/v1/search` and returns, for
-each facet dimension, the values present and how many projects carry them. It is
-an aid to narrowing a search, not a second result set: counts are computed over
-the same validated records and local policy the results use, and they are not
-signed or portable.
+each facet dimension, the values present and how many projects carry them. It
+is an aid to narrowing a search, not a second result set. Counts are computed
+over the same validated records and local policy the results use, and they are
+not signed or portable.
 
 Each dimension's count is computed with every *other* filter applied and its own
 filter ignored, so the numbers show what selecting a value would add rather than
@@ -118,10 +118,10 @@ Counts are an opinion of the same kind as rank: they describe this instance's
 index under the current filters, and they are never evidence that a project is
 safe.
 
-Impersonation detection begins here: when two results in one game share a
+Impersonation detection begins here. When two results in one game share a
 normalized display name (case and punctuation removed) under different stable
-IDs, both carry a `name-collision` annotation telling the reader to compare
-IDs rather than names. The comparison runs against the whole index through a stored
+IDs, both carry a `name-collision` annotation telling the reader to compare IDs
+rather than names. The comparison runs against the whole index through a stored
 normalized name, not just the returned page, so two projects separated by
 pagination are still flagged. It is not a check against a registry of
 well-known projects.
