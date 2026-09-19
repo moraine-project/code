@@ -4,13 +4,13 @@ A federated registry for games and their mods. Each project lives at a home its
 publisher controls, releases are signed and immutable, and independent
 directories and mirrors can index and serve them without owning your project.
 
-This is an alpha. The protocol and the server work and are covered by tests,
-but nobody outside this repository has run two instances against each other
+This is an alpha. The protocol and the server work and are covered by tests.
+But nobody outside this repository has run two instances against each other
 yet, there has been no external security review, and the desktop launcher is
-not built. The website, not a launcher, is the way people use it.
+not built. The website, not a launcher, is how people use it.
 
 Run an instance locally, publish something, and tell us where it breaks. For a
-suspected vulnerability, follow [`SECURITY.md`](./SECURITY.md) rather than
+suspected vulnerability, follow [`SECURITY.md`](./SECURITY.md) instead of
 opening a public issue. To build or contribute, read
 [`CONTRIBUTING.md`](./CONTRIBUTING.md) and the operator and author guides under
 [`docs/`](./docs/).
@@ -20,7 +20,7 @@ opening a public issue. To build or contribute, read
 - **`codec`** — the deterministic CBOR profile from the protocol spec. It
   enforces minimal integer widths, definite lengths, sorted map keys, no
   floats, no tags, and duplicate-key rejection. The decoder rejects anything
-  that is not already canonical, so a signature can never depend on parser
+  that is not already canonical. A signature can never depend on parser
   leniency.
 - **`crypto`** — Ed25519 keys, key IDs, domain tags, and object IDs.
 - **`model`** — typed protocol objects: project genesis, key delegation and
@@ -35,24 +35,35 @@ opening a public issue. To build or contribute, read
   adapter or extractor this build does not implement.
 - **`server`** — an Axum registry with a SQLite metadata store. It serves
   capability discovery, health, digest-addressed blobs with range support, and
-  a first signed-object and feed API: import a genesis, store verified
-  objects, append feed entries with continuity checks, and read them back. It
-  also has accounts (Argon2id passwords, server-side sessions with CSRF, and
-  scoped revocable API keys), organizations with roles and nested teams,
-  admission review with a `review`/`open` setting, publisher withdrawals,
-  provider advisories and mirror commitments with pinned keys, follows with
-  local notifications and signed outbound webhooks, game/loader/runtime
-  definition hosting, signed modpack manifests with validated overrides, a
-  per-project listing policy for unlisting or blocking, append-only legal,
-  takedown, impersonation-claim, and account-sanction records with upload and
-  submission enforcement, evidence attestations from pinned providers, key
-  recovery that replaces a project's root set and revokes a compromised key,
-  cross-signed migration records, subscribe-able signed deny and advisory
-  lists, and a pull-based federation sync that fetches, verifies, indexes, and
-  fork-checks a remote home's feed while recording the heads it observed so a
-  rewritten sequence stays on the record.
+  a signed-object and feed API: import a genesis, store verified objects,
+  append feed entries with continuity checks, read them back.
+
+  The same server does a lot more. Accounts use Argon2id passwords, server-side
+  sessions with CSRF, and scoped revocable API keys. Organizations have roles
+  and nested teams. Admission review has a `review`/`open` setting, and
+  publishers can withdraw a release without rewriting it. Providers publish
+  advisories and mirrors publish commitments, both under pinned keys. Follows
+  carry local notifications and signed outbound webhooks. The server hosts
+  game, loader, and runtime definitions and signed modpack manifests with
+  validated overrides, and keeps a per-project listing policy for unlisting or
+  blocking.
+
+  Moderation is append-only. Legal, takedown, impersonation-claim, and
+  account-sanction records are stored, never edited, and they gate uploads and
+  submissions where the policy says they should. Evidence attestations come
+  from pinned providers.
+
+  Key recovery replaces a project's root set and revokes a compromised key.
+  Cross-signed migration records move a project to a new home. Signed deny and
+  advisory lists can be subscribed to.
+
+  Federation is pull-based. A sync fetches, verifies, indexes, and fork-checks
+  a remote home's feed, and records the heads it observed, so a rewritten
+  sequence stays on the record.
 
 ## Try it
+
+Run the vector corpus and the verifier:
 
 ```sh
 cargo run -p moraine-verify -- vectors
@@ -63,8 +74,9 @@ cargo run -p moraine-verify -- key-id --public <ed25519-public-key-hex>
 
 The corpus is checked by a second implementation written in Python, which uses
 its own canonical decoder and its own Ed25519 code rather than calling into the
-Rust crates. Two implementations agreeing on every verdict is the interoperability
-evidence; a corpus only one implementation passes proves nothing:
+Rust crates. Two implementations agreeing on every verdict is the
+interoperability evidence. A corpus only one implementation passes proves
+nothing:
 
 ```sh
 python3 interop/verify_vectors.py
@@ -98,8 +110,8 @@ curl http://127.0.0.1:8080/.well-known/mod-registry
 ```
 
 To serve the built website from the same origin as the API, point the server at
-it. That is what browser authentication needs, because sessions are cookies and
-login is a `POST` the server does not offer to other origins:
+it. Browser authentication needs this, because sessions are cookies and login
+is a `POST` the server does not offer to other origins:
 
 ```sh
 cd web && pnpm build:static && cd ..
@@ -120,7 +132,7 @@ MORAINE_DATABASE_URL=postgres://user:password@host/moraine \
 ```
 
 Artifact bytes stay on the filesystem by default. To keep them in an
-S3-compatible object store instead, set the bucket; Backblaze B2, RustFS, and
+S3-compatible object store instead, set the bucket. Backblaze B2, RustFS, and
 MinIO all speak this API, and the endpoint takes the provider's host with
 path-style addressing:
 
@@ -134,21 +146,21 @@ MORAINE_S3_PREFIX=moraine \
   cargo run -p moraine-server -- --data-dir ./data
 ```
 
-Uploads still stage on local disk so a partial transfer never reaches the
-bucket, and a committed blob is served to clients by streaming it back out of
-the object store, including byte ranges. Set `MORAINE_S3_ACCESS_KEY_ID` and
-`MORAINE_S3_SECRET_ACCESS_KEY` together; without them the client falls back to
-the standard provider chain, which is what an instance role provides. The
-prefix namespaces every object so one bucket can hold several instances.
+Uploads still stage on local disk, so a partial transfer never reaches the
+bucket. A committed blob is served back out of the object store, byte ranges
+included. Set `MORAINE_S3_ACCESS_KEY_ID` and `MORAINE_S3_SECRET_ACCESS_KEY`
+together; without them the client falls back to the standard provider chain,
+which is what an instance role provides. The prefix namespaces every object so
+one bucket can hold several instances.
 
 Backup and restore read the SQLite file directly, so use `pg_dump` for a
 PostgreSQL database, and the same S3 client or an operator tool for a bucket.
 `moraine-server backup` copies committed blobs through the store, so it works
 against either backend.
 
-The role does not need to own the database or be a superuser. It needs
+The database role does not need to own the database or be a superuser. It needs
 `CONNECT` on the database and `USAGE` and `CREATE` on the schema the connection
-sets as `search_path`, since that is where the tables live; migrations take an
+sets as `search_path`, since that is where the tables live. Migrations take an
 advisory lock, which every role may do. To run inside a schema it does not own:
 
 ```sh
@@ -156,10 +168,10 @@ MORAINE_DATABASE_URL='postgres://app:secret@host/moraine?options=-csearch_path%3
   cargo run -p moraine-server -- migrate
 ```
 
-With this set, the whole server test suite runs against PostgreSQL: each test
+With this set, the whole server test suite runs against PostgreSQL. Each test
 runs in its own schema and touches nothing outside it, so the database only
 needs to be one you do not mind filling with throwaway schemas. The role must
-be able to create a schema in it, and nothing more; the suite is verified
+be able to create a schema in it, and nothing more. The suite is verified
 against a role that owns its database rather than a superuser, and the server
 against one that owns neither the database nor the schema it writes to.
 
@@ -168,10 +180,10 @@ MORAINE_TEST_POSTGRES=postgres://postgres:postgres@127.0.0.1:5432/moraine_test \
   cargo test -p moraine-server
 ```
 
-Federation is exercised in `server/tests/two_hosts.rs`: the test starts two
+Federation is exercised in `server/tests/two_hosts.rs`. The test starts two
 server processes on their own ports and data directories, publishes a project
 on one, and syncs it from the other over HTTP. Two routers in one process would
-prove less, because they would share the code paths that a network hop is most
+prove less, because they would share the code paths a network hop is most
 likely to break.
 
 Read a mod archive's manifest without running it:
@@ -185,7 +197,7 @@ the mod ID, name, version, and loader. It never executes archive contents and
 refuses any metadata entry over a size limit. A game definition names the
 extractor it expects, and `--extractor minecraft/fabric-json` (or
 `minecraft/quilt-json`, `minecraft/forge-toml`) reads only that format instead
-of trying each in turn, so a declared extractor is enough for a client to read a
+of trying each in turn. A declared extractor is enough for a client to read a
 manifest without guessing.
 
 Preview where files would be installed for a game:
@@ -195,7 +207,7 @@ cargo run -p moraine-publish -- plan --adapter minecraft/default \
   --mod example.jar=sha256:<hex> --override config/example.toml=sha256:<hex>
 ```
 
-The plan keeps every path inside the adapter's roots; nothing is written.
+The plan keeps every path inside the adapter's roots. Nothing is written.
 
 Install a lockfile from a directory of blobs named by digest:
 
@@ -219,7 +231,7 @@ cargo run -p moraine-launcher -- install --lockfile lock.json --home https://hom
   --root ./instance
 ```
 
-The same definition also names a metadata extractor. Show both and whether this
+The same definition names a metadata extractor. Show both and whether this
 launcher implements them, or read an artifact's manifest through the declared
 extractor instead of guessing its format:
 
@@ -253,7 +265,7 @@ cargo run -p moraine-publish -- publish --key publisher.key --home http://127.0.
 ```
 
 `upload` needs a key that carries `artifacts:write`, and `MORAINE_API_KEY` can
-supply it instead of the flag; without it the home refuses the upload before
+supply it instead of the flag. Without it the home refuses the upload before
 reading the body.
 
 A project has a display name once you publish a profile:
@@ -289,7 +301,7 @@ cargo run -p moraine-publish -- release --key publisher.key --home http://127.0.
 Each Markdown heading becomes a section with its body, and the whole text is
 indexed for search under the project.
 
-An advisory is attributed evidence, not a takedown: it is shown on the release
+An advisory is attributed evidence, not a takedown. It is shown on the release
 page and in the advisories API, and it never changes the signed record. Only
 `malware` at `high` or `critical` may block promotion.
 
@@ -302,10 +314,10 @@ cargo run -p moraine-publish -- attestation --key scanner.key --home http://127.
 ```
 
 The signer must be a provider pinned on the home. Kinds are `build-provenance`,
-`review`, `scanner-result`, `sbom`, and `compatibility-test`; `--body` attaches
-small evidence inline and `--body-digest sha256:<hex>` references larger evidence
-by digest. Evidence is listed at `GET /v1/attestations/{sha256}`, optionally
-filtered by `kind`.
+`review`, `scanner-result`, `sbom`, and `compatibility-test`. `--body` attaches
+small evidence inline and `--body-digest sha256:<hex>` references larger
+evidence by digest. Evidence is listed at `GET /v1/attestations/{sha256}`,
+optionally filtered by `kind`.
 
 Withdraw a release without rewriting it:
 
@@ -329,9 +341,11 @@ cargo run -p moraine-publish -- publish --key old-owner.key --home http://127.0.
 The transfer object only becomes effective when its feed entry is accepted, so
 it reaches directories through sync like any other feed fact.
 
-A game, loader, or runtime is its own signed identity, and the server reads
-them from a `definitions` directory beside the data directory at startup. Sign
-one with a key of your own; the identity is the genesis, so its ID is derived
+### Definitions
+
+A game, loader, or runtime is its own signed identity. The server reads them
+from a `definitions` directory beside the data directory at startup. Sign one
+with a key of your own; the identity is the genesis, so its ID is derived
 rather than chosen.
 
 A definition can be authored as a readable TOML file and compiled to canonical
@@ -344,10 +358,10 @@ cargo run -p moraine-publish -- define --key definitions.key \
   --dir definitions/minecraft --out data/definitions
 ```
 
-Add `--home https://your-instance` to compile and import into a running instance
-in one command. The compile step mints the identities and writes them to
-`--out`; `define --out data/definitions --home …` re-imports the same IDs, so it
-is safe to run again.
+Add `--home https://your-instance` to compile and import into a running
+instance in one command. The compile step mints the identities and writes them
+to `--out`; `define --out data/definitions --home …` re-imports the same IDs,
+so it is safe to run again.
 
 `--dir` compiles every file under a directory, signing the whole set with one
 key. Files refer to each other by name, not by ID: `game.toml` sets
@@ -356,8 +370,8 @@ resolves those as it goes — game and runtime first, then loaders, then loader
 versions and mappings — so a bundle is one command with no IDs to paste. Use
 `--file` instead to define a single file when the referenced IDs already exist.
 
-`definitions/minecraft/` is a worked set for one game, laid out the way
-the data is: the game definition with Minecraft's version table and category
+`definitions/minecraft/` is a worked set for one game, laid out the way the
+data is: the game definition with Minecraft's version table and category
 vocabulary, a runtime, one file per loader under `loaders/`, each loader's
 versions under `loaders/<loader>/<version>.toml`, and a `mapping` that says
 Cleanroom accepts Forge mods in one direction.
@@ -366,7 +380,7 @@ Declaring loader versions is optional. The loader file itself can list
 `game_versions` — the game versions the loader family supports — so the
 game-to-loader connection is recorded once instead of once per build. With
 `game_version_scheme = "ordered-list"` the list holds ranges like `1.14..=26.3`
-resolved through the game's version table; `loaders/fabric.toml` does that, and
+resolved through the game's version table. `loaders/fabric.toml` does that, and
 `loaders/neoforge.toml` lists the exact versions. Either way you do not have to
 hunt down every loader build and work out which Minecraft version each one
 targets.
@@ -392,13 +406,14 @@ the single-file `define-game`, `define-loader`, and `define-runtime` commands.
 When you do want precision, a loader's *versions* are separate
 `kind = "loader-release"` files, each naming the `game_versions` it supports
 and, optionally, the `runtime_id` and `runtime_versions` it needs. So
-`loaders/neoforge/21.1.72.toml` says NeoForge 21.1.72 runs on Minecraft 1.21 and
-1.21.1 while `loaders/neoforge/20.4.237.toml` says 20.4.237 runs on 1.20.4 — the
-loader ID is the same for both, and the loader definition is not republished to
-add a version. A per-version `game_versions` is used when present; the loader's
-family list answers for game versions where no per-version record exists. A
-loader whose versions are not SemVer, like NeoForge's `26.3.0.7-beta`, lists
-them in its `versions` table so ranges can be ordered.
+`loaders/neoforge/21.1.72.toml` says NeoForge 21.1.72 runs on Minecraft 1.21
+and 1.21.1, while `loaders/neoforge/20.4.237.toml` says 20.4.237 runs on 1.20.4.
+The loader ID is the same for both, and the loader definition is not
+republished to add a version. A per-version `game_versions` is used when
+present; the loader's family list answers for game versions where no
+per-version record exists. A loader whose versions are not SemVer, like
+NeoForge's `26.3.0.7-beta`, lists them in its `versions` table so ranges can be
+ordered.
 
 A loader's game versions must exist in the game's table to be ranged over, so
 `game.toml` includes Minecraft's alpha/beta line. That lets `babric` cover
@@ -438,13 +453,13 @@ install_adapter = "example/default"
 `metadata_extractor` names how to read a mod archive's own manifest, and
 `install_adapter` names where its files go. Both are identifiers resolved by
 the consuming tool, not code in signed bytes, so publishing a definition that
-names an adapter does not execute it. One adapter ships, `minecraft/default`,
-which places files under `mods/`. A launcher reads the name from the definition
-and refuses an adapter this build does not implement rather than placing files
-somewhere plausible-looking.
+names an adapter does not execute it. One adapter ships,
+`minecraft/default`, which places files under `mods/`. A launcher reads the
+name from the definition and refuses an adapter this build does not implement
+rather than placing files somewhere plausible-looking.
 
 A definition is signed by the operator who authors it, so this repository ships
-no pre-signed seed: a shipped definition would need a shipped private key, and
+no pre-signed seed. A shipped definition would need a shipped private key, and
 a game definition's `loader_authorities` would then name an identity nobody
 else can extend. Author your own once and reuse the key.
 
@@ -453,32 +468,32 @@ directory get *different* game IDs, and releases published against one will not
 match the other. Instances agree by sharing the same signed genesis: one home
 authors and serves the definition, and others pull it with
 `POST /v1/federation/sync-definition` (also `moraine-publish sync-definition`
-and the settings page) so they store it under the same ID. `definitions/curated.lock`
-pins a set of IDs and their homes, and `moraine-publish sync-definitions` applies
-it in one command. Each instance lists what it holds and marks it local or
-federated, so it is clear which identity a release is talking about.
+and the settings page) so they store it under the same ID.
+`definitions/curated.lock` pins a set of IDs and their homes, and
+`moraine-publish sync-definitions` applies it in one command. Each instance
+lists what it holds and marks it local or federated, so it is clear which
+identity a release is talking about.
 
-Each command writes the signed bytes the definitions directory loads; drop them
+Each command writes the signed bytes the definitions directory loads. Drop them
 in and restart, or `POST` them to `/v1/games`, `/v1/loaders`, or `/v1/runtimes`
 and then to the matching `/definitions` route. A readable file is compiled and
 signed locally; the text is never signed and never served, so editing it after
-the fact changes nothing. A loader names the game it
-targets, so publish the game first. `define-loader-release` is a loader object
-of the release shape: it records one loader version and the game versions it
-supports, and it does not replace the loader definition. Loader releases and
-acceptance mappings are the other two shapes under `loader-def`, and the
-directory loader recognizes all three. A published release is listed at
-`GET /v1/loaders/{id}/releases`, and `(loader-id, version)` binds to one object:
-re-publishing the same version with different bytes is refused, so a loader's
-version history cannot be silently rewritten. An acceptance mapping is the
-`mapping` shape: it says the accepting loader may run another loader's
-artifacts in one direction only, is never followed transitively, and is listed
-at `GET /v1/loaders/{id}/accepts`. Auto-selection through a mapping stays off
-unless a client chooses to act on the label. The canonical example is
-Cleanroom, which runs many Forge mods: a mapping from Cleanroom to Forge means
-an instance running Cleanroom may offer a Forge-declared mod as a labelled
-candidate, while an instance running Forge never offers a Cleanroom-only mod,
-because no mapping authorizes that direction.
+the fact changes nothing. A loader names the game it targets, so publish the
+game first. `define-loader-release` is a loader object of the release shape: it
+records one loader version and the game versions it supports, and it does not
+replace the loader definition. Loader releases and acceptance mappings are the
+other two shapes under `loader-def`, and the directory loader recognizes all
+three. A published release is listed at `GET /v1/loaders/{id}/releases`, and
+`(loader-id, version)` binds to one object: re-publishing the same version with
+different bytes is refused, so a loader's version history cannot be silently
+rewritten. An acceptance mapping is the `mapping` shape. It says the accepting
+loader may run another loader's artifacts in one direction only, is never
+followed transitively, and is listed at `GET /v1/loaders/{id}/accepts`.
+Auto-selection through a mapping stays off unless a client chooses to act on
+the label. The canonical example is Cleanroom, which runs many Forge mods: a
+mapping from Cleanroom to Forge means an instance running Cleanroom may offer a
+Forge-declared mod as a labelled candidate, while an instance running Forge
+never offers a Cleanroom-only mod, because no mapping authorizes that direction.
 
 ```
 cargo run -p moraine-publish -- define-loader-acceptance --key cleanroom.key \
@@ -509,7 +524,9 @@ queue, and `MORAINE_API_KEY` can supply the token instead of the flag. `publish`
 refuses early on a `review` home and points at `submit` rather than failing
 with a bare conflict.
 
-Run the website against it:
+### The website
+
+Run the website against the server:
 
 ```sh
 cd web
@@ -522,17 +539,17 @@ CI runs the test suites, the vector corpus through both checkers, and
 
 Building the site needs `wasm-pack` and the `wasm32-unknown-unknown` target;
 `pnpm build:wasm` compiles the signer, and the build scripts run it first.
-`pnpm build:static` produces a static site. `pnpm build:cloudflare`
-produces a Worker build from the same source. `pnpm lint` runs Oxlint,
-`pnpm fmt:check` runs Oxfmt, `pnpm fmt` rewrites files in place, and `pnpm test`
-runs the Vitest suite. The site reads
-`PUBLIC_MORAINE_REGISTRY` for its default home, and uses it as the API base for
-writes too. The server answers read requests with permissive CORS and no
-credentials, so any static site can resolve projects and fetch blobs. Signed
-writes need no credential either, so a cross-origin site can publish them.
+`pnpm build:static` produces a static site. `pnpm build:cloudflare` produces a
+Worker build from the same source. `pnpm lint` runs Oxlint, `pnpm fmt:check`
+runs Oxfmt, `pnpm fmt` rewrites files in place, and `pnpm test` runs the Vitest
+suite. The site reads `PUBLIC_MORAINE_REGISTRY` for its default home, and uses
+it as the API base for writes too. The server answers read requests with
+permissive CORS and no credentials, so any static site can resolve projects and
+fetch blobs. Signed writes need no credential either, so a cross-origin site
+can publish them.
 
 Account-side writes need a credential. If you host the site somewhere other
-than the registry, list its origin in `MORAINE_WEB_ORIGINS`; the server then
+than the registry, list its origin in `MORAINE_WEB_ORIGINS`. The server then
 allows those origins to write with credentials, switches the session cookies to
 `SameSite=None`, returns the CSRF token in the login response body, and checks
 the request `Origin`. An origin that is not listed gets reads only. If the site
@@ -653,7 +670,7 @@ has to share its changes. See `LICENSE`.
 
 Everything a client needs to speak the protocol without the server is MIT OR
 Apache-2.0: the `codec`, `crypto`, `model`, `metadata`, `install`, `verify`,
-`publish`, `resolver`, and `launcher` crates, and the `interop/` checker. See `LICENSE-MIT` and
-`LICENSE-APACHE`, and take whichever of the two you prefer. That split is on
-purpose. Independent clients should never need our permission, and the
-protocol crates carry no service logic worth hiding.
+`publish`, `resolver`, and `launcher` crates, and the `interop/` checker. See
+`LICENSE-MIT` and `LICENSE-APACHE`, and take whichever of the two you prefer.
+That split is on purpose. Independent clients should never need our permission,
+and the protocol crates carry no service logic worth hiding.
