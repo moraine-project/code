@@ -2,7 +2,7 @@
 
 Readable authoring files for games, loaders, and runtimes, compiled to signed
 records. This directory is the source of truth for the *content* of a
-definition; it is not the identity.
+definition. It is not the identity.
 
 ```sh
 cargo run -p moraine-publish -- keygen --key definitions.key
@@ -19,7 +19,7 @@ cargo run -p moraine-publish -- define --key definitions.key \
   --home https://your-instance
 ```
 
-Compiling mints the identities once and writes them to `--out`; importing is a
+Compiling mints the identities once and writes them to `--out`. Importing is a
 separate step that reads that directory, so re-importing is idempotent and never
 changes the IDs:
 
@@ -28,27 +28,27 @@ cargo run -p moraine-publish -- define --out data/definitions --home https://you
 ```
 
 If you do not want the whole default set, delete the files you do not want from
-`definitions/minecraft/` (for example, drop loaders you will not support) and
-compile again. Files refer to each other by `name`, so the compiler resolves the
-remaining IDs for you; you never paste an ID into a TOML. To attach a new
+`definitions/minecraft/` (drop loaders you will not support, say) and compile
+again. Files refer to each other by `name`, so the compiler resolves the
+remaining IDs for you. You never paste an ID into a TOML. To attach a new
 version to an identity you already published, set `revision_of` instead of
 minting a new one.
 
 ## Identity is not a name
 
 A game or loader ID is the digest of its signed genesis. Compiling the same TOML
-with a different key produces a *different* identity, so two instances that each
+with a different key produces a *different* identity. So two instances that each
 compile this directory do **not** agree that their "Minecraft" is the same game,
 and releases published against one will not match the other.
 
 There is no global registry of games. To agree, instances must share the same
-signed genesis, which happens one of two ways:
+signed genesis. That happens one of two ways:
 
 - **One authority publishes, others sync.** A home authors the definition once
   and serves it; other instances pull it with
   `POST /v1/federation/sync-definition` (or the CLI and settings UI) and store it
   under the same ID. This is what makes a shared "Minecraft" possible.
-- **Everyone authors their own.** Fine for a private or unreleased game, but the
+- **Everyone authors their own.** Fine for a private or unreleased game. The
   identities differ, and the instance labels them local.
 
 ## Adding a version
@@ -69,9 +69,10 @@ versions = ["1.20", "1.21", "1.22"]
 
 `definitions/minecraft/` is the content (the whole `definitions/` tree is
 compiled, so another game added beside it joins the same set).
-`definitions/canonical/` is that content compiled to signed objects, so every instance that takes it shares the *same*
-game, loader, and runtime IDs, and releases published against one match the
-other. `definitions/curated.lock` lists those IDs.
+`definitions/canonical/` is that content compiled to signed objects, so every
+instance that takes it shares the *same* game, loader, and runtime IDs, and
+releases published against one match the other. `definitions/curated.lock`
+lists those IDs.
 
 Two ways to take it, both one command:
 
@@ -91,7 +92,7 @@ compiles its own from the TOML instead and gets its own local IDs.
 
 ## Regenerating the canonical set
 
-The authority key is `definitions/canonical.key`; it is git-ignored and not part
+The authority key is `definitions/canonical.key`. It is git-ignored and not part
 of the repository. Whoever holds it authors the next revision, using `revision_of`
 to add versions without changing the IDs, then rebuilds:
 
@@ -107,7 +108,7 @@ identity, which breaks the shared IDs.
 ## Multiple games, and what an ID is
 
 A lock is a flat list and holds any number of games, runtimes, and loaders. Each
-entry names a `kind` and an `id`; the compiler walks the whole directory, so a
+entry names a `kind` and an `id`. The compiler walks the whole directory, so a
 tree with several games compiles into one set and one lock:
 
 ```toml
@@ -125,8 +126,8 @@ id = "gd:sha256:…"
 ```
 
 A loader names the game it targets inside its own signed definition, so the lock
-does not need to express that link, and loader versions and acceptance mappings
-are pulled along with their loader rather than listed.
+does not need to express that link. Loader versions and acceptance mappings are
+pulled along with their loader rather than listed.
 
 An ID is a content digest, not a name lookup: `gd:sha256:` plus
 `sha256("GAMEDIST/v1/" + kind + 0x00 + canonical payload bytes)`. The server
@@ -134,6 +135,6 @@ stores every object in a content-addressed table and keeps a small index of
 `id → kind, genesis digest, current digest`. Given an ID it looks up that row,
 loads the genesis, and checks the definition against that genesis root; the
 signed payload names itself (`display_name`, `game_id`). Nothing maps a hash to a
-name globally, which is the point: identity is separate from naming, so a game
-called "Minecraft" on one home is the same identity as another home's only if the
-bytes, and therefore the ID, match.
+name globally, and that is the point. Identity is separate from naming, so a
+game called "Minecraft" on one home is the same identity as another home's only
+if the bytes, and therefore the ID, match.
