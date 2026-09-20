@@ -146,9 +146,9 @@ access.
 
 Accounts manage their own password from the account page, and can generate
 **recovery codes**: one-time codes, stored hashed, that set a new password
-without any email. The operator has a fallback, `POST /v1/auth/users/reset-password`,
-which issues a temporary password and signs the account's sessions out, for a
-member who never saved codes. No mail server is required for any of this.
+without any email. For a member who never saved codes, the operator has a
+fallback: `POST /v1/auth/users/reset-password` issues a temporary password and
+signs the account's sessions out. No mail server is required for any of this.
 
 ## Storage
 

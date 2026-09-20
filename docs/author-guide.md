@@ -164,11 +164,11 @@ crates the CLI uses. Bring a key by generating one, pasting it, or opening a key
 file; it stays in the tab and is never uploaded.
 
 Two things are worth knowing. A key generated in a browser is only as safe as
-the backup you make, and clearing the tab loses it, so download it. And the
-website that serves the signing page is in your trust path; for a root key you
-care about, use the CLI on a machine you control, or sign releases with a
-delegated key and keep the root offline. The console tells you when the key you
-are using is a project root.
+the backup you make, so download it; clearing the tab loses it. And the website
+that serves the signing page is in your trust path. For a root key you care
+about, use the CLI on a machine you control, or sign releases with a delegated
+key and keep the root offline. The console tells you when the key you are using
+is a project root.
 
 ## Checking what you published
 

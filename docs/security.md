@@ -82,28 +82,31 @@ second party to corroborate a home, run a second instance and compare.
 ## Signing in a browser
 
 The publish console can sign with a key that never leaves the tab. That is
-convenient and it removes the risk of a key sitting in browser storage, but it
+convenient, and it removes the risk of a key sitting in browser storage. But it
 puts the page that serves the console in your trust path: whoever controls that
 origin serves the code that reads your key. A non-extractable WebCrypto key
-would not help here, because the page still asks it to sign. Two habits keep
-this safe. Treat a browser key as a release key, not a root: delegate a key to
-the project, publish with it, and keep the root offline, so a leaked browser key
-can be revoked without losing the project. And for a root key you care about,
-sign with the CLI on a machine you control. The console warns when the key in
-use is a project root.
+would not help here, because the page still asks it to sign.
+
+Two habits keep this safe. Treat a browser key as a release key, not a root.
+Delegate a key to the project, publish with it, and keep the root offline, so a
+leaked browser key can be revoked without losing the project. And for a root
+key you care about, sign with the CLI on a machine you control. The console
+warns when the key in use is a project root.
 
 ## Passwords and recovery
 
 Passwords are hashed with Argon2id and a random salt. Changing a password
 requires the current one and signs every other session out. Recovery codes are
 random, single-use, stored only as hashes, and also sign the account's sessions
-out when used. An instance without a mail server needs neither email
-verification nor a reset link to keep accounts recoverable: the user holds the
-codes, and the operator can issue a temporary password as a last resort. When
-SMTP is configured, registration additionally sends a single-use, 24-hour
-verification link, and an operator can require it before publishing. Accounts
-can export their data and delete themselves; a deletion is refused while the
-account is the last owner of an organization.
+out when used.
+
+An instance without a mail server still keeps accounts recoverable. The user
+holds the codes, and the operator can issue a temporary password as a last
+resort. When SMTP is configured, registration additionally sends a single-use,
+24-hour verification link, and an operator can require it before publishing.
+
+Accounts can export their data and delete themselves. A deletion is refused
+while the account is the last owner of an organization.
 
 ## Reporting a problem
 
