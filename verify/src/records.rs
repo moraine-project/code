@@ -1,9 +1,15 @@
 use moraine_codec::Value;
 use moraine_crypto::{ObjectKind, SigningKey};
 use moraine_model::attestation::{Attestation, AttestationKind, AttestationObject, MirrorCommitment};
+use moraine_model::changelog::{Changelog, ChangelogSection, LocaleSection};
+use moraine_model::compatibility::Side;
 use moraine_model::delegation::{Delegation, Migration, RecoveryEvent, ReleaseWindow};
+use moraine_model::deny_list::{DenyList, DenyListEntry, DenyTarget};
+use moraine_model::dependency::TargetKind;
 use moraine_model::genesis::RootKey;
 use moraine_model::location::{Location, LocationKind, LocationRecord};
+use moraine_model::moderation::ScopeKind;
+use moraine_model::modpack::{ModpackEntry, ModpackManifest};
 use moraine_model::release::ReleaseObject;
 use moraine_model::signed::sign_payload;
 
@@ -84,6 +90,61 @@ fn build_attestation() -> AttestationObject {
 		signer_id: sample_id("builder-ci"),
 		issued_at: DECLARED_AT,
 	})
+}
+
+fn build_changelog(project_id: &str) -> Changelog {
+	Changelog {
+		protocol: 1,
+		project_id: project_id.to_string(),
+		release_id: None,
+		locale_sections: vec![LocaleSection {
+			locale: "en".to_string(),
+			sections: vec![ChangelogSection {
+				heading: "Fixes".to_string(),
+				body: "Corrected a crash".to_string(),
+				severity: Some("high".to_string()),
+			}],
+		}],
+		declared_time: DECLARED_AT,
+	}
+}
+
+fn build_modpack(project_id: &str) -> ModpackManifest {
+	ModpackManifest {
+		protocol: 1,
+		project_id: project_id.to_string(),
+		game_id: sample_id("minecraft"),
+		loader_id: None,
+		entries: vec![ModpackEntry {
+			ordinal: 0,
+			target_kind: TargetKind::Project,
+			target_id: sample_id("included-project"),
+			release_id: sample_id("included-release"),
+			digest: vec![0xAB; 32],
+			applies_to: Side::Both,
+		}],
+		overrides: Vec::new(),
+		server_manifest_digest: None,
+		declared_time: DECLARED_AT,
+	}
+}
+
+fn build_deny_list(project_id: &str) -> DenyList {
+	DenyList {
+		protocol: 1,
+		issuer_id: sample_id("directory"),
+		entries: vec![DenyListEntry {
+			target_kind: DenyTarget::Project,
+			target_id: project_id.to_string(),
+			reason_code: "malware-confirmed".to_string(),
+			reason_taxonomy_version: 1,
+			scope_kind: ScopeKind::Instance,
+			scope_id: "directory.example".to_string(),
+			valid_from: None,
+			valid_until: None,
+		}],
+		issued_at: DECLARED_AT,
+	}
 }
 
 pub(crate) fn vectors() -> Vec<Vector> {
@@ -171,6 +232,42 @@ pub(crate) fn vectors() -> Vec<Vector> {
 		"locations",
 		ObjectKind::Attestation,
 		&signed_evidence,
+		"accept",
+		None,
+		Some(trust(&[&k1], 1)),
+	));
+
+	let changelog = build_changelog(&project_id);
+	let signed_changelog = sign_payload(ObjectKind::Changelog, &changelog, &[&k1]);
+	vectors.push(object_vector(
+		"changelog-valid",
+		"changelog",
+		ObjectKind::Changelog,
+		&signed_changelog,
+		"accept",
+		None,
+		Some(trust(&[&k1], 1)),
+	));
+
+	let modpack = build_modpack(&project_id);
+	let signed_modpack = sign_payload(ObjectKind::Modpack, &modpack, &[&k1]);
+	vectors.push(object_vector(
+		"modpack-valid",
+		"modpack",
+		ObjectKind::Modpack,
+		&signed_modpack,
+		"accept",
+		None,
+		Some(trust(&[&k1], 1)),
+	));
+
+	let deny_list = build_deny_list(&project_id);
+	let signed_deny_list = sign_payload(ObjectKind::DenyList, &deny_list, &[&k1]);
+	vectors.push(object_vector(
+		"deny-list-valid",
+		"deny-list",
+		ObjectKind::DenyList,
+		&signed_deny_list,
 		"accept",
 		None,
 		Some(trust(&[&k1], 1)),

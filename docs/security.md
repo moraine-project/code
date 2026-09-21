@@ -62,10 +62,13 @@ plain HTTP is off unless an operator turns it on for local tests.
 
 Each sync also records the head it observed, so a home that later presents a
 different entry at a sequence it already showed leaves a durable conflict
-instead of a transient one. That log is local to this instance and is not
-exchanged with anyone, so it can only prove equivocation this instance saw
-itself. Cross-instance witness exchange is not implemented; if you need a
-second party to corroborate a home, run a second instance and compare.
+instead of a transient one. An instance can export those observations in a
+canonical bundle signed by its webhook key, and another instance can verify and
+import that bundle. Imported rows retain the observer key ID, so a conflict
+report shows which instances supplied each piece of evidence. This is still
+evidence, not global consensus: it does not authorize a project, validate a
+release, or decide which fork is correct. Operators should pin the expected
+observer key before relying on its attribution.
 
 ## What none of this covers
 

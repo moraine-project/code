@@ -34,6 +34,8 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/definition-subscriptions", get(list_definition_subscriptions))
 		.route("/v1/subscriptions", get(list_subscriptions).delete(unsubscribe))
 		.route("/v1/subscriptions/reset", post(reset_subscription))
+		.route("/v1/federation/witness", post(witness::import))
+		.route("/v1/federation/witness/{project_id}", get(witness::export))
 		.route("/v1/projects/{id}/witness", get(witness::observe))
 }
 

@@ -1,5 +1,8 @@
 use axum::body::Body;
 use axum::http::{StatusCode, header};
+use moraine_crypto::SigningKey;
+use moraine_model::Canonical;
+use moraine_model::witness::{WITNESS_DOMAIN, WitnessBundle, WitnessObservation};
 use tokio::net::TcpListener;
 use tower::ServiceExt;
 
@@ -61,6 +64,7 @@ async fn a_sync_records_the_head_it_witnessed() {
 
 	let head_entry = observations[0]["head_entry"].as_str().expect("head entry").to_string();
 	let elsewhere = crate::registry::witness::WitnessObservationRow {
+		observer_id: "local".to_string(),
 		source_home: "https://elsewhere.example".to_string(),
 		sequence: 1,
 		head_entry,
@@ -69,6 +73,7 @@ async fn a_sync_records_the_head_it_witnessed() {
 	assert!(crate::registry::witness::witness_conflicts(std::slice::from_ref(&elsewhere)).is_empty());
 
 	let rewritten = crate::registry::witness::WitnessObservationRow {
+		observer_id: "local".to_string(),
 		source_home: elsewhere.source_home.clone(),
 		sequence: 1,
 		head_entry: format!("gd:sha256:{}", "aa".repeat(32)),
@@ -78,4 +83,60 @@ async fn a_sync_records_the_head_it_witnessed() {
 	assert_eq!(split.len(), 1);
 	assert_eq!(split[0].entries.len(), 2);
 	assert_eq!(split[0].homes, vec!["https://elsewhere.example".to_string()]);
+}
+
+#[tokio::test]
+async fn imports_signed_witness_observations_and_exposes_the_observer() {
+	let (application, _directory) = app().await;
+	let signer = SigningKey::from_seed(&[77u8; 32]);
+	let bundle = WitnessBundle {
+		protocol: 1,
+		observer_id: signer.key_id().to_string(),
+		observations: vec![WitnessObservation {
+			project_id: "gd:sha256:11".to_string(),
+			source_home: "https://home.example".to_string(),
+			sequence: 4,
+			head_entry: "gd:sha256:22".to_string(),
+			observed_at: 1_760_000_400,
+		}],
+	};
+	let payload = bundle.to_canonical_bytes();
+	let mut message = WITNESS_DOMAIN.to_vec();
+	message.extend_from_slice(&payload);
+	let mut invalid_signature = signer.sign(&message);
+	invalid_signature[0] ^= 1;
+	let invalid_import = axum::http::Request::post("/v1/federation/witness")
+		.header(header::CONTENT_TYPE, "application/json")
+		.body(Body::from(
+			serde_json::json!({
+				"payload": hex::encode(&payload),
+				"signature": hex::encode(invalid_signature),
+				"public_key": hex::encode(signer.verifying_key().to_bytes()),
+			})
+			.to_string(),
+		))
+		.expect("request");
+	let response = application.clone().oneshot(invalid_import).await.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+	let import = axum::http::Request::post("/v1/federation/witness")
+		.header(header::CONTENT_TYPE, "application/json")
+		.body(Body::from(
+			serde_json::json!({
+				"payload": hex::encode(&payload),
+				"signature": hex::encode(signer.sign(&message)),
+				"public_key": hex::encode(signer.verifying_key().to_bytes()),
+			})
+			.to_string(),
+		))
+		.expect("request");
+	let response = application.clone().oneshot(import).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let (session, _) = login(&application, "ops@example.org").await;
+	let observe = axum::http::Request::get("/v1/projects/gd:sha256:11/witness")
+		.header(header::COOKIE, format!("moraine_session={session}"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(observe).await.expect("response");
+	let view = body_json(response).await;
+	assert_eq!(view["observations"][0]["observer_id"], signer.key_id().to_string());
 }

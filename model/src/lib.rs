@@ -23,6 +23,7 @@ pub mod signed;
 pub mod trust;
 pub mod verify;
 pub mod version;
+pub mod witness;
 
 pub use canonical::Canonical;
 pub use error::{ModelError, RejectReason};

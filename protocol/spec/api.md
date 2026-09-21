@@ -562,11 +562,15 @@ sequence is evidence that a home rewrote history. It stays visible after the
 head has moved on. The log is per instance and database-backed, deduplicated by
 project, home, sequence, and entry.
 
-It is a local record, not an exchange. This instance does not publish its log
-to other instances or fetch theirs, so it can detect equivocation it observed
-itself and cannot corroborate what it did not see. The route needs the
-`federation:manage` scope, like the subscription list, so following choices
-stay private to the operator.
+It is also exchangeable evidence. `GET /v1/federation/witness/{id}` exports
+the local observations for one project in a canonical bundle signed by the
+instance's advertised webhook key. `POST /v1/federation/witness` verifies such
+a bundle and stores its observations with the observer key ID. Re-importing the
+same bundle is idempotent. Imported evidence does not authorize a project,
+validate a release, or decide which side of a fork is correct. Operators should
+compare the bundle key with the expected key from capability discovery before
+trusting its attribution. The inspection route and export route need the
+`federation:manage` scope; importing is signature-gated.
 
 A game, loader, or runtime identity is pulled the same way with
 `POST /v1/federation/sync-definition`.
@@ -1067,7 +1071,3 @@ a native project automatically.
 The desktop launcher GUI. The verifier, resolver, installer core, metadata
 extractors, and install adapters are built; only the toolkit choice and its
 prototype remain, deliberately, until installer requirements are known.
-
-Cross-instance witness exchange. Each instance keeps its own witness log of the
-heads it observed, but instances do not publish or fetch each other's logs, so
-corroboration is manual for now.

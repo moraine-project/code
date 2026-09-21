@@ -3,12 +3,15 @@ use moraine_crypto::{KeyId, ObjectKind, object_id_string};
 use moraine_model::Canonical;
 use moraine_model::advisory::Advisory;
 use moraine_model::attestation::AttestationObject;
+use moraine_model::changelog::Changelog;
 use moraine_model::compatibility::{Predicate, PredicateResult};
 use moraine_model::definition::{GameDef, LoaderObject, RuntimeDef};
 use moraine_model::delegation::{Delegation, DelegationPurpose};
+use moraine_model::deny_list::DenyList;
 use moraine_model::error::{ModelError, RejectReason};
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::{Genesis, GenesisKind};
+use moraine_model::modpack::ModpackManifest;
 use moraine_model::profile::ProfileRevision;
 use moraine_model::release::ReleaseObject;
 use moraine_model::signed::{Signature, SignatureEnvelope, SignedObject, TrustedKey, verify_envelope};
@@ -149,10 +152,9 @@ pub fn evaluate(vector: &Vector) -> Actual {
 		ObjectKind::RuntimeDef => verify_with_trust::<RuntimeDef>(vector, payload, &envelope, kind, verify_kind),
 		ObjectKind::Attestation => verify_with_trust::<AttestationObject>(vector, payload, &envelope, kind, verify_kind),
 		ObjectKind::Advisory => verify_with_trust::<Advisory>(vector, payload, &envelope, kind, verify_kind),
-		other => Err(ModelError::new(
-			RejectReason::WrongObjectKind,
-			format!("{} is not implemented yet", other.as_str()),
-		)),
+		ObjectKind::Changelog => verify_with_trust::<Changelog>(vector, payload, &envelope, kind, verify_kind),
+		ObjectKind::Modpack => verify_with_trust::<ModpackManifest>(vector, payload, &envelope, kind, verify_kind),
+		ObjectKind::DenyList => verify_with_trust::<DenyList>(vector, payload, &envelope, kind, verify_kind),
 	};
 
 	match outcome {

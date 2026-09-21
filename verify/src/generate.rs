@@ -725,7 +725,7 @@ pub fn generate() -> VectorFile {
 	VectorFile {
 		protocol: 1,
 		description:
-			"Moraine protocol test vectors: canonical encoding, genesis, delegation, release, profile, cross-object, and feed"
+			"Moraine protocol test vectors covering canonical encoding, signed objects, definitions, records, and predicates"
 				.to_string(),
 		vectors,
 	}
