@@ -102,7 +102,7 @@ services:
       - moraine-data:/data
     ports:
       # Kept on the host loopback: terminate TLS in a proxy in front.
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${MORAINE_HOST_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
       interval: 30s
