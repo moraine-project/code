@@ -14,6 +14,36 @@ export const subscriptionSchema = z.object({
 
 export type Subscription = z.infer<typeof subscriptionSchema>;
 
+export const definitionSubscriptionSchema = z.object({
+	home_url: z.string(),
+	id: z.string(),
+	kind: z.string(),
+	updated_at: z.number(),
+});
+export type DefinitionSubscription = z.infer<typeof definitionSubscriptionSchema>;
+
+const witnessObservationSchema = z.object({
+	observer_id: z.string(),
+	source_home: z.string(),
+	sequence: z.number(),
+	head_entry: z.string(),
+	observed_at: z.number(),
+});
+
+const witnessConflictSchema = z.object({
+	sequence: z.number(),
+	entries: z.array(z.string()),
+	homes: z.array(z.string()),
+	observers: z.array(z.string()),
+});
+
+export const witnessReportSchema = z.object({
+	project_id: z.string(),
+	observations: z.array(witnessObservationSchema),
+	conflicts: z.array(witnessConflictSchema),
+});
+export type WitnessReport = z.infer<typeof witnessReportSchema>;
+
 export async function subscriptions(): Promise<Subscription[]> {
 	const response = await authorizedFetch('/v1/subscriptions');
 	if (response.status === 401 || response.status === 403) {
@@ -23,6 +53,18 @@ export async function subscriptions(): Promise<Subscription[]> {
 		throw new Error(await failure(response));
 	}
 	return z.array(subscriptionSchema).parse(await response.json());
+}
+
+export async function witness(projectId: string): Promise<WitnessReport> {
+	const response = await authorizedFetch(`/v1/projects/${encodeURIComponent(projectId)}/witness`);
+	if (!response.ok) throw new Error(await failure(response));
+	return witnessReportSchema.parse(await response.json());
+}
+
+export async function definitionSubscriptions(): Promise<DefinitionSubscription[]> {
+	const response = await authorizedFetch('/v1/definition-subscriptions');
+	if (!response.ok) throw new Error(await failure(response));
+	return z.array(definitionSubscriptionSchema).parse(await response.json());
 }
 
 export async function unfollow(homeUrl: string, projectId: string): Promise<void> {
@@ -84,4 +126,30 @@ export async function syncDefinition(
 	return z
 		.object({ id: z.string(), kind: z.string(), definition: z.string() })
 		.parse(await response.json());
+}
+
+export async function subscribeDefinition(
+	homeUrl: string,
+	id: string,
+	kind: 'game' | 'loader' | 'runtime',
+): Promise<{ id: string; kind: string; definition: string }> {
+	const response = await authorizedFetch('/v1/federation/subscribe-definition', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ home_url: homeUrl, id, kind }),
+	});
+	if (!response.ok) throw new Error(await failure(response));
+	return z
+		.object({ id: z.string(), kind: z.string(), definition: z.string() })
+		.parse(await response.json());
+}
+
+export async function pinMirror(mirrorId: string, publicKey: string): Promise<string> {
+	const response = await authorizedFetch(`/v1/mirrors/${encodeURIComponent(mirrorId)}/keys`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ public_key: publicKey }),
+	});
+	if (!response.ok) throw new Error(await failure(response));
+	return z.object({ mirror_id: z.string() }).parse(await response.json()).mirror_id;
 }

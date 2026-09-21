@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { DownloadCloud } from '@lucide/svelte';
-	import { syncDefinition } from '$lib/api/federation';
+	import {
+		definitionSubscriptions,
+		subscribeDefinition,
+		syncDefinition,
+		type DefinitionSubscription,
+	} from '$lib/api/federation';
 	import {
 		listDefinitions,
 		normalizeBase,
@@ -14,6 +19,7 @@
 	import SourceBadge from '$lib/components/SourceBadge.svelte';
 
 	let definitions = $state<DefinitionSummary[]>([]);
+	let subscriptions = $state<DefinitionSubscription[]>([]);
 	let kind = $state<'game' | 'loader' | 'runtime'>('game');
 	let id = $state('');
 	let home = $state('');
@@ -31,12 +37,34 @@
 
 	async function load() {
 		const base = normalizeBase(apiOrigin());
-		const [games, loaders, runtimes] = await Promise.all([
+		const [games, loaders, runtimes, definitionFeeds] = await Promise.all([
 			listDefinitions(base, 'games').catch(() => []),
 			listDefinitions(base, 'loaders').catch(() => []),
 			listDefinitions(base, 'runtimes').catch(() => []),
+			definitionSubscriptions().catch(() => []),
 		]);
 		definitions = [...games, ...loaders, ...runtimes];
+		subscriptions = definitionFeeds;
+	}
+
+	async function subscribe() {
+		if (!home.trim() || !id.trim()) {
+			error = 'enter a home URL and definition ID first';
+			return;
+		}
+		busy = true;
+		error = null;
+		notice = null;
+		try {
+			const pulled = await subscribeDefinition(home.trim(), id.trim(), kind);
+			notice = `Subscribed to ${pulled.kind} ${shortDigest(pulled.id, 16)}.`;
+			id = '';
+			await load();
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'the subscription failed';
+		} finally {
+			busy = false;
+		}
 	}
 
 	async function pull(event: SubmitEvent) {
@@ -64,6 +92,27 @@
 	{#if notice}
 		<div role="alert" class="alert alert-info"><span>{notice}</span></div>
 	{/if}
+
+	<section class="flex flex-col gap-2 border-b border-base-300 pb-4">
+		<h2 class="text-lg font-semibold">Definition subscriptions</h2>
+		<p class="text-sm text-base-content/70">
+			Subscribed definitions refresh during maintenance and keep their signed identity and source
+			home.
+		</p>
+		{#if subscriptions.length === 0}
+			<p class="text-sm text-base-content/60">No definition subscriptions yet.</p>
+		{:else}
+			<ul class="flex flex-col gap-1 text-sm">
+				{#each subscriptions as subscription (subscription.home_url + subscription.id)}
+					<li class="flex flex-wrap gap-x-2 gap-y-1">
+						<span class="badge badge-ghost badge-sm">{subscription.kind}</span>
+						<span class="font-mono text-xs">{shortDigest(subscription.id, 16)}</span>
+						<span class="break-all text-base-content/60">from {subscription.home_url}</span>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</section>
 
 	<p class="text-sm text-base-content/70">
 		Games, loaders, and runtimes this instance knows. A definition is either authored here (<span
@@ -133,6 +182,9 @@
 		<button class="btn" type="submit" disabled={busy}>
 			<DownloadCloud size={16} />
 			Pull definition
+		</button>
+		<button class="btn btn-outline" type="button" disabled={busy} onclick={subscribe}>
+			Subscribe and pull
 		</button>
 	</form>
 </div>

@@ -5,8 +5,11 @@ import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 const target = process.env.MORAINE_WEB_TARGET ?? 'static';
+const output = process.env.MORAINE_WEB_OUTPUT ?? 'build';
 const adapter =
-	target === 'cloudflare' ? cloudflareAdapter() : staticAdapter({ fallback: 'index.html' });
+	target === 'cloudflare'
+		? cloudflareAdapter()
+		: staticAdapter({ fallback: 'index.html', pages: output, assets: output });
 
 export default defineConfig({
 	plugins: [

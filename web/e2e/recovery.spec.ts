@@ -40,4 +40,8 @@ test('changes a password and recovers with a one-time code', async ({ page }) =>
 	await expect(page.getByText(/Password changed. Sign in/)).toBeVisible();
 
 	await signIn(page, 'recovered password 456');
+	await page.getByLabel('Current password').fill('recovered password 456');
+	await page.getByLabel('New password').fill(state.password);
+	await page.getByRole('button', { name: 'Change password' }).click();
+	await expect(page.getByText(/Password changed/)).toBeVisible();
 });

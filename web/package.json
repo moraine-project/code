@@ -20,7 +20,7 @@
 		"fmt:check": "oxfmt --check",
 		"test": "vitest run",
 		"test:e2e": "playwright test",
-		"pretest:e2e": "PUBLIC_MORAINE_REGISTRY=http://127.0.0.1:${MORAINE_E2E_PORT:-8137} pnpm build:static && cargo build --manifest-path ../Cargo.toml -p moraine-server -p moraine-publish"
+		"pretest:e2e": "pnpm build:wasm && PUBLIC_MORAINE_REGISTRY=http://127.0.0.1:${MORAINE_E2E_PORT:-8137} MORAINE_WEB_TARGET=static MORAINE_WEB_OUTPUT=build vite build && PUBLIC_MORAINE_REGISTRY=http://127.0.0.1:${MORAINE_E2E_REVIEW_PORT:-8138} MORAINE_WEB_TARGET=static MORAINE_WEB_OUTPUT=build-review vite build && cargo build --manifest-path ../Cargo.toml -p moraine-server -p moraine-publish"
 	},
 	"dependencies": {
 		"@lucide/svelte": "^1.47.0",

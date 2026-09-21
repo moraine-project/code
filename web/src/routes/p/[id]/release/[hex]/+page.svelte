@@ -5,6 +5,7 @@
 		digestHex,
 		fileSha256,
 		mirrorLocations,
+		safeExternalUrl,
 		type ArtifactLocations,
 	} from '$lib/api/registry';
 	import Digest from '$lib/components/Digest.svelte';
@@ -211,13 +212,17 @@
 											</p>
 											<ul class="mt-1 flex flex-col gap-1 text-xs">
 												{#each mirrors[artifact.digest]?.locations ?? [] as location (location.url)}
+													{@const href = safeExternalUrl(location.url)}
 													<li>
-														<a
-															class="link"
-															href={location.url}
-															target="_blank"
-															rel="noopener noreferrer">{location.kind}: {location.url}</a
-														>
+														{#if href}
+															<a class="link" {href} target="_blank" rel="noopener noreferrer"
+																>{location.kind}: {href}</a
+															>
+														{:else}
+															<span class="text-base-content/60"
+																>Unavailable {location.kind} location</span
+															>
+														{/if}
 													</li>
 												{/each}
 											</ul>

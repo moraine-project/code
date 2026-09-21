@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { externalClaims, reviewExternalClaim, type ExternalClaim } from '$lib/api/external';
+	import { safeExternalUrl } from '$lib/api/registry';
 	import { authorizedFetch, failure } from '$lib/api/session';
 
 	type Sanction = {
@@ -30,6 +32,9 @@
 	let sanctions = $state<Sanction[]>([]);
 	let reports = $state<Report[]>([]);
 	let legalRequests = $state<LegalRequest[]>([]);
+	let claims = $state<ExternalClaim[]>([]);
+	let legalTargetKind = $state('project');
+	let legalTargetId = $state('');
 	let error = $state<string | null>(null);
 	let notice = $state<string | null>(null);
 
@@ -37,14 +42,16 @@
 
 	async function load() {
 		try {
-			const [sanctionResponse, reportResponse] = await Promise.all([
+			const [sanctionResponse, reportResponse, externalClaimRows] = await Promise.all([
 				authorizedFetch('/v1/sanctions'),
 				authorizedFetch('/v1/impersonation-reports'),
+				externalClaims(),
 			]);
 			if (!sanctionResponse.ok) throw await failure(sanctionResponse);
 			if (!reportResponse.ok) throw await failure(reportResponse);
 			sanctions = await sanctionResponse.json();
 			reports = await reportResponse.json();
+			claims = externalClaimRows;
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'could not load moderation records';
 		}
@@ -88,8 +95,8 @@
 				body: JSON.stringify({
 					kind: form.get('kind'),
 					claimant_ref: form.get('claimant'),
-					target_kind: form.get('target_kind'),
-					target_id: form.get('target_id'),
+					target_kind: legalTargetKind,
+					target_id: legalTargetId,
 					stated_basis: form.get('basis'),
 					received_at: Math.floor(Date.now() / 1000),
 				}),
@@ -100,6 +107,27 @@
 			notice = 'Legal request recorded.';
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'could not record legal request';
+		}
+	}
+
+	async function loadLegalRequests() {
+		error = null;
+		notice = null;
+		if (!legalTargetId.trim()) {
+			error = 'enter a target id before loading legal requests';
+			return;
+		}
+		try {
+			const params = new URLSearchParams({
+				target_kind: legalTargetKind,
+				target_id: legalTargetId,
+			});
+			const response = await authorizedFetch(`/v1/legal-requests?${params}`);
+			if (!response.ok) throw await failure(response);
+			legalRequests = await response.json();
+			notice = `Loaded ${legalRequests.length} legal request(s).`;
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not load legal requests';
 		}
 	}
 
@@ -148,11 +176,70 @@
 			error = cause instanceof Error ? cause.message : 'could not pin provider key';
 		}
 	}
+
+	async function decideClaim(claim: ExternalClaim, state: 'approved' | 'rejected') {
+		error = null;
+		notice = null;
+		try {
+			await reviewExternalClaim(claim.id, state);
+			claims = claims.filter((item) => item.id !== claim.id);
+			notice = `External project claim ${state}.`;
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not review external project claim';
+		}
+	}
 </script>
 
 <div class="flex flex-col gap-6">
 	{#if error}<div role="alert" class="alert alert-error"><span>{error}</span></div>{/if}
 	{#if notice}<div role="alert" class="alert alert-success"><span>{notice}</span></div>{/if}
+	<section class="flex flex-col gap-3">
+		<h2 class="text-lg font-semibold">External project claims</h2>
+		<p class="text-sm text-base-content/70">
+			Claims are review records only. Approving one does not sign, import, or attach a native
+			project.
+		</p>
+		{#if claims.length > 0}
+			<ul class="flex flex-col gap-3">
+				{#each claims as claim (claim.id)}
+					<li class="rounded-box border border-base-300 p-3 text-sm">
+						<div class="flex flex-wrap gap-x-3 gap-y-1">
+							<span>{claim.provider}/{claim.external_project_id}</span>
+							<span class="text-base-content/60">{claim.claimant_ref}</span>
+							<span class="text-base-content/60"
+								>expires {new Date(claim.expires_at * 1000).toLocaleString()}</span
+							>
+						</div>
+						{#if safeExternalUrl(claim.challenge_ref)}
+							<a
+								class="link text-xs"
+								href={safeExternalUrl(claim.challenge_ref) ?? undefined}
+								target="_blank"
+								rel="noopener noreferrer">Open challenge reference</a
+							>
+						{:else}
+							<span class="text-xs text-base-content/60">Challenge reference is not a web URL.</span
+							>
+						{/if}
+						<div class="mt-2 flex gap-2">
+							<button
+								class="btn btn-sm btn-primary"
+								type="button"
+								onclick={() => decideClaim(claim, 'approved')}>Approve</button
+							>
+							<button
+								class="btn btn-sm btn-outline"
+								type="button"
+								onclick={() => decideClaim(claim, 'rejected')}>Reject</button
+							>
+						</div>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="text-sm text-base-content/60">No pending external project claims.</p>
+		{/if}
+	</section>
 	<section class="flex flex-col gap-3">
 		<h2 class="text-lg font-semibold">Trusted evidence provider</h2>
 		<p class="text-sm text-base-content/70">
@@ -175,15 +262,6 @@
 			/>
 			<button class="btn w-fit" type="submit">Pin provider key</button>
 		</form>
-		{#if legalRequests.length > 0}
-			<ul class="flex flex-col gap-1 text-sm">
-				{#each legalRequests as item (item.id)}<li>
-						{item.kind} · {item.target_kind}:{item.target_id} · {item.action_taken}
-					</li>{/each}
-			</ul>
-		{:else}<p class="text-sm text-base-content/60">
-				No legal requests recorded in this session.
-			</p>{/if}
 	</section>
 	<section class="flex flex-col gap-3">
 		<h2 class="text-lg font-semibold">Record an impersonation report</h2>
@@ -275,13 +353,17 @@
 				placeholder="Claimant reference"
 				aria-label="Claimant reference"
 			/>
-			<select class="select" name="target_kind" aria-label="Legal target kind"
-				><option>project</option><option>release</option></select
+			<select
+				class="select"
+				bind:value={legalTargetKind}
+				name="target_kind"
+				aria-label="Legal target kind"><option>project</option><option>release</option></select
 			>
 			<input
 				class="input"
 				name="target_id"
 				required
+				bind:value={legalTargetId}
 				placeholder="Target id"
 				aria-label="Legal target id"
 			/>
@@ -292,8 +374,25 @@
 				placeholder="Stated basis"
 				aria-label="Stated basis"
 			/>
-			<button class="btn w-fit" type="submit">Record legal request</button>
+			<div class="flex flex-wrap gap-2 sm:col-span-2">
+				<button class="btn w-fit" type="submit">Record legal request</button>
+				<button
+					class="btn btn-outline w-fit"
+					type="button"
+					onclick={loadLegalRequests}
+					disabled={!legalTargetId.trim()}
+				>
+					Load recorded requests
+				</button>
+			</div>
 		</form>
+		{#if legalRequests.length > 0}
+			<ul class="flex flex-col gap-1 text-sm">
+				{#each legalRequests as item (item.id)}<li>
+						{item.kind} · {item.target_kind}:{item.target_id} · {item.action_taken}
+					</li>{/each}
+			</ul>
+		{:else}<p class="text-sm text-base-content/60">No legal requests match this target.</p>{/if}
 	</section>
 	<section class="flex flex-col gap-3">
 		<h2 class="text-lg font-semibold">Impersonation reports</h2>

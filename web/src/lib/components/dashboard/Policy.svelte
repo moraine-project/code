@@ -12,6 +12,9 @@
 	let items = $state<ListingPolicy[]>([]);
 	let error = $state<string | null>(null);
 	let busy = $state<string | null>(null);
+	let policyProject = $state('');
+	let policyState = $state('quarantined');
+	let policyNote = $state('');
 	let grantProject = $state('');
 	let grants = $state<PublicationGrant[]>([]);
 
@@ -34,9 +37,31 @@
 				String(form.get('state')),
 				String(form.get('note') ?? ''),
 			);
-			items = items.map((entry) => (entry.project_id === updated.project_id ? updated : entry));
+			items =
+				updated.listing_state === 'listed'
+					? items.filter((entry) => entry.project_id !== updated.project_id)
+					: items.map((entry) => (entry.project_id === updated.project_id ? updated : entry));
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'could not update policy';
+		} finally {
+			busy = null;
+		}
+	}
+
+	async function setProjectPolicy(event: SubmitEvent) {
+		event.preventDefault();
+		busy = 'new-policy';
+		error = null;
+		try {
+			const updated = await setPolicy(policyProject.trim(), policyState, policyNote.trim());
+			items =
+				updated.listing_state === 'listed'
+					? items.filter((item) => item.project_id !== updated.project_id)
+					: [updated, ...items.filter((item) => item.project_id !== updated.project_id)];
+			policyProject = '';
+			policyNote = '';
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not set policy';
 		} finally {
 			busy = null;
 		}
@@ -104,6 +129,30 @@
 			{/each}
 		</ul>
 	{/if}
+	<form class="flex flex-wrap items-end gap-2" onsubmit={setProjectPolicy}>
+		<label class="flex min-w-72 flex-1 flex-col gap-1 text-xs">
+			<span>Project id</span>
+			<input
+				class="input input-sm"
+				bind:value={policyProject}
+				required
+				placeholder="gd:sha256:…"
+				aria-label="Policy project id"
+			/>
+		</label>
+		<label class="flex flex-col gap-1 text-xs">
+			<span>State</span>
+			<select class="select select-sm" bind:value={policyState} aria-label="Policy state">
+				<option>unlisted</option><option>quarantined</option><option>blocked</option>
+				<option>withdrawn</option><option>unavailable</option><option>listed</option>
+			</select>
+		</label>
+		<label class="flex min-w-64 flex-1 flex-col gap-1 text-xs">
+			<span>Note</span>
+			<input class="input input-sm" bind:value={policyNote} aria-label="Policy note" />
+		</label>
+		<button class="btn btn-sm" type="submit" disabled={busy === 'new-policy'}>Set policy</button>
+	</form>
 	<div class="divider"></div>
 	<section class="flex flex-col gap-3">
 		<div>
