@@ -17,6 +17,9 @@ pub(super) async fn change_password(
 	if request.new.len() < MIN_PASSWORD_LENGTH {
 		return (StatusCode::BAD_REQUEST, "the new password is too short").into_response();
 	}
+	if request.new.len() > MAX_PASSWORD_LENGTH {
+		return (StatusCode::BAD_REQUEST, "the new password is too long").into_response();
+	}
 	let record = match state.metadata.user_by_id(&user.user_id).await {
 		Ok(Some(record)) => record,
 		Ok(None) => return (StatusCode::UNAUTHORIZED, "account no longer exists").into_response(),
@@ -60,6 +63,9 @@ pub(super) async fn recover(State(state): State<AppState>, Json(request): Json<R
 	let email = request.email.trim().to_lowercase();
 	if request.new.len() < MIN_PASSWORD_LENGTH {
 		return (StatusCode::BAD_REQUEST, "the new password is too short").into_response();
+	}
+	if request.new.len() > MAX_PASSWORD_LENGTH {
+		return (StatusCode::BAD_REQUEST, "the new password is too long").into_response();
 	}
 	let Some(record) = (match state.metadata.user_by_email(&email).await {
 		Ok(record) => record,

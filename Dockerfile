@@ -14,10 +14,14 @@ RUN cargo build --release -p moraine-server
 FROM debian:bookworm-slim
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends ca-certificates curl \
-	&& rm -rf /var/lib/apt/lists/*
+	&& rm -rf /var/lib/apt/lists/* \
+	&& useradd --system --uid 10001 --create-home moraine \
+	&& mkdir -p /data \
+	&& chown moraine:moraine /data
 COPY --from=build /src/target/release/moraine-server /usr/local/bin/moraine-server
 COPY --from=web /web/build /srv/web
 VOLUME /data
+USER moraine
 EXPOSE 8080
 ENTRYPOINT ["moraine-server"]
 CMD ["--data-dir", "/data", "--bind", "0.0.0.0:8080", "--web-dir", "/srv/web", "--tls-terminated"]

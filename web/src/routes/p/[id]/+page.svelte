@@ -177,7 +177,7 @@
 				<div class="flex flex-col gap-2">
 					<h2 class="text-sm font-semibold text-base-content/60">Links</h2>
 					<div class="flex flex-wrap gap-2">
-						{#each [...(data.profile?.links ?? []), ...(data.profile?.communities ?? [])] as link (link.url)}
+						{#each links as link (link.url)}
 							<a
 								class="btn btn-sm btn-outline"
 								href={link.url}

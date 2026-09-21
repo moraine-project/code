@@ -121,6 +121,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - name: Prepare web environment
+        run: cp .env.example .env
       - run: pnpm build:wasm
       - run: pnpm fmt:check
       - run: pnpm lint

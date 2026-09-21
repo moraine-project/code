@@ -26,6 +26,8 @@ const RECOVERY_CODE_COUNT: usize = 8;
 const VERIFICATION_SECONDS: i64 = 24 * 3600;
 const LOGIN_MAX_ATTEMPTS: u32 = 10;
 const LOGIN_WINDOW_SECONDS: i64 = 15 * 60;
+const MAX_TRACKED_LOGIN_KEYS: usize = 10_000;
+const MAX_PASSWORD_LENGTH: usize = 1024;
 
 pub struct LoginLimiter {
 	attempts: std::sync::Mutex<std::collections::HashMap<String, (u32, i64)>>,
@@ -51,8 +53,11 @@ impl LoginLimiter {
 
 	fn record_failure(&self, key: &str, now: i64) {
 		let mut attempts = self.attempts.lock().expect("login limiter");
-		if attempts.len() > 10_000 {
+		if attempts.len() >= MAX_TRACKED_LOGIN_KEYS && !attempts.contains_key(key) {
 			attempts.retain(|_, (_, start)| now - *start < LOGIN_WINDOW_SECONDS);
+			if attempts.len() >= MAX_TRACKED_LOGIN_KEYS {
+				return;
+			}
 		}
 		let entry = attempts.entry(key.to_string()).or_insert((0, now));
 		if now - entry.1 >= LOGIN_WINDOW_SECONDS {
@@ -63,6 +68,20 @@ impl LoginLimiter {
 
 	fn clear(&self, key: &str) {
 		self.attempts.lock().expect("login limiter").remove(key);
+	}
+}
+
+#[cfg(test)]
+mod limiter_tests {
+	use super::{LoginLimiter, MAX_TRACKED_LOGIN_KEYS};
+
+	#[test]
+	fn login_limiter_does_not_grow_past_its_cap() {
+		let limiter = LoginLimiter::new();
+		for index in 0..=MAX_TRACKED_LOGIN_KEYS {
+			limiter.record_failure(&format!("key-{index}"), 100);
+		}
+		assert_eq!(limiter.attempts.lock().expect("login limiter").len(), MAX_TRACKED_LOGIN_KEYS);
 	}
 }
 
@@ -257,6 +276,9 @@ async fn register(State(state): State<AppState>, Json(credentials): Json<Credent
 	if credentials.password.len() < MIN_PASSWORD_LENGTH {
 		return (StatusCode::BAD_REQUEST, "password is too short").into_response();
 	}
+	if credentials.password.len() > MAX_PASSWORD_LENGTH {
+		return (StatusCode::BAD_REQUEST, "password is too long").into_response();
+	}
 	match state.metadata.user_by_email(&email).await {
 		Ok(Some(_)) => return (StatusCode::CONFLICT, "email already registered").into_response(),
 		Ok(None) => {}
@@ -286,6 +308,9 @@ async fn register(State(state): State<AppState>, Json(credentials): Json<Credent
 }
 
 async fn login(State(state): State<AppState>, client: ClientIp, Json(credentials): Json<Credentials>) -> Response {
+	if credentials.password.len() > MAX_PASSWORD_LENGTH {
+		return (StatusCode::BAD_REQUEST, "password is too long").into_response();
+	}
 	let email = credentials.email.trim().to_lowercase();
 	let key = format!(
 		"{}|{}",

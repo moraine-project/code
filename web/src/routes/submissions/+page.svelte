@@ -5,6 +5,7 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { mySubmissions, type SubmissionDetail } from '$lib/api/review';
+	import { safeExternalUrl } from '$lib/api/registry';
 
 	const pageSize = 50;
 
@@ -107,6 +108,9 @@
 							</span>
 						</div>
 						{#each item.decisions as decision (decision.decided_at)}
+							{@const appeal = decision.appeal_route
+								? safeExternalUrl(decision.appeal_route)
+								: null}
 							<p class="text-sm text-base-content/80">
 								<strong>Decision:</strong>
 								{decision.decision}
@@ -114,7 +118,14 @@
 									— {decision.reason_code}
 								{/if}
 								{#if decision.appeal_route}
-									· appeal: <a class="link" href={decision.appeal_route}>{decision.appeal_route}</a>
+									· appeal:
+									{#if appeal}
+										<a class="link" href={appeal} rel="noopener noreferrer" target="_blank"
+											>{decision.appeal_route}</a
+										>
+									{:else}
+										<span>{decision.appeal_route}</span>
+									{/if}
 								{/if}
 							</p>
 						{/each}

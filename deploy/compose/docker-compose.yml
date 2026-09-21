@@ -18,6 +18,9 @@ services:
       dockerfile: Dockerfile
     image: moraine/server
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     command:
       - --data-dir
       - /data
@@ -29,9 +32,9 @@ services:
     environment:
       # ---- Identity and modes ---------------------------------------------
       # review gates new projects behind an operator; open commits them.
-      MORAINE_PUBLISHING: review
+      MORAINE_PUBLISHING: ${MORAINE_PUBLISHING:-review}
       # closed keeps registration to accounts the operator creates.
-      # MORAINE_REGISTRATION: closed
+      MORAINE_REGISTRATION: ${MORAINE_REGISTRATION:-closed}
       # Used by `moraine-server bootstrap` to create the first operator.
       # MORAINE_OPERATOR_EMAIL: you@example.org
 
@@ -46,28 +49,31 @@ services:
       # MORAINE_ALLOW_INSECURE_HTTP: "false"
 
       # ---- Email (optional; off without SMTP_URL) --------------------------
-      # MORAINE_SMTP_URL: smtp://user:pass@host:587
-      # MORAINE_MAIL_FROM: moraine@example.org
-      # MORAINE_PUBLIC_URL: https://mods.example
-      # MORAINE_REQUIRE_VERIFIED_EMAIL: "false"
+      MORAINE_SMTP_URL: ${MORAINE_SMTP_URL:-}
+      MORAINE_MAIL_FROM: ${MORAINE_MAIL_FROM:-}
+      MORAINE_PUBLIC_URL: ${MORAINE_PUBLIC_URL:-}
+      MORAINE_REQUIRE_VERIFIED_EMAIL: ${MORAINE_REQUIRE_VERIFIED_EMAIL:-false}
+
+      # PostgreSQL is the default Compose database.
+      MORAINE_DATABASE_URL: postgres://moraine:${MORAINE_POSTGRES_PASSWORD:?set MORAINE_POSTGRES_PASSWORD in .env}@postgres:5432/moraine
 
       # ---- Storage ---------------------------------------------------------
       # PostgreSQL instead of the SQLite file under the data directory.
       # Run `docker compose run --rm moraine migrate` after switching, and
       # use `pg_dump` for backups (the built-in backup covers SQLite only).
-      # MORAINE_DATABASE_URL: postgres://moraine:secret@postgres:5432/moraine
+      # MORAINE_DATABASE_URL: postgres://moraine:<password>@postgres:5432/moraine
       # S3-compatible blobs instead of the local blobs/ directory. Uploads
       # still stage on local disk, so /data needs room for one upload.
-      # MORAINE_S3_BUCKET: moraine
-      # MORAINE_S3_ENDPOINT: https://s3.us-west-004.backblazeb2.com
-      # MORAINE_S3_REGION: us-west-004
-      # MORAINE_S3_ACCESS_KEY_ID: <key-id>
-      # MORAINE_S3_SECRET_ACCESS_KEY: <application-key>
-      # MORAINE_S3_PREFIX: moraine
+      MORAINE_S3_BUCKET: ${MORAINE_S3_BUCKET:-}
+      MORAINE_S3_ENDPOINT: ${MORAINE_S3_ENDPOINT:-}
+      MORAINE_S3_REGION: ${MORAINE_S3_REGION:-}
+      MORAINE_S3_ACCESS_KEY_ID: ${MORAINE_S3_ACCESS_KEY_ID:-}
+      MORAINE_S3_SECRET_ACCESS_KEY: ${MORAINE_S3_SECRET_ACCESS_KEY:-}
+      MORAINE_S3_PREFIX: ${MORAINE_S3_PREFIX:-moraine}
 
       # ---- Metrics ---------------------------------------------------------
       # When set, /metrics requires `Authorization: Bearer <token>`.
-      # MORAINE_METRICS_TOKEN: <long-random-token>
+      MORAINE_METRICS_TOKEN: ${MORAINE_METRICS_TOKEN:-}
 
       # ---- Federation ------------------------------------------------------
       # Allow http:// federation to loopback, for local tests only.
@@ -104,19 +110,13 @@ services:
       retries: 3
       start_period: 20s
 
-  # Optional backing services. They stay out of a plain `up`; start one with
-  # its profile and point the matching variable at it:
-  #
-  #   docker compose --profile postgres up -d
-  #   MORAINE_DATABASE_URL=postgres://moraine:secret@postgres:5432/moraine
-  #
+  # PostgreSQL is the default metadata store for this Compose deployment.
   postgres:
     image: postgres:17
-    profiles: [postgres]
     restart: unless-stopped
     environment:
       POSTGRES_USER: moraine
-      POSTGRES_PASSWORD: secret
+      POSTGRES_PASSWORD: ${MORAINE_POSTGRES_PASSWORD:?set MORAINE_POSTGRES_PASSWORD when using the postgres profile}
       POSTGRES_DB: moraine
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -130,8 +130,8 @@ services:
   #   MORAINE_S3_BUCKET=moraine
   #   MORAINE_S3_ENDPOINT=http://rustfs:9000
   #   MORAINE_S3_REGION=us-east-1
-  #   MORAINE_S3_ACCESS_KEY_ID=rustfsadmin
-  #   MORAINE_S3_SECRET_ACCESS_KEY=rustfsadmin
+  #   MORAINE_S3_ACCESS_KEY_ID=<key-id>
+  #   MORAINE_S3_SECRET_ACCESS_KEY=<secret-key>
   #
   rustfs:
     image: rustfs/rustfs:latest
@@ -145,8 +145,8 @@ services:
       RUSTFS_ADDRESS: 0.0.0.0:9000
       RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
       RUSTFS_CONSOLE_ENABLE: "true"
-      RUSTFS_ACCESS_KEY: rustfsadmin # CHANGEME
-      RUSTFS_SECRET_KEY: rustfsadmin # CHANGEME
+      RUSTFS_ACCESS_KEY: ${MORAINE_S3_ACCESS_KEY_ID:?set MORAINE_S3_ACCESS_KEY_ID when using the s3 profile}
+      RUSTFS_SECRET_KEY: ${MORAINE_S3_SECRET_ACCESS_KEY:?set MORAINE_S3_SECRET_ACCESS_KEY when using the s3 profile}
     volumes:
       - rustfs-data:/data
     ports:

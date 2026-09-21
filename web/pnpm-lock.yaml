@@ -15,32 +15,32 @@ importers:
         specifier: ^2.19.2
         version: 2.19.2(@internationalized/date@3.12.4)(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.1)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.1)(jiti@2.7.0)))(svelte@5.57.1)(typescript@6.0.3)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.1)(jiti@2.7.0)))(svelte@5.57.1)
       zod:
-        specifier: ^4.0.0
+        specifier: ^4.6.5
         version: 4.6.5
     devDependencies:
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
       '@sveltejs/adapter-cloudflare':
-        specifier: ^7.0.0
+        specifier: ^7.2.9
         version: 7.2.9(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.1)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.1)(jiti@2.7.0)))(svelte@5.57.1)(typescript@6.0.3)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.1)(jiti@2.7.0)))(wrangler@4.135.0(@types/node@26.6.2))
       '@sveltejs/adapter-static':
-        specifier: ^3.0.0
+        specifier: ^3.0.10
         version: 3.0.10(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.1)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.1)(jiti@2.7.0)))(svelte@5.57.1)(typescript@6.0.3)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.1)(jiti@2.7.0)))
       '@sveltejs/kit':
-        specifier: ^2.63.0
+        specifier: ^2.70.3
         version: 2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.1)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.1)(jiti@2.7.0)))(svelte@5.57.1)(typescript@6.0.3)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.1)(jiti@2.7.0))
       '@sveltejs/vite-plugin-svelte':
-        specifier: ^7.1.2
+        specifier: ^7.3.0
         version: 7.3.0(svelte@5.57.1)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.1)(jiti@2.7.0))
       '@tailwindcss/vite':
-        specifier: ^4.0.0
+        specifier: ^4.3.3
         version: 4.3.3(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.1)(jiti@2.7.0))
       '@types/node':
-        specifier: ^26.6.0
+        specifier: ^26.6.2
         version: 26.6.2
       daisyui:
-        specifier: ^5.0.0
+        specifier: ^5.7.42
         version: 5.7.42
       oxfmt:
         specifier: ^0.68.0
@@ -49,19 +49,19 @@ importers:
         specifier: ^1.83.0
         version: 1.83.0
       svelte:
-        specifier: ^5.56.1
+        specifier: ^5.57.1
         version: 5.57.1
       svelte-check:
-        specifier: ^4.6.0
+        specifier: ^4.7.6
         version: 4.7.6(picomatch@4.0.7)(svelte@5.57.1)(typescript@6.0.3)
       tailwindcss:
-        specifier: ^4.0.0
+        specifier: ^4.3.3
         version: 4.3.3
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
       vite:
-        specifier: ^8.0.16
+        specifier: ^8.3.0
         version: 8.3.0(@types/node@26.6.2)(esbuild@0.28.1)(jiti@2.7.0)
       vitest:
         specifier: ^5.0.1
