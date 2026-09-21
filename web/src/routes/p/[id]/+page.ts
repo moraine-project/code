@@ -2,8 +2,12 @@ import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
 import {
 	fetchFeed,
 	fetchGamePayload,
+	fetchChannels,
+	fetchDenyEntries,
 	fetchProfile,
 	fetchProject,
+	fetchMigrations,
+	fetchRecovery,
 	listLoaders,
 	normalizeBase,
 } from '$lib/api/registry';
@@ -26,6 +30,10 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 		gameId: '',
 		gamePayload: null,
 		loaders: [],
+		channels: [],
+		migrations: [],
+		recovery: null,
+		denyEntries: [],
 		error: null,
 	};
 
@@ -37,9 +45,13 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 	}
 
 	try {
-		const [summary, profile] = await Promise.all([
+		const [summary, profile, channels, migrations, recovery, denyEntries] = await Promise.all([
 			fetchProject(base, params.id, fetch),
 			fetchProfile(base, params.id, fetch).catch(() => null),
+			fetchChannels(base, params.id, fetch).catch(() => []),
+			fetchMigrations(base, params.id, fetch).catch(() => []),
+			fetchRecovery(base, params.id, fetch).catch(() => null),
+			fetchDenyEntries(base, params.id, fetch).catch(() => []),
 		]);
 		const from = Math.max(0, summary.head_seq - 50);
 		const feed = await fetchFeed(
@@ -65,6 +77,10 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 			gameId,
 			gamePayload,
 			loaders,
+			channels,
+			migrations,
+			recovery,
+			denyEntries,
 		};
 	} catch (cause) {
 		return {

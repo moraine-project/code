@@ -8,7 +8,7 @@
 
 <a
 	class="card card-border bg-base-200 transition hover:border-primary hover:bg-base-300/60"
-	href={`/p/${encodeURIComponent(result.project_id)}`}
+	href={`/p/${encodeURIComponent(result.project_id)}${result.home ? `?home=${encodeURIComponent(result.home)}` : ''}`}
 >
 	<div class="card-body flex-row items-start gap-4">
 		<Avatar name={result.display_name} id={result.project_id} size={56} />

@@ -77,7 +77,7 @@ Every setting has a `MORAINE_*` environment variable and the same flag.
 | `MORAINE_S3_ACCESS_KEY_ID` | unset | S3 credential |
 | `MORAINE_S3_SECRET_ACCESS_KEY` | unset | S3 credential |
 | `MORAINE_S3_PREFIX` | `moraine` | Key prefix inside the bucket |
-| `MORAINE_PUBLISHING` | `review` | `review` gates new projects behind approval, `open` does not |
+| `MORAINE_PUBLISHING` | `review` | `review` gates submissions, `progressive` grants automatic publication after an accepted release, `open` does not gate publication |
 | `MORAINE_REGISTRATION` | `closed` | `open` lets anyone create an account; `closed` only lets the operator add accounts |
 | `MORAINE_OPERATOR_EMAIL` | unset | Used by `bootstrap` |
 | `MORAINE_TLS_EXTRA_ROOTS` | unset | PEM bundle trusted in addition to the system roots, for federation |

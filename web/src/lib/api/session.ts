@@ -11,6 +11,17 @@ export const accountSchema = z.object({
 
 export type Account = z.infer<typeof accountSchema>;
 
+export const apiKeySchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	prefix: z.string(),
+	scopes: z.array(z.string()),
+	created_at: z.number(),
+	expires_at: z.number().nullable().optional(),
+	last_used_at: z.number().nullable().optional(),
+});
+export type ApiKey = z.infer<typeof apiKeySchema>;
+
 let csrfInMemory: string | null = null;
 
 export function setCsrfToken(token: string | null) {
@@ -95,6 +106,33 @@ export async function account(): Promise<Account | null> {
 		throw new Error(await failure(response));
 	}
 	return accountSchema.parse(await response.json());
+}
+
+export async function apiKeys(): Promise<ApiKey[]> {
+	const response = await authorizedFetch('/v1/auth/keys');
+	if (!response.ok) throw new Error(await failure(response));
+	return z.array(apiKeySchema).parse(await response.json());
+}
+
+export async function createApiKey(
+	name: string,
+	scopes: string[],
+	expiresInDays: number,
+): Promise<{ key: string }> {
+	const response = await authorizedFetch('/v1/auth/keys', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ name, scopes, expires_in_days: expiresInDays }),
+	});
+	if (!response.ok) throw new Error(await failure(response));
+	return z.object({ key: z.string() }).parse(await response.json());
+}
+
+export async function revokeApiKey(id: string): Promise<void> {
+	const response = await authorizedFetch(`/v1/auth/keys/${encodeURIComponent(id)}`, {
+		method: 'DELETE',
+	});
+	if (!response.ok) throw new Error(await failure(response));
 }
 
 export async function login(email: string, password: string): Promise<void> {

@@ -1,12 +1,28 @@
 <script lang="ts">
 	import { Download } from '@lucide/svelte';
-	import { blobUrl, digestHex, fileSha256 } from '$lib/api/registry';
+	import {
+		blobUrl,
+		digestHex,
+		fileSha256,
+		mirrorLocations,
+		type MirrorView,
+	} from '$lib/api/registry';
 	import Digest from '$lib/components/Digest.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 	let checking = $state(false);
 	let checkResult = $state<{ file: string; match: boolean } | null>(null);
+	let mirrors = $state<Record<string, MirrorView | null>>({});
+
+	async function loadMirrors(digest: string) {
+		if (digest in mirrors) return;
+		try {
+			mirrors[digest] = await mirrorLocations(data.home, digest);
+		} catch {
+			mirrors[digest] = null;
+		}
+	}
 
 	const primary = $derived(
 		data.release?.artifacts.find((artifact) => artifact.is_primary) ??
@@ -177,7 +193,37 @@
 										/></td
 									>
 									<td>
-										<a class="btn btn-sm" href={blobUrl(data.home, artifact.digest)}>Download</a>
+										<div class="flex flex-wrap gap-2">
+											<a class="btn btn-sm" href={blobUrl(data.home, artifact.digest)}>Download</a>
+											<button
+												class="btn btn-sm btn-ghost"
+												type="button"
+												onclick={() => loadMirrors(artifact.digest)}>Other locations</button
+											>
+										</div>
+										{#if mirrors[artifact.digest]}
+											<p class="mt-2 text-xs text-base-content/60">
+												{mirrors[artifact.digest]?.locations.length ?? 0} published location(s), {mirrors[
+													artifact.digest
+												]?.commitments.length ?? 0} mirror commitment(s).
+											</p>
+											<ul class="mt-1 flex flex-col gap-1 text-xs">
+												{#each mirrors[artifact.digest]?.locations ?? [] as location (location.url)}
+													<li>
+														<a
+															class="link"
+															href={location.url}
+															target="_blank"
+															rel="noopener noreferrer">{location.kind}: {location.url}</a
+														>
+													</li>
+												{/each}
+											</ul>
+										{:else if artifact.digest in mirrors}
+											<p class="mt-2 text-xs text-base-content/60">
+												No alternate locations are published.
+											</p>
+										{/if}
 									</td>
 								</tr>
 							{/each}

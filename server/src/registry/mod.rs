@@ -7,6 +7,7 @@ pub mod compatibility;
 pub mod definitions;
 pub mod deny_lists;
 pub mod feed;
+pub mod grants;
 pub mod impersonation;
 pub mod legal;
 pub mod loader_accepts;
@@ -63,6 +64,7 @@ pub fn routes() -> Router<AppState> {
 		.merge(recovery::routes())
 		.merge(impersonation::routes())
 		.merge(sanctions::routes())
+		.merge(grants::routes())
 }
 
 #[derive(Serialize)]
@@ -468,6 +470,15 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	}
 	if row.kind == "migration" {
 		migration::apply(state, &row.project_id, &row.object_digest).await?;
+	}
+	if state.capability.publishing == "progressive"
+		&& matches!(row.kind.as_str(), "key-changed" | "recovery" | "ownership-transferred")
+		&& let Err(error) = state
+			.metadata
+			.suspend_publication_grants(&row.project_id, row.kind.as_str(), unix_now())
+			.await
+	{
+		return Err(Box::new(storage_error(error)));
 	}
 	if let Err(error) =
 		crate::federation::notifications::notify_followers(state, &row.project_id, &row.kind, &row.object_digest, row.seq)

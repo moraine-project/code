@@ -7,6 +7,9 @@ import init, {
 	sign_genesis,
 	sign_profile,
 	sign_release,
+	sign_modpack,
+	sign_transfer,
+	sign_withdrawal,
 } from './pkg/moraine_wasm.js';
 
 export type Signed = { wire: Uint8Array; id: string };
@@ -79,6 +82,11 @@ export async function signRelease(seed: string, input: unknown): Promise<Signed>
 	return parse(sign_release(seed.trim(), JSON.stringify(input)));
 }
 
+export async function signModpack(seed: string, input: unknown): Promise<Signed> {
+	await load();
+	return parse(sign_modpack(seed.trim(), JSON.stringify(input)));
+}
+
 export async function signProfile(seed: string, input: unknown): Promise<Signed> {
 	await load();
 	return parse(sign_profile(seed.trim(), JSON.stringify(input)));
@@ -87,6 +95,20 @@ export async function signProfile(seed: string, input: unknown): Promise<Signed>
 export async function signChangelog(seed: string, input: unknown): Promise<Signed> {
 	await load();
 	return parse(sign_changelog(seed.trim(), JSON.stringify(input)));
+}
+
+export async function signWithdrawal(seed: string, input: unknown): Promise<Signed> {
+	await load();
+	return parse(sign_withdrawal(seed.trim(), JSON.stringify(input)));
+}
+
+export async function signTransfer(
+	oldSeed: string,
+	newSeed: string,
+	input: unknown,
+): Promise<Signed> {
+	await load();
+	return parse(sign_transfer(oldSeed.trim(), newSeed.trim(), JSON.stringify(input)));
 }
 
 export async function signFeedEntry(seed: string, input: unknown): Promise<Signed> {

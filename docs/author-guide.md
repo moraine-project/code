@@ -36,7 +36,9 @@ moraine-publish submit \
 ```
 
 An instance may run in `review` mode, where a submission waits for an operator.
-In `open` mode it is admitted immediately.
+In `progressive` mode the first accepted release creates a scoped local grant for
+that publisher and later matching releases can be admitted automatically until
+the grant is suspended or revoked. In `open` mode it is admitted immediately.
 
 ## Sign a release
 

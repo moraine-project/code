@@ -30,6 +30,13 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 	await expect(created).toBeVisible({ timeout: 30_000 });
 	const projectId = (await created.textContent())?.split(': ')[1]?.trim() ?? '';
 	expect(projectId).toContain('gd:sha256:');
+	await page.getByRole('tab', { name: 'Existing project' }).click();
+	await expect(page.getByRole('button', { name: 'Publish the profile' })).toBeVisible();
+	await page.getByRole('button', { name: 'Publish the profile' }).click();
+	await expect(page.getByText(/Profile published:/)).toBeVisible({ timeout: 30_000 });
+	await page.getByLabel('Artifact kind').selectOption('modpack');
+	await expect(page.getByLabel('Signed modpack manifest JSON')).toBeVisible();
+	await page.getByLabel('Artifact kind').selectOption('mod');
 
 	await page.setInputFiles('input[aria-label="File to publish"]', {
 		name: 'example.jar',
@@ -46,7 +53,19 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 
 	await page.goto(`/p/${encodeURIComponent(projectId)}`);
 	await expect(page.getByRole('heading', { name: 'Browser Test Mod' })).toBeVisible();
+	await expect(page.getByText('Signing roots')).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Download' })).toBeVisible();
+	await page.getByRole('tab', { name: /Versions/ }).click();
+	await expect(page.getByRole('link', { name: 'View' })).toHaveCount(1);
+	await page.getByRole('button', { name: 'Follow' }).click();
+	await expect(page.getByRole('button', { name: 'Unfollow' })).toBeVisible();
+	const releaseHref = await page.locator('a[href*="/release/"]').first().getAttribute('href');
+	await page.goto('/notifications');
+	await expect(page.getByText(projectId.replace('gd:sha256:', '').slice(0, 12))).toBeVisible();
+	await page.goto(releaseHref ?? `/p/${encodeURIComponent(projectId)}`);
+	await expect(page.getByRole('heading', { name: '1.0.0' })).toBeVisible();
+	await page.getByRole('button', { name: 'Other locations' }).click();
+	await expect(page.getByText(/published location\(s\)|No alternate locations/)).toBeVisible();
 
 	await page.goto('/search?q=' + encodeURIComponent('Browser Test Mod'));
 	await expect(page.getByText('Browser Test Mod')).toBeVisible();

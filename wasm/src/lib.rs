@@ -3,10 +3,13 @@ use moraine_model::Canonical;
 use moraine_model::artifact::Artifact;
 use moraine_model::changelog::{Changelog, ChangelogSection, LocaleSection};
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
+use moraine_model::delegation::{Delegation, OwnerRef, OwnershipTransfer};
+use moraine_model::dependency::TargetKind;
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
+use moraine_model::modpack::{ModpackEntry, ModpackManifest, ModpackOverride};
 use moraine_model::profile::ProfileRevision;
-use moraine_model::release::ReleasePayload;
+use moraine_model::release::{ReleasePayload, Withdrawal};
 use moraine_model::signed::{SignedObject, sign_payload};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
@@ -298,6 +301,147 @@ fn build_changelog(input: &ChangelogInput, seed: &[u8; 32]) -> Result<Signed, St
 }
 
 #[derive(Deserialize)]
+struct ModpackEntryInput {
+	ordinal: u32,
+	target_kind: String,
+	target_id: String,
+	release_id: String,
+	digest: String,
+	#[serde(default = "both")]
+	applies_to: String,
+}
+
+#[derive(Deserialize)]
+struct ModpackOverrideInput {
+	digest: String,
+	target_path: String,
+	#[serde(default = "both")]
+	applies_to: String,
+}
+
+#[derive(Deserialize)]
+struct ModpackInput {
+	protocol: u32,
+	project_id: String,
+	game_id: String,
+	#[serde(default)]
+	loader_id: Option<String>,
+	entries: Vec<ModpackEntryInput>,
+	#[serde(default)]
+	overrides: Vec<ModpackOverrideInput>,
+	#[serde(default)]
+	server_manifest_digest: Option<String>,
+	declared_time: i64,
+}
+
+fn target_kind(value: &str) -> Result<TargetKind, String> {
+	TargetKind::parse(value).ok_or_else(|| format!("unknown modpack target kind `{value}`"))
+}
+
+fn build_modpack(input: &ModpackInput, seed: &[u8; 32]) -> Result<Signed, String> {
+	let manifest = ModpackManifest {
+		protocol: input.protocol,
+		project_id: input.project_id.clone(),
+		game_id: input.game_id.clone(),
+		loader_id: input.loader_id.clone(),
+		entries: input
+			.entries
+			.iter()
+			.map(|entry| {
+				Ok(ModpackEntry {
+					ordinal: entry.ordinal,
+					target_kind: target_kind(&entry.target_kind)?,
+					target_id: entry.target_id.clone(),
+					release_id: entry.release_id.clone(),
+					digest: digest(&entry.digest, "the modpack entry digest")?,
+					applies_to: side(&entry.applies_to)?,
+				})
+			})
+			.collect::<Result<Vec<_>, String>>()?,
+		overrides: input
+			.overrides
+			.iter()
+			.map(|override_file| {
+				Ok(ModpackOverride {
+					digest: digest(&override_file.digest, "the override digest")?,
+					target_path: override_file.target_path.clone(),
+					applies_to: side(&override_file.applies_to)?,
+				})
+			})
+			.collect::<Result<Vec<_>, String>>()?,
+		server_manifest_digest: input
+			.server_manifest_digest
+			.as_deref()
+			.map(|value| digest(value, "the server manifest digest"))
+			.transpose()?,
+		declared_time: input.declared_time,
+	};
+	manifest.validate().map_err(|error| error.to_string())?;
+	Ok(finish(ObjectKind::Modpack, &manifest, seed))
+}
+
+#[derive(Deserialize)]
+struct WithdrawalInput {
+	release_id: String,
+	reason: String,
+	#[serde(default)]
+	note: Option<String>,
+	declared_time: i64,
+}
+
+fn build_withdrawal(input: &WithdrawalInput, seed: &[u8; 32]) -> Result<Signed, String> {
+	let withdrawal = Withdrawal {
+		protocol: 1,
+		release_id: input.release_id.clone(),
+		reason: input.reason.clone(),
+		note: input.note.clone(),
+		declared_time: input.declared_time,
+	};
+	withdrawal.validate().map_err(|error| error.to_string())?;
+	Ok(finish(ObjectKind::Release, &withdrawal, seed))
+}
+
+#[derive(Deserialize)]
+struct TransferInput {
+	project_id: String,
+	from_kind: String,
+	from_id: String,
+	to_kind: String,
+	to_id: String,
+	issued_at: i64,
+}
+
+fn owner(kind: &str, id: &str) -> Result<OwnerRef, String> {
+	if !matches!(kind, "user" | "org") || id.trim().is_empty() {
+		return Err("owner kind must be user or org and owner id is required".to_string());
+	}
+	Ok(OwnerRef {
+		kind: kind.to_string(),
+		id: id.to_string(),
+	})
+}
+
+fn build_transfer(input: &TransferInput, old_seed: &[u8; 32], new_seed: &[u8; 32]) -> Result<Signed, String> {
+	let transfer = OwnershipTransfer {
+		protocol: 1,
+		project_id: input.project_id.clone(),
+		from_owner: owner(&input.from_kind, &input.from_id)?,
+		to_owner: owner(&input.to_kind, &input.to_id)?,
+		issued_at: input.issued_at,
+		previous_delegation_digest: None,
+	};
+	transfer.validate().map_err(|error| error.to_string())?;
+	let transfer = Delegation::OwnershipTransfer(transfer);
+	let old = SigningKey::from_seed(old_seed);
+	let new = SigningKey::from_seed(new_seed);
+	let signed = sign_payload(ObjectKind::Delegation, &transfer, &[&old, &new]);
+	Ok(Signed {
+		id: signed.id(ObjectKind::Delegation),
+		wire: signed.wire_bytes(),
+	})
+}
+
+#[derive(Deserialize)]
 struct FeedEntryInput {
 	project_id: String,
 	sequence: u64,
@@ -385,6 +529,34 @@ pub fn sign_changelog(seed_hex: &str, input_json: &str) -> Result<String, JsErro
 	let seed = seed(seed_hex).map_err(|error| JsError::new(&error))?;
 	let input: ChangelogInput = parse(input_json).map_err(|error| JsError::new(&error))?;
 	build_changelog(&input, &seed)
+		.map(Signed::json)
+		.map_err(|error| JsError::new(&error))
+}
+
+#[wasm_bindgen]
+pub fn sign_modpack(seed_hex: &str, input_json: &str) -> Result<String, JsError> {
+	let seed = seed(seed_hex).map_err(|error| JsError::new(&error))?;
+	let input: ModpackInput = parse(input_json).map_err(|error| JsError::new(&error))?;
+	build_modpack(&input, &seed)
+		.map(Signed::json)
+		.map_err(|error| JsError::new(&error))
+}
+
+#[wasm_bindgen]
+pub fn sign_withdrawal(seed_hex: &str, input_json: &str) -> Result<String, JsError> {
+	let seed = seed(seed_hex).map_err(|error| JsError::new(&error))?;
+	let input: WithdrawalInput = parse(input_json).map_err(|error| JsError::new(&error))?;
+	build_withdrawal(&input, &seed)
+		.map(Signed::json)
+		.map_err(|error| JsError::new(&error))
+}
+
+#[wasm_bindgen]
+pub fn sign_transfer(old_seed_hex: &str, new_seed_hex: &str, input_json: &str) -> Result<String, JsError> {
+	let old_seed = seed(old_seed_hex).map_err(|error| JsError::new(&error))?;
+	let new_seed = seed(new_seed_hex).map_err(|error| JsError::new(&error))?;
+	let input: TransferInput = parse(input_json).map_err(|error| JsError::new(&error))?;
+	build_transfer(&input, &old_seed, &new_seed)
 		.map(Signed::json)
 		.map_err(|error| JsError::new(&error))
 }
@@ -539,6 +711,79 @@ mod tests {
 		.expect("entry");
 		assert_eq!(wire, core.wire);
 		assert_eq!(id, core.id);
+	}
+
+	#[test]
+	fn lifecycle_records_are_signed_by_the_browser_boundary() {
+		let withdrawal = build_withdrawal(
+			&WithdrawalInput {
+				release_id: PROJECT.to_string(),
+				reason: "author-preference".to_string(),
+				note: None,
+				declared_time: 1_760_000_000,
+			},
+			&seed_bytes(),
+		)
+		.expect("withdrawal");
+		let decoded = SignedObject::<moraine_model::release::Withdrawal>::from_bytes(&withdrawal.wire).expect("decode");
+		decoded
+			.verify_threshold(ObjectKind::Release, &trusted(), 1)
+			.expect("withdrawal signature");
+
+		let mut new_seed = seed_bytes();
+		new_seed[0] ^= 1;
+		let transfer = build_transfer(
+			&TransferInput {
+				project_id: PROJECT.to_string(),
+				from_kind: "user".to_string(),
+				from_id: "old".to_string(),
+				to_kind: "org".to_string(),
+				to_id: "new".to_string(),
+				issued_at: 1_760_000_000,
+			},
+			&seed_bytes(),
+			&new_seed,
+		)
+		.expect("transfer");
+		let decoded = SignedObject::<Delegation>::from_bytes(&transfer.wire).expect("decode");
+		let old_public = SigningKey::from_seed(&seed_bytes()).verifying_key().to_bytes();
+		let new_public = SigningKey::from_seed(&new_seed).verifying_key().to_bytes();
+		let keys = vec![
+			TrustedKey::new(&old_public).expect("old key"),
+			TrustedKey::new(&new_public).expect("new key"),
+		];
+		decoded
+			.verify_threshold(ObjectKind::Delegation, &keys, 2)
+			.expect("two transfer signatures");
+	}
+
+	#[test]
+	fn modpack_manifest_is_signed_by_the_browser_boundary() {
+		let manifest = build_modpack(
+			&ModpackInput {
+				protocol: 1,
+				project_id: PROJECT.to_string(),
+				game_id: PROJECT.to_string(),
+				loader_id: None,
+				entries: vec![ModpackEntryInput {
+					ordinal: 0,
+					target_kind: "project".to_string(),
+					target_id: PROJECT.to_string(),
+					release_id: PROJECT.to_string(),
+					digest: "ab".repeat(32),
+					applies_to: "both".to_string(),
+				}],
+				overrides: Vec::new(),
+				server_manifest_digest: None,
+				declared_time: 1_760_000_000,
+			},
+			&seed_bytes(),
+		)
+		.expect("modpack");
+		let decoded = SignedObject::<ModpackManifest>::from_bytes(&manifest.wire).expect("decode");
+		decoded
+			.verify_threshold(ObjectKind::Modpack, &trusted(), 1)
+			.expect("modpack signature");
 	}
 }
 

@@ -128,6 +128,67 @@ async fn open_mode_auto_accepts() {
 }
 
 #[tokio::test]
+async fn progressive_mode_grants_after_review_and_auto_accepts_later_release() {
+	let (application, _directory) = app_mode(crate::config::Publishing::Progressive, false).await;
+	let signer = key(6);
+	let (project_id, release_digest) = publish_project(&application, &signer).await;
+	let (author_session, author_csrf) = login(&application, "progressive-author@example.org").await;
+	let (reviewer_session, reviewer_csrf) = login(&application, "reviewer@example.org").await;
+	let cookie = format!("moraine_session={author_session}; moraine_csrf={author_csrf}");
+
+	let first = feed_wire(&signer, &project_id, 1, None, release_digest);
+	let submit = axum::http::Request::post("/v1/submissions")
+		.header(header::COOKIE, &cookie)
+		.header("x-csrf-token", &author_csrf)
+		.body(Body::from(first))
+		.expect("request");
+	let response = application.clone().oneshot(submit).await.expect("response");
+	assert_eq!(response.status(), StatusCode::ACCEPTED);
+	let submission_id = body_json(response).await["id"].as_str().expect("submission id").to_string();
+
+	let reviewer_cookie = format!("moraine_session={reviewer_session}; moraine_csrf={reviewer_csrf}");
+	let review = axum::http::Request::post(format!("/v1/submissions/{submission_id}/review"))
+		.header(header::CONTENT_TYPE, "application/json")
+		.header(header::COOKIE, &reviewer_cookie)
+		.header("x-csrf-token", &reviewer_csrf)
+		.body(Body::from(serde_json::json!({ "decision": "accept" }).to_string()))
+		.expect("request");
+	let response = application.clone().oneshot(review).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let receipt = body_json(response).await;
+	let previous = id_bytes(receipt["entry"].as_str().expect("entry"));
+
+	let grants = axum::http::Request::get(format!("/v1/projects/{project_id}/publication-grants"))
+		.header(header::COOKIE, &reviewer_cookie)
+		.body(Body::empty())
+		.expect("request");
+	let response = application.clone().oneshot(grants).await.expect("response");
+	let grants = body_json(response).await;
+	assert_eq!(grants.as_array().expect("grants").len(), 1);
+	assert!(grants[0]["suspended_at"].is_null());
+
+	let (second, second_digest) = release_wire_variant(&signer, &project_id, 0x43, "1.0.1");
+	store_release(&application, &project_id, second).await;
+	let second_feed = feed_wire(&signer, &project_id, 2, Some(previous), second_digest);
+	let submit = axum::http::Request::post("/v1/submissions")
+		.header(header::COOKIE, &cookie)
+		.header("x-csrf-token", &author_csrf)
+		.body(Body::from(second_feed))
+		.expect("request");
+	let response = application.clone().oneshot(submit).await.expect("response");
+	assert_eq!(response.status(), StatusCode::CREATED);
+	assert_eq!(body_json(response).await["state"], "auto-accepted");
+
+	let revoke = axum::http::Request::delete(format!("/v1/projects/{project_id}/publication-grants"))
+		.header(header::COOKIE, &reviewer_cookie)
+		.header("x-csrf-token", &reviewer_csrf)
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(revoke).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn reject_requires_a_reason_code() {
 	let (application, _directory) = app_review().await;
 	let signer = key(5);

@@ -218,6 +218,7 @@
 				<p class="font-medium text-base-content/60">About</p>
 				<a class="link link-hover w-fit" href="/about">How it works</a>
 				<a class="link link-hover w-fit" href="/security">What checks prove</a>
+				<a class="link link-hover w-fit" href="/instance">Instance information</a>
 				<a class="link link-hover w-fit" href="/dashboard">Dashboard</a>
 			</nav>
 		</div>

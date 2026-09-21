@@ -210,6 +210,15 @@ impl MetadataStore {
 		Ok(result.rows_affected() == 1)
 	}
 
+	pub async fn projects_owned_by(&self, owner_kind: &str, owner_id: &str) -> Result<Vec<String>, sqlx::Error> {
+		let rows = sqlx::query("SELECT id FROM projects WHERE owner_kind = $1 AND owner_id = $2 ORDER BY id")
+			.bind(owner_kind)
+			.bind(owner_id)
+			.fetch_all(&self.pool)
+			.await?;
+		Ok(rows.into_iter().map(|row| row.get("id")).collect())
+	}
+
 	pub async fn create_project(&self, id: &str, genesis_digest: &[u8]) -> Result<bool, sqlx::Error> {
 		let result = sqlx::query("INSERT INTO projects (id, genesis_digest) VALUES ($1, $2) ON CONFLICT DO NOTHING")
 			.bind(id)

@@ -2,7 +2,13 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { apiOrigin } from '$lib/api/session';
-	import { appendFeed, createProject, storeObject, submitFeed } from '$lib/api/publish';
+	import {
+		appendFeed,
+		createProject,
+		storeObject,
+		submitFeed,
+		transferProject,
+	} from '$lib/api/publish';
 	import {
 		fetchGamePayload,
 		fetchObject,
@@ -31,8 +37,11 @@
 		signChangelog,
 		signFeedEntry,
 		signGenesis,
+		signModpack,
 		signProfile,
 		signRelease,
+		signTransfer,
+		signWithdrawal,
 	} from '$lib/signer';
 
 	let seed = $state('');
@@ -60,7 +69,15 @@
 	let loaderId = $state('');
 	let version = $state('');
 	let channel = $state('release');
+	let releaseKind = $state('mod');
+	let modpackManifest = $state('');
 	let notes = $state('');
+	let withdrawalRelease = $state('');
+	let withdrawalReason = $state('author-preference');
+	let withdrawalNote = $state('');
+	let newOwnerSeed = $state('');
+	let newOwnerKind = $state('user');
+	let newOwnerId = $state('');
 
 	let busy = $state(false);
 	let error = $state<string | null>(null);
@@ -150,7 +167,7 @@
 		try {
 			const genesis = await signGenesis(seed, {
 				nonce: randomNonce(),
-				authorized_kinds: ['delegation', 'release', 'profile', 'changelog'],
+				authorized_kinds: ['delegation', 'release', 'profile', 'changelog', 'modpack'],
 				created_at: Math.floor(Date.now() / 1000),
 			});
 			const created = await createProject(genesis.wire);
@@ -165,6 +182,26 @@
 		} finally {
 			busy = false;
 		}
+	}
+
+	async function createProjectOrPublishProfile() {
+		if (projectMode === 'existing') {
+			if (!projectId.trim()) {
+				error = 'Enter a project ID first.';
+				return;
+			}
+			busy = true;
+			error = null;
+			try {
+				await publishProfile();
+			} catch (cause) {
+				error = cause instanceof Error ? cause.message : 'the profile could not be published';
+			} finally {
+				busy = false;
+			}
+			return;
+		}
+		await createNewProject();
 	}
 
 	async function publishProfile() {
@@ -199,7 +236,11 @@
 			report(`Feed entry ${appended.seq}: ${appended.entry}`);
 		} else {
 			const submitted = await submitFeed(entry.wire);
-			report(`Submitted for review: ${submitted.id} (${submitted.state})`);
+			report(
+				submitted.state === 'auto-accepted'
+					? `Published automatically: ${submitted.id}`
+					: `Submitted for review: ${submitted.id} (${submitted.state})`,
+			);
 		}
 	}
 
@@ -228,12 +269,20 @@
 				report(`Changelog published: ${changelog.id}`);
 			}
 
+			if (releaseKind === 'modpack') {
+				const manifest = JSON.parse(modpackManifest) as { project_id?: string; game_id?: string };
+				if (manifest.project_id !== projectId || manifest.game_id !== gameId) {
+					throw new Error('the modpack manifest project and game must match this publication');
+				}
+			}
+
 			const release = await signRelease(seed, {
 				project_id: projectId,
 				game_id: gameId,
 				nonce: randomNonce(),
 				human_version: version,
 				channel,
+				kind: releaseKind,
 				declared_time: Math.floor(Date.now() / 1000),
 				game_versions: gameVersions,
 				loader_id: loaderId || undefined,
@@ -242,11 +291,59 @@
 				filename: artifact.name,
 				changelog_digest: changelogId,
 			});
+			if (releaseKind === 'modpack') {
+				const manifest = await signModpack(seed, JSON.parse(modpackManifest));
+				await storeObject(projectId, 'modpack', manifest.wire);
+				report(`Modpack manifest signed: ${manifest.id}`);
+				await publishEntry(manifest.id, 'modpack-published');
+			}
 			await storeObject(projectId, 'release', release.wire);
 			report(`Release signed: ${release.id}`);
 			await publishEntry(release.id, 'release-published');
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'the release could not be published';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function withdrawRelease() {
+		busy = true;
+		error = null;
+		try {
+			const withdrawal = await signWithdrawal(seed, {
+				release_id: withdrawalRelease,
+				reason: withdrawalReason,
+				note: withdrawalNote || undefined,
+				declared_time: Math.floor(Date.now() / 1000),
+			});
+			await storeObject(projectId, 'release', withdrawal.wire);
+			await publishEntry(withdrawal.id, 'release-withdrawn');
+			report(`Withdrawal published: ${withdrawal.id}`);
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'the withdrawal could not be published';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function transferOwnership() {
+		busy = true;
+		error = null;
+		try {
+			if (!session.user?.user_id) throw new Error('sign in again before transferring ownership');
+			const transfer = await signTransfer(seed, newOwnerSeed, {
+				project_id: projectId,
+				from_kind: 'user',
+				from_id: session.user.user_id,
+				to_kind: newOwnerKind,
+				to_id: newOwnerId,
+				issued_at: Math.floor(Date.now() / 1000),
+			});
+			const transferReceipt = await transferProject(projectId, transfer.wire);
+			report(`Ownership transfer stored: ${transferReceipt.transfer}`);
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'the ownership transfer could not be stored';
 		} finally {
 			busy = false;
 		}
@@ -259,7 +356,7 @@
 
 <div class="flex flex-col gap-6">
 	<PageHeader
-		title="Publish a mod"
+		title="Publish a project"
 		subtitle="Sign in, pick a game, upload a file. The console signs with a key that stays on this device and never gets uploaded."
 	/>
 
@@ -332,6 +429,68 @@
 			</div>
 		</section>
 
+		{#if projectMode === 'existing' && projectId}
+			<section class="card card-border bg-base-200">
+				<div class="card-body gap-4">
+					<h2 class="card-title">Project lifecycle</h2>
+					<p class="text-sm text-base-content/70">
+						These actions create signed records. Save the key before using them.
+					</p>
+					<div class="grid gap-3 sm:grid-cols-2">
+						<input
+							class="input"
+							bind:value={withdrawalRelease}
+							placeholder="Release object id"
+							aria-label="Release object id"
+						/>
+						<select class="select" bind:value={withdrawalReason} aria-label="Withdrawal reason"
+							><option>author-preference</option><option>broken</option><option>compromise</option
+							><option>harmful</option><option>legal</option></select
+						>
+					</div>
+					<input
+						class="input"
+						bind:value={withdrawalNote}
+						placeholder="Withdrawal note (optional)"
+						aria-label="Withdrawal note"
+					/>
+					<button
+						class="btn btn-outline w-fit"
+						type="button"
+						onclick={withdrawRelease}
+						disabled={busy || !seed || !withdrawalRelease}>Publish withdrawal</button
+					>
+					<div class="divider my-1"></div>
+					<h3 class="font-semibold">Transfer ownership</h3>
+					<div class="grid gap-3 sm:grid-cols-2">
+						<input
+							class="input"
+							type="password"
+							bind:value={newOwnerSeed}
+							placeholder="New owner signing key"
+							aria-label="New owner signing key"
+						/>
+						<select class="select" bind:value={newOwnerKind} aria-label="New owner kind"
+							><option value="user">User</option><option value="org">Organization</option></select
+						>
+					</div>
+					<input
+						class="input"
+						bind:value={newOwnerId}
+						placeholder="New owner id"
+						aria-label="New owner id"
+					/>
+					<button
+						class="btn btn-outline w-fit"
+						type="button"
+						onclick={transferOwnership}
+						disabled={busy || !seed || !newOwnerSeed || !newOwnerId}
+						>Store ownership transfer</button
+					>
+				</div>
+			</section>
+		{/if}
+
 		<section class="card card-border bg-base-200">
 			<div class="card-body gap-4">
 				<h2 class="card-title">2. Project</h2>
@@ -359,22 +518,22 @@
 							placeholder="gd:sha256:…"
 						/>
 					</label>
-				{:else}
-					<div class="grid gap-3 sm:grid-cols-2">
-						<label class="floating-label">
-							<span>Name</span>
-							<input class="input w-full" bind:value={displayName} placeholder="My Mod" />
-						</label>
-						<label class="floating-label">
-							<span>Summary</span>
-							<input class="input w-full" bind:value={summary} placeholder="What it does" />
-						</label>
-					</div>
-					<label class="floating-label">
-						<span>Description</span>
-						<textarea class="textarea w-full" rows="3" bind:value={description}></textarea>
-					</label>
 				{/if}
+
+				<div class="grid gap-3 sm:grid-cols-2">
+					<label class="floating-label">
+						<span>Name</span>
+						<input class="input w-full" bind:value={displayName} placeholder="My Mod" />
+					</label>
+					<label class="floating-label">
+						<span>Summary</span>
+						<input class="input w-full" bind:value={summary} placeholder="What it does" />
+					</label>
+				</div>
+				<label class="floating-label">
+					<span>Description</span>
+					<textarea class="textarea w-full" rows="3" bind:value={description}></textarea>
+				</label>
 
 				<div class="max-w-xl">
 					<SelectField
@@ -392,32 +551,30 @@
 					/>
 				</div>
 
-				{#if projectMode === 'new'}
-					{#await gameInfo then info}
-						{#if info.payload && ((info.payload.categories?.length ?? 0) > 0 || (info.payload.tags?.length ?? 0) > 0)}
-							<div class="grid gap-3 sm:grid-cols-2">
-								<MultiSelectField
-									label="Categories"
-									bind:value={selectedCategories}
-									options={(info.payload.categories ?? []).map((category) => ({
-										value: category.id,
-										label: category.label,
-									}))}
-									placeholder="None"
-								/>
-								<MultiSelectField
-									label="Tags"
-									bind:value={selectedTags}
-									options={(info.payload.tags ?? []).map((tag) => ({
-										value: tag.id,
-										label: tag.label,
-									}))}
-									placeholder="None"
-								/>
-							</div>
-						{/if}
-					{/await}
-				{/if}
+				{#await gameInfo then info}
+					{#if info.payload && ((info.payload.categories?.length ?? 0) > 0 || (info.payload.tags?.length ?? 0) > 0)}
+						<div class="grid gap-3 sm:grid-cols-2">
+							<MultiSelectField
+								label="Categories"
+								bind:value={selectedCategories}
+								options={(info.payload.categories ?? []).map((category) => ({
+									value: category.id,
+									label: category.label,
+								}))}
+								placeholder="None"
+							/>
+							<MultiSelectField
+								label="Tags"
+								bind:value={selectedTags}
+								options={(info.payload.tags ?? []).map((tag) => ({
+									value: tag.id,
+									label: tag.label,
+								}))}
+								placeholder="None"
+							/>
+						</div>
+					{/if}
+				{/await}
 
 				{#if projectId}
 					<p class="font-mono text-xs text-base-content/60">{projectId}</p>
@@ -434,7 +591,7 @@
 				{/await}
 				<button
 					class="btn btn-sm w-fit"
-					onclick={createNewProject}
+					onclick={createProjectOrPublishProfile}
 					disabled={busy || !seed || !gameId}
 				>
 					{projectMode === 'new' ? 'Create the project' : 'Publish the profile'}
@@ -511,7 +668,29 @@
 						<span>Channel</span>
 						<input class="input w-full" bind:value={channel} />
 					</label>
+					<label class="floating-label">
+						<span>Artifact kind</span>
+						<select class="select w-full" bind:value={releaseKind} aria-label="Artifact kind">
+							<option value="mod">Mod</option>
+							<option value="modpack">Modpack</option>
+						</select>
+					</label>
 				</div>
+				{#if releaseKind === 'modpack'}
+					<label class="floating-label">
+						<span>Signed modpack manifest (JSON)</span>
+						<textarea
+							class="textarea w-full font-mono text-xs"
+							rows="8"
+							bind:value={modpackManifest}
+							placeholder="Paste the manifest JSON here"
+							aria-label="Signed modpack manifest JSON"></textarea>
+					</label>
+					<p class="text-xs text-base-content/60">
+						The manifest lists the exact signed releases and override files in this pack. Its
+						project and game IDs must match this publication.
+					</p>
+				{/if}
 				<label class="floating-label">
 					<span>Release notes (optional)</span>
 					<textarea class="textarea w-full" rows="3" bind:value={notes}></textarea>
@@ -526,14 +705,17 @@
 						!artifact ||
 						!gameId ||
 						!version ||
-						gameVersions.length === 0}
+						gameVersions.length === 0 ||
+						(releaseKind === 'modpack' && !modpackManifest.trim())}
 				>
 					{busy ? 'Publishing…' : 'Publish release'}
 				</button>
 				<p class="text-xs text-base-content/60">
 					{mode === 'open'
 						? 'This instance publishes directly.'
-						: 'This instance reviews submissions before they appear.'}
+						: mode === 'progressive'
+							? 'The first release is reviewed; later routine releases may publish automatically.'
+							: 'This instance reviews submissions before they appear.'}
 				</p>
 			</div>
 		</section>

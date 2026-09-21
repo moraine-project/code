@@ -48,3 +48,17 @@ export async function follows(): Promise<string[]> {
 	}
 	return z.array(z.string()).parse(await response.json());
 }
+
+export async function follow(projectId: string): Promise<void> {
+	const response = await authorizedFetch(`/v1/follows/${encodeURIComponent(projectId)}`, {
+		method: 'POST',
+	});
+	if (!response.ok) throw new Error(await failure(response));
+}
+
+export async function unfollow(projectId: string): Promise<void> {
+	const response = await authorizedFetch(`/v1/follows/${encodeURIComponent(projectId)}`, {
+		method: 'DELETE',
+	});
+	if (!response.ok) throw new Error(await failure(response));
+}

@@ -73,7 +73,22 @@ async fn submit(State(state): State<AppState>, user: AuthenticatedUser, body: By
 
 	let id = new_id();
 	let current = now();
-	if state.capability.is_open() {
+	let progressive_grant = if state.capability.publishing == "progressive" {
+		match crate::registry::grants::release_scope(&state, &prepared.entry.object_digest).await {
+			Some((game_id, release_kind)) => match state
+				.metadata
+				.active_publication_grant(&project_id, &user.user_id, &game_id, &release_kind, now())
+				.await
+			{
+				Ok(grant) => grant.is_some(),
+				Err(error) => return storage_error(error),
+			},
+			None => false,
+		}
+	} else {
+		false
+	};
+	if state.capability.is_open() || progressive_grant {
 		match ingest_feed(&state, &project_id, &body).await {
 			Ok((seq, entry)) => {
 				if let Err(error) = state
@@ -345,6 +360,43 @@ async fn review(
 			}
 			if let Err(error) = state.metadata.insert_decision(&decision_row("accept", None)).await {
 				return storage_error(error);
+			}
+			if state.capability.publishing == "progressive"
+				&& let Some((game_id, release_kind)) =
+					crate::registry::grants::release_scope(&state, &submission.object_digest).await
+				&& state
+					.metadata
+					.active_publication_grant(
+						&submission.project_id,
+						&submission.submitted_by,
+						&game_id,
+						&release_kind,
+						current,
+					)
+					.await
+					.ok()
+					.flatten()
+					.is_none()
+			{
+				let grant = crate::registry::grants::PublicationGrantRow {
+					id: crate::registry::grants::new_id(),
+					project_id: submission.project_id.clone(),
+					principal_kind: "user".to_string(),
+					principal_id: submission.submitted_by.clone(),
+					game_id,
+					release_kinds: release_kind,
+					artifact_kinds: "*".to_string(),
+					issued_from_review: id.clone(),
+					policy_version: "progressive-v1".to_string(),
+					issued_at: current,
+					expires_at: None,
+					suspended_at: None,
+					revoked_at: None,
+					reason_code: None,
+				};
+				if let Err(error) = state.metadata.issue_publication_grant(&grant).await {
+					tracing::error!(%error, project = %submission.project_id, "progressive publication grant could not be issued");
+				}
 			}
 			let response = ReviewReceipt {
 				id,

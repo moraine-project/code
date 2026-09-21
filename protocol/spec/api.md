@@ -398,7 +398,8 @@ implemented here, so only the roots can recover a project today.
 ## Admission review
 
 The instance has one setting, `publishing`, chosen on the command line and
-advertised in the capability document: `review` (the default) or `open`.
+advertised in the capability document: `review` (the default), `progressive`,
+or `open`.
 
 `POST /v1/submissions` accepts a signed feed entry, verifies its authorization
 and that the referenced object is stored, and then either:
@@ -406,6 +407,16 @@ and that the referenced object is stored, and then either:
 - under `open`, commits it immediately and records an `auto-accepted`
   submission; or
 - under `review`, records a `submitted` submission and returns `202`.
+
+Under `progressive`, a submission is handled like `review` unless the
+submitting user has an active local publication grant matching the project,
+game, and release kind. A matching submission is still checked for a valid
+signature, delegation, stored object, and feed continuity before it is
+committed as `auto-accepted`. Accepting a reviewed release creates that grant.
+The grant is local policy data, never a signing credential, and is suspended
+when the project changes keys, recovers its root, or transfers ownership.
+`GET` and `DELETE /v1/projects/{id}/publication-grants` let a reviewer inspect
+or revoke all grants for a project; revocation affects future submissions only.
 
 `GET /v1/review-queue` lists submissions that are `submitted` or
 `under_review`. `POST /v1/submissions/{id}/assign` moves a `submitted`

@@ -6,6 +6,7 @@ use clap::{Args, Parser, ValueEnum};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Publishing {
 	Review,
+	Progressive,
 	Open,
 }
 
@@ -13,6 +14,7 @@ impl Publishing {
 	pub const fn as_str(self) -> &'static str {
 		match self {
 			Self::Review => "review",
+			Self::Progressive => "progressive",
 			Self::Open => "open",
 		}
 	}

@@ -275,5 +275,27 @@
 				{/if}
 			</div>
 		</section>
+
+		<section class="card card-border bg-base-200">
+			<div class="card-body gap-3">
+				<h2 class="card-title">Projects</h2>
+				{#if detail.projects.length === 0}
+					<p class="text-sm text-base-content/60">
+						No projects are owned by this organization yet.
+					</p>
+				{:else}
+					<ul class="flex flex-col gap-2">
+						{#each detail.projects as project}
+							<li>
+								<a
+									class="link link-hover font-mono text-sm"
+									href={`/p/${encodeURIComponent(project)}`}>{project}</a
+								>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+		</section>
 	{/if}
 </div>

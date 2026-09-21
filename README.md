@@ -40,7 +40,8 @@ opening a public issue. To build or contribute, read
 
   The same server does a lot more. Accounts use Argon2id passwords, server-side
   sessions with CSRF, and scoped revocable API keys. Organizations have roles
-  and nested teams. Admission review has a `review`/`open` setting, and
+  and nested teams. Admission review has `review`, `progressive`, and `open`
+  settings, and
   publishers can withdraw a release without rewriting it. Providers publish
   advisories and mirrors publish commitments, both under pinned keys. Follows
   carry local notifications and signed outbound webhooks. The server hosts
@@ -520,7 +521,9 @@ cargo run -p moraine-publish -- submit --key publisher.key --home http://127.0.0
 ```
 
 Under `open` publishing it is auto-accepted; under `review` it waits in the
-queue, and `MORAINE_API_KEY` can supply the token instead of the flag. `publish`
+queue. Under `progressive`, the first accepted release creates a scoped local
+grant for later matching releases. `MORAINE_API_KEY` can supply the token
+instead of the flag. `publish`
 refuses early on a `review` home and points at `submit` rather than failing
 with a bare conflict.
 

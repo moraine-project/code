@@ -66,6 +66,25 @@ export const digestLookupSchema = z.object({
 	matches: z.array(lookupMatchSchema),
 });
 
+export const mirrorViewSchema = z.object({
+	digest: z.string(),
+	locations: z.array(
+		z.object({ url: z.string(), kind: z.string(), operator_id: z.string().nullable().optional() }),
+	),
+	commitments: z.array(
+		z.object({
+			mirror_id: z.string(),
+			size: z.number(),
+			accepted_at: z.number(),
+			retention_until: z.number().nullable().optional(),
+			endpoint: z.string(),
+			last_checked_at: z.number().nullable().optional(),
+			reachable: z.boolean().nullable().optional(),
+		}),
+	),
+});
+export type MirrorView = z.infer<typeof mirrorViewSchema>;
+
 export const artifactSchema = z.object({
 	digest: z.string(),
 	size: z.number(),
@@ -158,6 +177,12 @@ export const changelogSchema = z.object({
 	),
 	declared_time: z.number(),
 });
+
+export const packSchema = z.object({
+	pack: z.string(),
+	payload: z.record(z.string(), z.unknown()),
+});
+export type Pack = z.infer<typeof packSchema>;
 
 export const searchResultSchema = z.object({
 	project_id: z.string(),
@@ -254,6 +279,52 @@ export type Attestation = z.infer<typeof attestationSchema>;
 export type Artifact = z.infer<typeof artifactSchema>;
 export type FeedEntry = z.infer<typeof feedEntrySchema>;
 export type FeedPage = z.infer<typeof feedPageSchema>;
+
+export const channelSchema = z.object({
+	channel: z.string(),
+	release: z.string(),
+	human_version: z.string(),
+	seq: z.number(),
+});
+export const migrationSchema = z.object({
+	migration: z.string(),
+	old_home: z.string(),
+	new_home: z.string(),
+	cutover_seq: z.number(),
+	reason: z.string().nullable().optional(),
+	declared_time: z.number(),
+});
+export const recoverySchema = z.object({
+	project_id: z.string(),
+	threshold: z.number(),
+	roots: z.array(z.object({ key_id: z.string(), public_key: z.string() })),
+	valid_from_seq: z.number().nullable().optional(),
+	recovered: z.boolean(),
+	claims: z.array(
+		z.object({
+			claim: z.string(),
+			valid_from_seq: z.number(),
+			applied: z.boolean(),
+			roots: z.array(z.object({ key_id: z.string(), public_key: z.string() })),
+		}),
+	),
+});
+export type Channel = z.infer<typeof channelSchema>;
+export type Migration = z.infer<typeof migrationSchema>;
+export type Recovery = z.infer<typeof recoverySchema>;
+export const denyEntrySchema = z.object({
+	issuer_id: z.string(),
+	target_kind: z.string(),
+	target_id: z.string(),
+	reason_code: z.string(),
+	reason_taxonomy_version: z.number(),
+	scope_kind: z.string(),
+	scope_id: z.string(),
+	valid_from: z.number().nullable().optional(),
+	valid_until: z.number().nullable().optional(),
+	deny_list: z.string(),
+});
+export type DenyEntry = z.infer<typeof denyEntrySchema>;
 
 export type Fetcher = typeof fetch;
 
@@ -393,6 +464,18 @@ export async function lookupDigest(
 		throw new Error(`home returned ${response.status} for the digest`);
 	}
 	return digestLookupSchema.parse(await response.json());
+}
+
+export async function mirrorLocations(
+	base: string,
+	digest: string,
+	fetchFn: Fetcher = fetch,
+): Promise<MirrorView> {
+	const response = await fetchFn(
+		`${normalizeBase(base)}/v1/mirrors/${encodeURIComponent(digestHex(digest))}`,
+	);
+	if (!response.ok) throw new Error(`home returned ${response.status} for mirror locations`);
+	return mirrorViewSchema.parse(await response.json());
 }
 
 export type SearchQueryParams = {
@@ -549,6 +632,65 @@ export async function fetchChangelog(
 		throw new Error(`home returned ${response.status} for the changelog`);
 	}
 	return changelogSchema.parse(await response.json());
+}
+
+export async function fetchPack(
+	base: string,
+	hex: string,
+	fetchFn: Fetcher = fetch,
+): Promise<Pack | null> {
+	const response = await fetchFn(`${normalizeBase(base)}/v1/packs/${encodeURIComponent(hex)}`);
+	if (response.status === 404) return null;
+	if (!response.ok) throw new Error(`home returned ${response.status} for the modpack manifest`);
+	return packSchema.parse(await response.json());
+}
+
+export async function fetchChannels(
+	base: string,
+	projectId: string,
+	fetchFn: Fetcher = fetch,
+): Promise<Channel[]> {
+	const response = await fetchFn(
+		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/channels`,
+	);
+	if (!response.ok) throw new Error(`home returned ${response.status} for channels`);
+	return z.array(channelSchema).parse(await response.json());
+}
+
+export async function fetchMigrations(
+	base: string,
+	projectId: string,
+	fetchFn: Fetcher = fetch,
+): Promise<Migration[]> {
+	const response = await fetchFn(
+		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/migrations`,
+	);
+	if (!response.ok) throw new Error(`home returned ${response.status} for migrations`);
+	return z.array(migrationSchema).parse(await response.json());
+}
+
+export async function fetchRecovery(
+	base: string,
+	projectId: string,
+	fetchFn: Fetcher = fetch,
+): Promise<Recovery> {
+	const response = await fetchFn(
+		`${normalizeBase(base)}/v1/projects/${encodeURIComponent(projectId)}/recovery`,
+	);
+	if (!response.ok) throw new Error(`home returned ${response.status} for recovery state`);
+	return recoverySchema.parse(await response.json());
+}
+
+export async function fetchDenyEntries(
+	base: string,
+	projectId: string,
+	fetchFn: Fetcher = fetch,
+): Promise<DenyEntry[]> {
+	const response = await fetchFn(
+		`${normalizeBase(base)}/v1/deny-lists?project=${encodeURIComponent(projectId)}`,
+	);
+	if (!response.ok) throw new Error(`home returned ${response.status} for deny-list entries`);
+	return z.array(denyEntrySchema).parse(await response.json());
 }
 
 export function blobUrl(base: string, digest: string): string {

@@ -5,18 +5,51 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import SelectField, { type SelectOption } from '$lib/components/SelectField.svelte';
 	import { safeExternalUrl, shortDigest, type FeedEntry } from '$lib/api/registry';
+	import { follow, follows, unfollow } from '$lib/api/notifications';
+	import { session } from '$lib/session.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
 	let tab = $state<'description' | 'versions'>('description');
+	let following = $state(false);
+	let followBusy = $state(false);
+	let followError = $state<string | null>(null);
+
+	$effect(() => {
+		if (!session.user) {
+			following = false;
+			return;
+		}
+		void follows()
+			.then((projects) => (following = projects.includes(data.projectId)))
+			.catch(() => (following = false));
+	});
+
+	async function toggleFollow() {
+		if (!session.user) {
+			goto('/account');
+			return;
+		}
+		followBusy = true;
+		followError = null;
+		try {
+			if (following) await unfollow(data.projectId);
+			else await follow(data.projectId);
+			following = !following;
+		} catch (cause) {
+			followError = cause instanceof Error ? cause.message : 'could not update following';
+		} finally {
+			followBusy = false;
+		}
+	}
 
 	function hexOf(id: string): string {
 		return id.replace(/^gd:sha256:/, '');
 	}
 
 	function releaseUrl(entry: FeedEntry): string {
-		return `/p/${encodeURIComponent(data.projectId)}/release/${hexOf(entry.object)}`;
+		return `/p/${encodeURIComponent(data.projectId)}/release/${hexOf(entry.object)}?home=${encodeURIComponent(data.home)}`;
 	}
 
 	function formatDate(seconds: number): string {
@@ -35,7 +68,12 @@
 
 	const gameName = $derived(data.gamePayload?.display_name ?? '');
 
-	const releases = $derived((data.feed?.entries ?? []).toReversed());
+	const releases = $derived(
+		(data.feed?.entries ?? []).filter((entry) => entry.release).toReversed(),
+	);
+	const packs = $derived(
+		(data.feed?.entries ?? []).filter((entry) => entry.kind === 'modpack-published').toReversed(),
+	);
 
 	const links = $derived(
 		[...(data.profile?.links ?? []), ...(data.profile?.communities ?? [])]
@@ -127,6 +165,16 @@
 		</div>
 
 		<div class="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+			<button class="btn btn-outline" type="button" onclick={toggleFollow} disabled={followBusy}>
+				{followBusy
+					? 'Saving…'
+					: following
+						? 'Unfollow'
+						: session.user
+							? 'Follow'
+							: 'Sign in to follow'}
+			</button>
+			{#if followError}<p role="alert" class="max-w-xs text-xs text-error">{followError}</p>{/if}
 			{#if latest}
 				<a class="btn btn-primary" href={releaseUrl(latest)}>
 					<Download size={16} />
@@ -190,9 +238,106 @@
 					</div>
 				</div>
 			{/if}
+
+			<section class="rounded-box border border-base-300 bg-base-200 p-4">
+				<h2 class="text-sm font-semibold">Provenance</h2>
+				<dl class="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+					<div>
+						<dt class="text-xs text-base-content/60">Home</dt>
+						<dd class="break-all font-mono">{data.home}</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-base-content/60">Feed head</dt>
+						<dd>{data.summary?.head_seq ?? 0} signed entries</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-base-content/60">Project id</dt>
+						<dd><span class="font-mono">{shortDigest(data.projectId, 20)}</span></dd>
+					</div>
+					<div>
+						<dt class="text-xs text-base-content/60">Profile revision</dt>
+						<dd>
+							<span class="font-mono"
+								>{data.profile?.revision
+									? shortDigest(data.profile.revision, 16)
+									: 'not published'}</span
+							>
+						</dd>
+					</div>
+				</dl>
+				<p class="mt-3 text-xs text-base-content/60">
+					The home controls its signed feed. Directory listing and review decisions are local to
+					this instance.
+				</p>
+				{#if data.denyEntries.length > 0}
+					<div role="alert" class="alert alert-warning mt-4">
+						<div>
+							<p class="font-semibold">External policy annotations</p>
+							<p class="text-xs">
+								{data.denyEntries.length} subscribed deny-list annotation(s) apply to this project. They
+								are policy signals attributed to their issuers, not proof that signed records are invalid.
+							</p>
+							<ul class="mt-2 flex flex-col gap-1 text-xs">
+								{#each data.denyEntries as entry (entry.deny_list + entry.reason_code)}
+									<li>{entry.reason_code} · {entry.issuer_id} · scope {entry.scope_kind}</li>
+								{/each}
+							</ul>
+						</div>
+					</div>
+				{/if}
+				{#if data.channels.length > 0}
+					<div class="mt-4">
+						<h3 class="text-sm font-semibold">Current channels</h3>
+						<div class="mt-2 flex flex-wrap gap-2">
+							{#each data.channels as channel}
+								<a
+									class="badge badge-outline"
+									href={releaseUrl({ object: channel.release } as FeedEntry)}
+									>{channel.channel} · {channel.human_version}</a
+								>
+							{/each}
+						</div>
+					</div>
+				{/if}
+				{#if data.recovery}
+					<div class="mt-4 text-sm">
+						<h3 class="font-semibold">Signing roots</h3>
+						<p class="text-xs text-base-content/60">
+							Threshold {data.recovery.threshold}; {data.recovery.recovered
+								? `recovered at feed sequence ${data.recovery.valid_from_seq}`
+								: 'original project roots'}.
+						</p>
+					</div>
+				{/if}
+				{#if data.migrations.length > 0}
+					<div class="mt-4 text-sm">
+						<h3 class="font-semibold">Home history</h3>
+						<ul class="mt-2 flex flex-col gap-1 text-xs text-base-content/70">
+							{#each data.migrations as migration}
+								<li>
+									{migration.old_home} → {migration.new_home} at feed sequence {migration.cutover_seq}
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+			</section>
 		</section>
 	{:else}
 		<section class="flex flex-col gap-4">
+			{#if packs.length > 0}
+				<div class="flex flex-col gap-2">
+					<h2 class="text-sm font-semibold text-base-content/60">Modpack manifests</h2>
+					{#each packs as entry (entry.entry)}
+						<a
+							class="link link-hover font-mono text-sm"
+							href={`/packs/${hexOf(entry.object)}?home=${encodeURIComponent(data.home)}`}
+						>
+							{shortDigest(entry.object)} · {formatDate(entry.declared_at)}
+						</a>
+					{/each}
+				</div>
+			{/if}
 			{#if data.gameId}
 				<div class="grid gap-3 sm:grid-cols-2 lg:max-w-xl">
 					<SelectField

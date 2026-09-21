@@ -13,8 +13,13 @@
 		register,
 		resendVerification,
 		verifyEmail,
+		apiKeys,
+		createApiKey,
+		revokeApiKey,
+		type ApiKey,
 	} from '$lib/api/session';
 	import { registrationMode } from '$lib/api/registry';
+	import { createWebhook, revokeWebhook, webhooks, type Webhook } from '$lib/api/webhooks';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { session } from '$lib/session.svelte';
@@ -35,6 +40,13 @@
 	let recoveryEmail = $state('');
 	let recoveryCode = $state('');
 	let recoveryNext = $state('');
+	let webhookUrl = $state('');
+	let webhookKinds = $state('release-published,profile-updated');
+	let webhookItems = $state<Webhook[]>([]);
+	let keyItems = $state<ApiKey[]>([]);
+	let keyName = $state('');
+	let keyScopes = $state('projects:write,artifacts:write');
+	let newKey = $state<string | null>(null);
 
 	onMount(() => {
 		void refresh();
@@ -106,6 +118,73 @@
 
 	async function refresh() {
 		user = await session.refresh();
+		if (user) webhookItems = await webhooks().catch(() => []);
+		if (user) keyItems = await apiKeys().catch(() => []);
+	}
+
+	async function addApiKey(event: SubmitEvent) {
+		event.preventDefault();
+		clear();
+		busy = true;
+		try {
+			const created = await createApiKey(
+				keyName,
+				keyScopes
+					.split(',')
+					.map((scope) => scope.trim())
+					.filter(Boolean),
+				90,
+			);
+			newKey = created.key;
+			keyName = '';
+			keyItems = await apiKeys();
+			notice = 'API key created. Copy it now; it will not be shown again.';
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not create the API key';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function removeApiKey(item: ApiKey) {
+		try {
+			await revokeApiKey(item.id);
+			keyItems = keyItems.filter((key) => key.id !== item.id);
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not revoke the API key';
+		}
+	}
+
+	async function addWebhook(event: SubmitEvent) {
+		event.preventDefault();
+		clear();
+		busy = true;
+		try {
+			await createWebhook(
+				webhookUrl,
+				webhookKinds
+					.split(',')
+					.map((kind) => kind.trim())
+					.filter(Boolean),
+			);
+			webhookUrl = '';
+			webhookItems = await webhooks();
+			notice = 'Webhook added.';
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not add the webhook';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function removeWebhook(item: Webhook) {
+		clear();
+		try {
+			await revokeWebhook(item.id);
+			webhookItems = webhookItems.filter((webhook) => webhook.id !== item.id);
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'could not revoke the webhook';
+		}
 	}
 
 	function clear() {
@@ -236,6 +315,93 @@
 					<a class="btn btn-sm btn-outline" href="/review">Review queue</a>
 					<button class="btn btn-sm btn-ghost" onclick={signOut} disabled={busy}>Sign out</button>
 				</div>
+			</div>
+		</section>
+
+		<section class="card card-border max-w-xl bg-base-200">
+			<div class="card-body gap-4">
+				<h2 class="card-title">API keys</h2>
+				<p class="text-sm text-base-content/70">
+					Use a scoped bearer key for CI or other automation. The secret is shown once.
+				</p>
+				<form class="flex flex-col gap-3" onsubmit={addApiKey}>
+					<input
+						class="input w-full"
+						bind:value={keyName}
+						required
+						placeholder="release bot"
+						aria-label="API key name"
+					/>
+					<input class="input w-full" bind:value={keyScopes} aria-label="API key scopes" />
+					<button class="btn btn-sm w-fit" type="submit" disabled={busy}>Create API key</button>
+				</form>
+				{#if newKey}<pre
+						class="overflow-x-auto rounded-box bg-base-300 p-3 text-xs"
+						aria-label="New API key">{newKey}</pre>{/if}
+				{#if keyItems.length > 0}
+					<ul class="flex flex-col gap-2 text-sm">
+						{#each keyItems as item (item.id)}
+							<li
+								class="flex flex-wrap items-center justify-between gap-2 border-b border-base-300 pb-2"
+							>
+								<span
+									><strong>{item.name}</strong>
+									<span class="font-mono text-xs">{item.prefix}…</span><br /><span
+										class="text-xs text-base-content/60"
+										>{item.scopes.join(', ') || 'no scopes'}</span
+									></span
+								>
+								<button
+									class="btn btn-ghost btn-xs"
+									type="button"
+									onclick={() => removeApiKey(item)}>Revoke</button
+								>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+		</section>
+
+		<section class="card card-border max-w-xl bg-base-200">
+			<div class="card-body gap-4">
+				<h2 class="card-title">Release webhooks</h2>
+				<p class="text-sm text-base-content/70">
+					Send signed release events to your automation endpoint.
+				</p>
+				<form class="flex flex-col gap-3" onsubmit={addWebhook}>
+					<input
+						class="input w-full"
+						type="url"
+						bind:value={webhookUrl}
+						required
+						placeholder="https://example.org/moraine-hook"
+						aria-label="Webhook URL"
+					/>
+					<input class="input w-full" bind:value={webhookKinds} aria-label="Webhook event kinds" />
+					<button class="btn btn-sm w-fit" type="submit" disabled={busy}>Add webhook</button>
+				</form>
+				{#if webhookItems.length > 0}
+					<ul class="flex flex-col gap-2 text-sm">
+						{#each webhookItems as item (item.id)}
+							<li
+								class="flex flex-wrap items-center justify-between gap-2 border-b border-base-300 pb-2"
+							>
+								<span
+									><span class="font-mono">{item.url}</span><br /><span
+										class="text-xs text-base-content/60"
+										>{item.event_kinds.join(', ') || 'all events'}</span
+									></span
+								>
+								<button
+									class="btn btn-ghost btn-xs"
+									type="button"
+									onclick={() => removeWebhook(item)}>Revoke</button
+								>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 			</div>
 		</section>
 

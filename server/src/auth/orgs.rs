@@ -177,6 +177,7 @@ struct OrgView {
 	display_name: String,
 	created_at: i64,
 	teams: Vec<TeamView>,
+	projects: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -237,6 +238,10 @@ async fn org_detail(State(state): State<AppState>, Path(handle): Path<String>, u
 		Ok(teams) => teams,
 		Err(error) => return storage_error(error),
 	};
+	let projects = match state.metadata.projects_owned_by("org", &org.id).await {
+		Ok(projects) => projects,
+		Err(error) => return storage_error(error),
+	};
 	let view = OrgView {
 		id: org.id,
 		handle: org.handle,
@@ -250,6 +255,7 @@ async fn org_detail(State(state): State<AppState>, Path(handle): Path<String>, u
 				display_name: team.display_name,
 			})
 			.collect(),
+		projects,
 	};
 	Json(view).into_response()
 }

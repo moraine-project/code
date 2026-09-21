@@ -69,6 +69,15 @@ export async function appendFeed(projectId: string, wire: Uint8Array): Promise<F
 	return feedReceiptSchema.parse(await response.json());
 }
 
+export async function transferProject(
+	projectId: string,
+	wire: Uint8Array,
+): Promise<{ transfer: string }> {
+	const response = await postWire(`/v1/projects/${projectId}/transfer`, wire);
+	if (!response.ok) throw await failure(response);
+	return z.object({ transfer: z.string() }).parse(await response.json());
+}
+
 export async function submitFeed(wire: Uint8Array): Promise<SubmissionReceipt> {
 	const response = await authorizedFetch('/v1/submissions', {
 		method: 'POST',

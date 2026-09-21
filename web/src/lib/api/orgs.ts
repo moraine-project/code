@@ -46,6 +46,7 @@ export const orgDetailSchema = z.object({
 	display_name: z.string(),
 	created_at: z.number(),
 	teams: z.array(orgTeamSchema),
+	projects: z.array(z.string()),
 });
 
 export const orgMemberSchema = z.object({
