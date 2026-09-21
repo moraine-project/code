@@ -229,6 +229,7 @@ pub fn routes() -> Router<AppState> {
 	Router::new()
 		.route("/v1/mirrors/{mirror_id}/keys", post(pin_mirror))
 		.route("/v1/mirror-commitments", post(publish_commitment))
+		.route("/v1/artifacts/sha256/{digest}/locations", get(mirrors_for))
 		.route("/v1/mirrors/{digest}", get(mirrors_for))
 }
 

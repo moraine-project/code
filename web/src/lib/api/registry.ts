@@ -472,7 +472,7 @@ export async function mirrorLocations(
 	fetchFn: Fetcher = fetch,
 ): Promise<MirrorView> {
 	const response = await fetchFn(
-		`${normalizeBase(base)}/v1/mirrors/${encodeURIComponent(digestHex(digest))}`,
+		`${normalizeBase(base)}/v1/artifacts/sha256/${encodeURIComponent(digestHex(digest))}/locations`,
 	);
 	if (!response.ok) throw new Error(`home returned ${response.status} for mirror locations`);
 	return mirrorViewSchema.parse(await response.json());

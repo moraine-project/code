@@ -862,8 +862,9 @@ Two different things are kept apart, and this is where they are read.
 
 A **location record** is publisher-signed (kind `release`, `type: location`). It
 names where an artifact digest may be fetched. The server indexes it when the
-object is stored, so `GET /v1/mirrors/{sha256}` lists a digest's locations with
-their kind and operator.
+object is stored, so `GET /v1/artifacts/sha256/{hex}/locations` lists a digest's
+locations with their kind and operator. The older
+`GET /v1/mirrors/{sha256}` route remains as a compatibility alias.
 
 A **mirror commitment** is the mirror's own signed statement that it holds the
 bytes. A mirror is not a project, so its key is pinned like a provider's:
@@ -872,7 +873,8 @@ account, unique to the instance. `POST /v1/mirror-commitments` accepts a signed
 commitment, verifies it against the pinned key, and records it; an unpinned
 mirror is rejected.
 
-`GET /v1/mirrors/{sha256}` returns `{ digest, locations, commitments }`. A
+`GET /v1/artifacts/sha256/{hex}/locations` returns `{ digest, locations,
+commitments }`. A
 commitment proves the mirror stored the bytes once, never that it will keep
 them, so the endpoint reports evidence, not a promise. A consumer may fetch
 from any hint because it checks the digest, but the decision to distribute

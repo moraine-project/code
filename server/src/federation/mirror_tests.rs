@@ -155,7 +155,7 @@ async fn pins_a_mirror_and_records_a_commitment() {
 	let response = application.clone().oneshot(request).await.expect("response");
 	assert_eq!(response.status(), StatusCode::CREATED);
 
-	let lookup = axum::http::Request::get(format!("/v1/mirrors/{}", hex::encode(digest)))
+	let lookup = axum::http::Request::get(format!("/v1/artifacts/sha256/{}/locations", hex::encode(digest)))
 		.body(Body::empty())
 		.expect("request");
 	let response = application.clone().oneshot(lookup).await.expect("response");
