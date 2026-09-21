@@ -66,24 +66,28 @@ export const digestLookupSchema = z.object({
 	matches: z.array(lookupMatchSchema),
 });
 
-export const mirrorViewSchema = z.object({
+export const artifactLocationsSchema = z.object({
+	protocol: z.number(),
+	algorithm: z.literal('sha256'),
 	digest: z.string(),
+	size: z.number().nullable().optional(),
 	locations: z.array(
-		z.object({ url: z.string(), kind: z.string(), operator_id: z.string().nullable().optional() }),
-	),
-	commitments: z.array(
 		z.object({
-			mirror_id: z.string(),
-			size: z.number(),
-			accepted_at: z.number(),
-			retention_until: z.number().nullable().optional(),
-			endpoint: z.string(),
-			last_checked_at: z.number().nullable().optional(),
-			reachable: z.boolean().nullable().optional(),
+			url: z.string(),
+			kind: z.string(),
+			provenance: z.string(),
+			operator_id: z.string().nullable().optional(),
+			location_record_digest: z.string().nullable().optional(),
+			commitment_digest: z.string().nullable().optional(),
+			supports_ranges: z.boolean().nullable().optional(),
+			last_success_at: z.number().nullable().optional(),
+			expires_at: z.number().nullable().optional(),
+			priority: z.number().nullable().optional(),
 		}),
 	),
+	refreshed_at: z.number(),
 });
-export type MirrorView = z.infer<typeof mirrorViewSchema>;
+export type ArtifactLocations = z.infer<typeof artifactLocationsSchema>;
 
 export const artifactSchema = z.object({
 	digest: z.string(),
@@ -470,12 +474,12 @@ export async function mirrorLocations(
 	base: string,
 	digest: string,
 	fetchFn: Fetcher = fetch,
-): Promise<MirrorView> {
+): Promise<ArtifactLocations> {
 	const response = await fetchFn(
 		`${normalizeBase(base)}/v1/artifacts/sha256/${encodeURIComponent(digestHex(digest))}/locations`,
 	);
-	if (!response.ok) throw new Error(`home returned ${response.status} for mirror locations`);
-	return mirrorViewSchema.parse(await response.json());
+	if (!response.ok) throw new Error(`home returned ${response.status} for artifact locations`);
+	return artifactLocationsSchema.parse(await response.json());
 }
 
 export type SearchQueryParams = {

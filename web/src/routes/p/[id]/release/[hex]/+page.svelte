@@ -5,7 +5,7 @@
 		digestHex,
 		fileSha256,
 		mirrorLocations,
-		type MirrorView,
+		type ArtifactLocations,
 	} from '$lib/api/registry';
 	import Digest from '$lib/components/Digest.svelte';
 	import type { PageProps } from './$types';
@@ -13,7 +13,7 @@
 	let { data }: PageProps = $props();
 	let checking = $state(false);
 	let checkResult = $state<{ file: string; match: boolean } | null>(null);
-	let mirrors = $state<Record<string, MirrorView | null>>({});
+	let mirrors = $state<Record<string, ArtifactLocations | null>>({});
 
 	async function loadMirrors(digest: string) {
 		if (digest in mirrors) return;
@@ -203,9 +203,11 @@
 										</div>
 										{#if mirrors[artifact.digest]}
 											<p class="mt-2 text-xs text-base-content/60">
-												{mirrors[artifact.digest]?.locations.length ?? 0} published location(s), {mirrors[
+												{mirrors[artifact.digest]?.locations.length ?? 0} location(s), {mirrors[
 													artifact.digest
-												]?.commitments.length ?? 0} mirror commitment(s).
+												]?.locations.filter(
+													(location) => location.provenance === 'mirror-committed',
+												).length ?? 0} verified mirror commitment(s).
 											</p>
 											<ul class="mt-1 flex flex-col gap-1 text-xs">
 												{#each mirrors[artifact.digest]?.locations ?? [] as location (location.url)}

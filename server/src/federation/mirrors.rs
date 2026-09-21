@@ -20,6 +20,7 @@ pub struct LocationRow {
 	pub url: String,
 	pub kind: String,
 	pub operator_id: Option<String>,
+	pub object_digest: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +44,7 @@ pub struct CommitmentRow {
 	pub accepted_at: i64,
 	pub retention_until: Option<i64>,
 	pub endpoint: String,
+	pub object_digest: Vec<u8>,
 }
 
 impl MetadataStore {
@@ -97,16 +99,19 @@ impl MetadataStore {
 	}
 
 	pub async fn locations_for(&self, artifact_digest: &[u8]) -> Result<Vec<LocationRow>, sqlx::Error> {
-		let rows = sqlx::query("SELECT url, kind, operator_id FROM locations WHERE artifact_digest = $1 ORDER BY url")
-			.bind(artifact_digest)
-			.fetch_all(&self.pool)
-			.await?;
+		let rows = sqlx::query(
+			"SELECT url, kind, operator_id, object_digest FROM locations WHERE artifact_digest = $1 ORDER BY url",
+		)
+		.bind(artifact_digest)
+		.fetch_all(&self.pool)
+		.await?;
 		Ok(rows
 			.into_iter()
 			.map(|row| LocationRow {
 				url: row.get("url"),
 				kind: row.get("kind"),
 				operator_id: row.get("operator_id"),
+				object_digest: row.get("object_digest"),
 			})
 			.collect())
 	}
@@ -207,7 +212,7 @@ impl MetadataStore {
 
 	pub async fn commitments_for(&self, artifact_digest: &[u8]) -> Result<Vec<CommitmentRow>, sqlx::Error> {
 		let rows = sqlx::query(
-			"SELECT mirror_id, size, accepted_at, retention_until, endpoint FROM mirror_commitments WHERE artifact_digest = $1 ORDER BY accepted_at DESC",
+			"SELECT mirror_id, size, accepted_at, retention_until, endpoint, object_digest FROM mirror_commitments WHERE artifact_digest = $1 ORDER BY accepted_at DESC",
 		)
 		.bind(artifact_digest)
 		.fetch_all(&self.pool)
@@ -220,6 +225,7 @@ impl MetadataStore {
 				accepted_at: row.get("accepted_at"),
 				retention_until: row.get("retention_until"),
 				endpoint: row.get("endpoint"),
+				object_digest: row.get("object_digest"),
 			})
 			.collect())
 	}
@@ -229,7 +235,7 @@ pub fn routes() -> Router<AppState> {
 	Router::new()
 		.route("/v1/mirrors/{mirror_id}/keys", post(pin_mirror))
 		.route("/v1/mirror-commitments", post(publish_commitment))
-		.route("/v1/artifacts/sha256/{digest}/locations", get(mirrors_for))
+		.route("/v1/artifacts/sha256/{digest}/locations", get(artifact_locations_for))
 		.route("/v1/mirrors/{digest}", get(mirrors_for))
 }
 
@@ -317,6 +323,7 @@ async fn publish_commitment(State(state): State<AppState>, body: Bytes) -> Respo
 		accepted_at: commitment.accepted_at,
 		retention_until: commitment.retention_until,
 		endpoint: commitment.endpoint.clone(),
+		object_digest: object_digest.to_vec(),
 	};
 	match state
 		.metadata
@@ -337,6 +344,30 @@ struct MirrorView {
 	digest: String,
 	locations: Vec<LocationView>,
 	commitments: Vec<CommitmentView>,
+}
+
+#[derive(Serialize)]
+struct ArtifactLocationsView {
+	protocol: u32,
+	algorithm: &'static str,
+	digest: String,
+	size: Option<i64>,
+	locations: Vec<ArtifactLocationView>,
+	refreshed_at: i64,
+}
+
+#[derive(Serialize)]
+struct ArtifactLocationView {
+	url: String,
+	kind: String,
+	provenance: &'static str,
+	operator_id: Option<String>,
+	location_record_digest: Option<String>,
+	commitment_digest: Option<String>,
+	supports_ranges: Option<bool>,
+	last_success_at: Option<i64>,
+	expires_at: Option<i64>,
+	priority: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -402,6 +433,64 @@ async fn mirrors_for(State(state): State<AppState>, Path(digest): Path<String>) 
 			.collect(),
 	};
 	Json(view).into_response()
+}
+
+async fn artifact_locations_for(State(state): State<AppState>, Path(digest): Path<String>) -> Response {
+	let hex = digest.strip_prefix("sha256:").unwrap_or(&digest);
+	let Some(bytes) = hex::decode(hex).ok().filter(|bytes| bytes.len() == 32) else {
+		return (StatusCode::BAD_REQUEST, "digest must be a sha256 digest").into_response();
+	};
+	let locations = match state.metadata.locations_for(&bytes).await {
+		Ok(locations) => locations,
+		Err(error) => return storage_error(error),
+	};
+	let commitments = match state.metadata.commitments_for(&bytes).await {
+		Ok(commitments) => commitments,
+		Err(error) => return storage_error(error),
+	};
+	let mut views = locations
+		.into_iter()
+		.map(|location| ArtifactLocationView {
+			url: location.url,
+			kind: location.kind,
+			provenance: "publisher-authorized",
+			operator_id: location.operator_id,
+			location_record_digest: Some(id_for(&location.object_digest)),
+			commitment_digest: None,
+			supports_ranges: None,
+			last_success_at: None,
+			expires_at: None,
+			priority: None,
+		})
+		.collect::<Vec<_>>();
+	let size = commitments.first().map(|commitment| commitment.size);
+	for commitment in commitments {
+		let confirmation = match state.metadata.confirmation_for(&bytes, &commitment.mirror_id).await {
+			Ok(confirmation) => confirmation,
+			Err(error) => return storage_error(error),
+		};
+		views.push(ArtifactLocationView {
+			url: commitment.endpoint,
+			kind: "mirror".to_string(),
+			provenance: "mirror-committed",
+			operator_id: Some(commitment.mirror_id),
+			location_record_digest: None,
+			commitment_digest: Some(id_for(&commitment.object_digest)),
+			supports_ranges: None,
+			last_success_at: confirmation.and_then(|value| value.reachable.then_some(value.checked_at)),
+			expires_at: commitment.retention_until,
+			priority: None,
+		});
+	}
+	Json(ArtifactLocationsView {
+		protocol: 1,
+		algorithm: "sha256",
+		digest: format!("sha256:{}", hex::encode(&bytes)),
+		size,
+		locations: views,
+		refreshed_at: now(),
+	})
+	.into_response()
 }
 
 pub async fn probe_mirrors(state: &AppState, limit: i64) -> Result<usize, String> {

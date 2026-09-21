@@ -160,8 +160,13 @@ async fn pins_a_mirror_and_records_a_commitment() {
 		.expect("request");
 	let response = application.clone().oneshot(lookup).await.expect("response");
 	let view = body_json(response).await;
-	assert_eq!(view["commitments"].as_array().expect("commitments").len(), 1);
-	assert_eq!(view["commitments"][0]["mirror_id"], "archive-one");
+	assert_eq!(view["protocol"], 1);
+	assert_eq!(view["algorithm"], "sha256");
+	assert_eq!(view["size"], 4096);
+	assert_eq!(view["locations"].as_array().expect("locations").len(), 1);
+	assert_eq!(view["locations"][0]["provenance"], "mirror-committed");
+	assert_eq!(view["locations"][0]["operator_id"], "archive-one");
+	assert!(view["locations"][0]["commitment_digest"].as_str().is_some());
 
 	let unpinned = MirrorCommitment {
 		mirror_id: "ghost".to_string(),
@@ -212,6 +217,7 @@ async fn confirms_a_holding_only_when_the_bytes_hash_correctly() {
 				accepted_at: now(),
 				retention_until: None,
 				endpoint: format!("http://127.0.0.1:{port}"),
+				object_digest: vec![0x99; 32],
 			},
 			&digest,
 			&[0x99; 32],
@@ -249,6 +255,7 @@ async fn skips_mirror_fetches_larger_than_the_probe_budget() {
 				accepted_at: now(),
 				retention_until: None,
 				endpoint: "http://127.0.0.1:9".to_string(),
+				object_digest: vec![0x9a; 32],
 			},
 			&digest,
 			&[0x9a; 32],

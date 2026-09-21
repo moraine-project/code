@@ -862,8 +862,9 @@ Two different things are kept apart, and this is where they are read.
 
 A **location record** is publisher-signed (kind `release`, `type: location`). It
 names where an artifact digest may be fetched. The server indexes it when the
-object is stored, so `GET /v1/artifacts/sha256/{hex}/locations` lists a digest's
-locations with their kind and operator. The older
+object is stored, so `GET /v1/artifacts/sha256/{hex}/locations` returns the
+protocol, digest, optional size, refresh time, and provenance-labeled locations.
+The older
 `GET /v1/mirrors/{sha256}` route remains as a compatibility alias.
 
 A **mirror commitment** is the mirror's own signed statement that it holds the
@@ -873,12 +874,15 @@ account, unique to the instance. `POST /v1/mirror-commitments` accepts a signed
 commitment, verifies it against the pinned key, and records it; an unpinned
 mirror is rejected.
 
-`GET /v1/artifacts/sha256/{hex}/locations` returns `{ digest, locations,
-commitments }`. A
-commitment proves the mirror stored the bytes once, never that it will keep
-them, so the endpoint reports evidence, not a promise. A consumer may fetch
-from any hint because it checks the digest, but the decision to distribute
-still belongs to the operator and the publisher.
+Each location includes its URL, `kind`, `provenance`, optional operator,
+commitment and location-record references, range support, last successful
+probe, expiry, and priority. Publisher location records are labeled
+`publisher-authorized`; mirror commitments are represented as `mirror`
+locations labeled `mirror-committed`. Fields that this instance cannot prove
+are `null`, not guessed. A commitment proves the mirror stored the bytes once,
+never that it will keep them, so the endpoint reports evidence, not a promise.
+A consumer may fetch from any hint because it checks the digest, but the
+decision to distribute still belongs to the operator and the publisher.
 
 Because a commitment is a claim, the maintenance tick re-checks each one
 against its endpoint. It fetches `/v1/blobs/sha256/{digest}`, hashes the
