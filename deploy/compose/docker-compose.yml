@@ -16,6 +16,8 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      args:
+        PUBLIC_MORAINE_REGISTRY: ${MORAINE_PUBLIC_URL:-}
     image: moraine/server
     restart: unless-stopped
     depends_on:
