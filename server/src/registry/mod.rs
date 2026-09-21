@@ -6,6 +6,7 @@ pub mod channels;
 pub mod compatibility;
 pub mod definitions;
 pub mod deny_lists;
+pub mod external;
 pub mod feed;
 pub mod grants;
 pub mod impersonation;
@@ -65,6 +66,7 @@ pub fn routes() -> Router<AppState> {
 		.merge(impersonation::routes())
 		.merge(sanctions::routes())
 		.merge(grants::routes())
+		.merge(external::routes())
 }
 
 #[derive(Serialize)]
@@ -685,6 +687,9 @@ mod definition_tests;
 
 #[cfg(test)]
 mod deny_lists_tests;
+
+#[cfg(test)]
+mod external_tests;
 
 #[cfg(test)]
 mod feed_tests;

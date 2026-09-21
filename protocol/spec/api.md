@@ -1040,6 +1040,28 @@ rights forbid redistribution must reference it as a link or leave it out. A
 lockfile is the resolved, client-specific instance of a manifest and is not a
 signed publisher object.
 
+## External project provenance
+
+`PUT /v1/external-projects/{provider}/{external_id}` records an authenticated
+bridge observation. It accepts only `external-catalog` records and HTTPS source
+URLs; the observed profile and file links remain unsigned source observations,
+not native project records. A later refresh replaces the provider's current
+observation while preserving the external identity and source URL.
+
+`GET /v1/external-projects/{provider}/{external_id}` returns the observation,
+including its source class, bridge version, file links, optional digests, and
+any linked native project. A file digest is evidence about that exact observed
+file, not a Moraine release signature. External mirrors require stored bytes
+and redistribution evidence and are rejected by this catalog endpoint until
+those records exist.
+
+`POST /v1/external-projects/{provider}/{external_id}/claim` creates a pending,
+time-limited claim challenge for an authenticated directory operator.
+`GET /v1/external-project-claims` lists claims for directory review, and
+`POST /v1/external-project-claims/{id}/review` approves or rejects a pending
+claim. Approval records review state only; it does not create, sign, or attach
+a native project automatically.
+
 ## Not implemented yet
 
 The desktop launcher GUI. The verifier, resolver, installer core, metadata
