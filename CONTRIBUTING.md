@@ -11,7 +11,7 @@ Small fixes, tests, docs, and website work can go straight to a pull request.
 
 ## Building and testing
 
-Everything lives in one repository, and the agreement is that no file is left
+Everything lives in one repository, and the rule is simple: nothing lands
 unformatted or failing.
 
 ```sh
@@ -34,8 +34,6 @@ Postgres, start one and point the tests at it:
 ```sh
 MORAINE_TEST_POSTGRES=postgres://user:password@127.0.0.1:5432/db cargo test -p moraine-server
 ```
-
-The website:
 
 The website signs in WebAssembly, so its build needs `wasm-pack` and the
 `wasm32-unknown-unknown` target:
