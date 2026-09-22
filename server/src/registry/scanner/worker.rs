@@ -39,10 +39,7 @@ pub async fn run_worker(state: AppState, config: Config) {
 }
 
 fn local_command(config: &Config) -> (String, Vec<String>) {
-	match config.scanner_kind.as_str() {
-		"clamav" => ("clamscan".to_string(), vec!["--no-summary".to_string()]),
-		_ => (config.scanner_command.clone(), config.scanner_args.clone()),
-	}
+	(config.scanner_command.clone(), config.scanner_args.clone())
 }
 
 async fn poll_subscriptions(state: &AppState) {

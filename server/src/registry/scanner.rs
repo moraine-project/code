@@ -4,7 +4,7 @@ use std::time::Duration;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use moraine_crypto::{ObjectKind, SigningKey, object_id};
 use moraine_model::attestation::{Attestation, AttestationKind, AttestationObject};
@@ -87,6 +87,8 @@ struct SubscriptionRequest {
 	endpoint: String,
 	#[serde(default = "default_interval")]
 	interval_seconds: i64,
+	#[serde(default = "default_true")]
+	enabled: bool,
 }
 
 #[derive(Serialize)]
@@ -131,6 +133,10 @@ pub fn routes() -> Router<AppState> {
 		.route("/v1/scans/{id}/rescan", post(rescan))
 		.route("/v1/scanner-policies", get(list_policies).post(put_policy))
 		.route("/v1/scanner-subscriptions", get(list_subscriptions).post(create_subscription))
+		.route(
+			"/v1/scanner-subscriptions/{id}",
+			put(update_subscription).delete(delete_subscription),
+		)
 }
 
 fn operator(user: &AuthenticatedUser) -> Option<Response> {
@@ -178,7 +184,11 @@ async fn create_provider(
 	if TrustedKey::new(&public_key).is_err() {
 		return (StatusCode::BAD_REQUEST, "public_key must be a valid Ed25519 key").into_response();
 	}
-	if request.provider_id.trim().is_empty() || request.command.trim().is_empty() || request.provider_id.len() > 128 {
+	if request.provider_id.trim().is_empty()
+		|| request.command.trim().is_empty()
+		|| request.provider_id.len() > 128
+		|| !matches!(request.kind.trim(), "clamav" | "neko" | "command")
+	{
 		return (StatusCode::BAD_REQUEST, "invalid scanner provider").into_response();
 	}
 	let provider = Provider {
@@ -323,17 +333,65 @@ async fn create_subscription(
 	}
 	let id = new_id();
 	let result = sqlx::query(
-		"INSERT INTO scanner_subscriptions (id, provider_id, endpoint, interval_seconds, created_at) VALUES ($1, $2, $3, $4, $5)",
+		"INSERT INTO scanner_subscriptions (id, provider_id, endpoint, interval_seconds, enabled, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
 	)
 	.bind(&id)
 	.bind(request.provider_id.trim())
 	.bind(url.as_str())
 	.bind(request.interval_seconds.clamp(60, 86_400))
+	.bind(i64::from(request.enabled))
 	.bind(now())
 	.execute(&state.metadata.pool)
 	.await;
 	match result {
 		Ok(_) => (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response(),
+		Err(error) => storage_error(error),
+	}
+}
+
+async fn update_subscription(
+	State(state): State<AppState>,
+	user: AuthenticatedUser,
+	Path(id): Path<String>,
+	Json(request): Json<SubscriptionRequest>,
+) -> Response {
+	if let Some(response) = operator(&user) {
+		return response;
+	}
+	let Ok(url) = reqwest::Url::parse(request.endpoint.trim()) else {
+		return (StatusCode::BAD_REQUEST, "endpoint must be an absolute URL").into_response();
+	};
+	if url.scheme() != "https" {
+		return (StatusCode::BAD_REQUEST, "scanner subscriptions require HTTPS").into_response();
+	}
+	let result = sqlx::query(
+		"UPDATE scanner_subscriptions SET provider_id = $2, endpoint = $3, interval_seconds = $4, enabled = $5 WHERE id = $1",
+	)
+	.bind(id)
+	.bind(request.provider_id.trim())
+	.bind(url.as_str())
+	.bind(request.interval_seconds.clamp(60, 86_400))
+	.bind(i64::from(request.enabled))
+	.execute(&state.metadata.pool)
+	.await;
+	match result {
+		Ok(result) if result.rows_affected() == 1 => StatusCode::NO_CONTENT.into_response(),
+		Ok(_) => StatusCode::NOT_FOUND.into_response(),
+		Err(error) => storage_error(error),
+	}
+}
+
+async fn delete_subscription(State(state): State<AppState>, user: AuthenticatedUser, Path(id): Path<String>) -> Response {
+	if let Some(response) = operator(&user) {
+		return response;
+	}
+	match sqlx::query("DELETE FROM scanner_subscriptions WHERE id = $1")
+		.bind(id)
+		.execute(&state.metadata.pool)
+		.await
+	{
+		Ok(result) if result.rows_affected() == 1 => StatusCode::NO_CONTENT.into_response(),
+		Ok(_) => StatusCode::NOT_FOUND.into_response(),
 		Err(error) => storage_error(error),
 	}
 }

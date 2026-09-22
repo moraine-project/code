@@ -120,6 +120,14 @@ test('an operator sees the dashboard and its accounts', async ({ page }) => {
 						status: 'succeeded',
 						requested_by: 'ops',
 						attempts: 1,
+						result: {
+							provider: 'local-clamav',
+							kind: 'clamav',
+							verdict: 'finding',
+							findings: [{ message: 'test signature FOUND' }],
+							exit_code: 1,
+							raw: { stdout: 'test signature FOUND', stderr: '' },
+						},
 					},
 				]),
 			});
@@ -152,5 +160,8 @@ test('an operator sees the dashboard and its accounts', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: 'Scanner provider' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Manual scan' })).toBeVisible();
 	await page.getByRole('heading', { name: 'Scan jobs' }).scrollIntoViewIfNeeded();
-	await expect(page.getByText('succeeded')).toBeVisible();
+	await expect(page.getByRole('cell', { name: 'succeeded' })).toBeVisible();
+	await expect(page.getByRole('cell', { name: 'finding' })).toBeVisible();
+	await expect(page.getByText('test signature FOUND', { exact: true })).toBeVisible();
+	await expect(page.getByText('Raw scanner evidence')).toBeVisible();
 });

@@ -3,6 +3,7 @@ import { authorizedFetch, failure } from './session';
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await authorizedFetch(path, init);
 	if (!response.ok) throw await failure(response);
+	if (response.status === 204) return undefined as T;
 	return (await response.json()) as T;
 }
 
@@ -14,6 +15,14 @@ export type ScannerProvider = {
 	public_key: string;
 	enabled: boolean;
 };
+export type ScanResult = {
+	provider: string;
+	kind: string;
+	verdict: string;
+	findings: Array<Record<string, unknown>>;
+	exit_code: number | null;
+	raw: { stdout?: string; stderr?: string } & Record<string, unknown>;
+};
 export type ScanJob = {
 	id: string;
 	provider_id: string;
@@ -21,7 +30,7 @@ export type ScanJob = {
 	status: string;
 	requested_by: string;
 	attempts: number;
-	result?: Record<string, unknown> | null;
+	result?: ScanResult | null;
 	error?: string | null;
 };
 
@@ -31,8 +40,16 @@ export const listScannerPolicies = () =>
 	request<Array<{ id: string; provider_id: string; enabled: boolean; auto_scan: boolean }>>(
 		'/v1/scanner-policies',
 	);
+export type ScannerSubscription = {
+	id: string;
+	provider_id: string;
+	endpoint: string;
+	interval_seconds: number;
+	enabled: boolean;
+	last_polled_at: number | null;
+};
 export const listScannerSubscriptions = () =>
-	request<Array<Record<string, unknown>>>('/v1/scanner-subscriptions');
+	request<ScannerSubscription[]>('/v1/scanner-subscriptions');
 export function registerScannerProvider(
 	body: Omit<ScannerProvider, 'enabled'> & { enabled?: boolean },
 ) {
@@ -68,10 +85,24 @@ export function createScannerSubscription(
 	provider_id: string,
 	endpoint: string,
 	interval_seconds = 3600,
+	enabled = true,
 ) {
 	return request<{ id: string }>('/v1/scanner-subscriptions', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ provider_id, endpoint, interval_seconds }),
+		body: JSON.stringify({ provider_id, endpoint, interval_seconds, enabled }),
 	});
+}
+export function updateScannerSubscription(
+	id: string,
+	body: Omit<ScannerSubscription, 'id' | 'last_polled_at'>,
+) {
+	return request<void>(`/v1/scanner-subscriptions/${encodeURIComponent(id)}`, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(body),
+	});
+}
+export function deleteScannerSubscription(id: string) {
+	return request<void>(`/v1/scanner-subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
