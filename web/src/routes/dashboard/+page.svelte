@@ -7,11 +7,19 @@
 	import Overview from '$lib/components/dashboard/Overview.svelte';
 	import Policy from '$lib/components/dashboard/Policy.svelte';
 	import Moderation from '$lib/components/dashboard/Moderation.svelte';
+	import Records from '$lib/components/dashboard/Records.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { session } from '$lib/session.svelte';
 
-	type Tab = 'overview' | 'accounts' | 'definitions' | 'federation' | 'policy' | 'moderation';
+	type Tab =
+		| 'overview'
+		| 'accounts'
+		| 'definitions'
+		| 'federation'
+		| 'policy'
+		| 'moderation'
+		| 'records';
 	let tab = $state<Tab>('overview');
 
 	const isOperator = $derived(session.user?.role === 'operator');
@@ -84,6 +92,12 @@
 				class:tab-active={tab === 'moderation'}
 				onclick={() => (tab = 'moderation')}>Moderation</button
 			>
+			<button
+				role="tab"
+				class="tab"
+				class:tab-active={tab === 'records'}
+				onclick={() => (tab = 'records')}>Records</button
+			>
 		</div>
 
 		<section class="card card-border bg-base-200">
@@ -98,8 +112,10 @@
 					<Federation />
 				{:else if tab === 'policy'}
 					<Policy />
-				{:else}
+				{:else if tab === 'moderation'}
 					<Moderation />
+				{:else}
+					<Records />
 				{/if}
 			</div>
 		</section>

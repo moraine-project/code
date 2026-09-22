@@ -22,6 +22,7 @@ from fields import (
     predicate,
     rights,
     root_key,
+    SIDES,
     text,
     text_array,
     u32,
@@ -53,6 +54,8 @@ ATTESTATION_KINDS = {
     "sbom",
     "compatibility-test",
 }
+TARGET_KINDS = {"project", "loader", "runtime"}
+SCOPES = {"instance", "project", "release-digest", "account"}
 WITHDRAWAL_REASONS = {"compromise", "harmful", "broken", "legal", "author-preference"}
 
 
@@ -63,6 +66,9 @@ def parse_object(kind, value):
         "release": parse_release,
         "feed-entry": parse_feed,
         "profile": parse_profile,
+        "changelog": parse_changelog,
+        "modpack": parse_modpack,
+        "deny-list": parse_deny_list,
         "advisory": parse_advisory,
         "attestation": parse_attestation,
         "game-def": parse_game_def,
@@ -557,6 +563,129 @@ def parse_profile(value):
         raise Reject("invalid-field-value", "game_id")
     if display_name == "":
         raise Reject("invalid-field-value", "display_name")
+
+
+def parse_changelog(value):
+    fields = Fields("Changelog", value).known(
+        ["protocol", "project_id", "release_id", "locale_sections", "declared_time"]
+    )
+    protocol = u32(fields.required("protocol"), "protocol")
+    project_id = text(fields.required("project_id"), "project_id")
+    if fields.optional("release_id") is not None:
+        text(fields.optional("release_id"), "release_id")
+    locales = array(fields.required("locale_sections"), "locale_sections")
+    if not locales:
+        raise Reject("invalid-field-value", "locale_sections")
+    for locale_value in locales:
+        locale = Fields("LocaleSection", locale_value).known(["locale", "sections"])
+        if text(locale.required("locale"), "locale") == "":
+            raise Reject("invalid-field-value", "locale")
+        for section_value in array(locale.required("sections"), "sections"):
+            section = Fields("ChangelogSection", section_value).known(
+                ["heading", "body", "severity"]
+            )
+            text(section.required("heading"), "heading")
+            text(section.required("body"), "body")
+            if section.optional("severity") is not None:
+                text(section.optional("severity"), "severity")
+    i64(fields.required("declared_time"), "declared_time")
+    if protocol != 1 or project_id == "":
+        raise Reject("invalid-field-value", "protocol" if protocol != 1 else "project_id")
+
+
+def parse_modpack(value):
+    fields = Fields("ModpackManifest", value).known(
+        [
+            "protocol", "project_id", "game_id", "loader_id", "entries",
+            "overrides", "server_manifest_digest", "declared_time",
+        ]
+    )
+    protocol = u32(fields.required("protocol"), "protocol")
+    project_id = text(fields.required("project_id"), "project_id")
+    game_id = text(fields.required("game_id"), "game_id")
+    if fields.optional("loader_id") is not None:
+        text(fields.optional("loader_id"), "loader_id")
+    entries = array(fields.required("entries"), "entries")
+    if not entries:
+        raise Reject("invalid-field-value", "entries")
+    ordinals = set()
+    for entry_value in entries:
+        entry = Fields("ModpackEntry", entry_value).known(
+            ["ordinal", "target_kind", "target_id", "release_id", "digest", "applies_to"]
+        )
+        ordinal = u32(entry.required("ordinal"), "ordinal")
+        if ordinal in ordinals:
+            raise Reject("invalid-field-value", "ordinal")
+        ordinals.add(ordinal)
+        one_of(entry.required("target_kind"), "target_kind", TARGET_KINDS)
+        text(entry.required("target_id"), "target_id")
+        text(entry.required("release_id"), "release_id")
+        if len(blob(entry.required("digest"), "digest")) != 32:
+            raise Reject("invalid-field-value", "digest")
+        one_of(entry.required("applies_to"), "applies_to", SIDES)
+    for override_value in array(fields.required("overrides"), "overrides"):
+        override = Fields("ModpackOverride", override_value).known(
+            ["digest", "target_path", "applies_to"]
+        )
+        if len(blob(override.required("digest"), "digest")) != 32:
+            raise Reject("invalid-field-value", "digest")
+        path = text(override.required("target_path"), "target_path")
+        if (
+            not path
+            or path.startswith(("/", "\\"))
+            or ":" in path
+            or any(not part or part in {".", ".."} for part in path.split("/"))
+        ):
+            raise Reject("invalid-field-value", "target_path")
+        one_of(override.required("applies_to"), "applies_to", SIDES)
+    if fields.optional("server_manifest_digest") is not None and len(
+        blob(fields.optional("server_manifest_digest"), "server_manifest_digest")
+    ) != 32:
+        raise Reject("invalid-field-value", "server_manifest_digest")
+    i64(fields.required("declared_time"), "declared_time")
+    if protocol != 1 or not project_id or not game_id:
+        raise Reject("invalid-field-value", "protocol" if protocol != 1 else "project_id")
+
+
+def parse_deny_list(value):
+    fields = Fields("DenyList", value).known(
+        ["protocol", "issuer_id", "entries", "issued_at"]
+    )
+    protocol = u32(fields.required("protocol"), "protocol")
+    issuer_id = text(fields.required("issuer_id"), "issuer_id")
+    entries = array(fields.required("entries"), "entries")
+    if not entries or len(entries) > 1000:
+        raise Reject("invalid-field-value", "entries")
+    for index, entry_value in enumerate(entries):
+        entry = Fields("DenyListEntry", entry_value).known(
+            [
+                "target_kind", "target_id", "reason_code", "reason_taxonomy_version",
+                "scope_kind", "scope_id", "valid_from", "valid_until",
+            ]
+        )
+        target_kind = one_of(entry.required("target_kind"), "target_kind", {"project", "artifact-digest"})
+        target_id = text(entry.required("target_id"), "target_id")
+        if not target_id.strip():
+            raise Reject("invalid-field-value", f"entries[{index}].target_id")
+        if target_kind == "project" and not target_id.startswith("gd:sha256:"):
+            raise Reject("invalid-field-value", f"entries[{index}].target_id")
+        if target_kind == "artifact-digest":
+            digest = target_id.removeprefix("sha256:")
+            if len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest):
+                raise Reject("invalid-field-value", f"entries[{index}].target_id")
+        if not text(entry.required("reason_code"), "reason_code").strip():
+            raise Reject("invalid-field-value", f"entries[{index}].reason_code")
+        u32(entry.required("reason_taxonomy_version"), "reason_taxonomy_version")
+        one_of(entry.required("scope_kind"), "scope_kind", SCOPES)
+        if not text(entry.required("scope_id"), "scope_id").strip():
+            raise Reject("invalid-field-value", f"entries[{index}].scope_id")
+        valid_from = i64(entry.optional("valid_from"), "valid_from") if entry.optional("valid_from") is not None else None
+        valid_until = i64(entry.optional("valid_until"), "valid_until") if entry.optional("valid_until") is not None else None
+        if valid_from is not None and valid_until is not None and valid_until <= valid_from:
+            raise Reject("invalid-field-value", f"entries[{index}].valid_until")
+    i64(fields.required("issued_at"), "issued_at")
+    if protocol != 1 or not issuer_id.strip():
+        raise Reject("invalid-field-value", "protocol" if protocol != 1 else "issuer_id")
 
 
 def link(value):

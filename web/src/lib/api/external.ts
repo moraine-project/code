@@ -29,6 +29,40 @@ export const externalProjectSchema = z.object({
 });
 export type ExternalProject = z.infer<typeof externalProjectSchema>;
 
+export async function upsertExternalProject(
+	provider: string,
+	externalProjectId: string,
+	request: {
+		source_class: 'external-catalog';
+		canonical_source_url: string;
+		observed_profile: Record<string, unknown>;
+		files: Array<{
+			external_file_id: string;
+			source_url: string;
+			digest?: string | null;
+			size?: number | null;
+			metadata?: Record<string, unknown>;
+			observed_at: number;
+			deleted_at?: number | null;
+		}>;
+		observed_at: number;
+		source_state: 'active' | 'deleted' | 'unavailable' | 'unknown';
+		bridge_id: string;
+		bridge_version: string;
+	},
+): Promise<ExternalProject> {
+	const response = await authorizedFetch(
+		`/v1/external-projects/${encodeURIComponent(provider)}/${encodeURIComponent(externalProjectId)}`,
+		{
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(request),
+		},
+	);
+	if (!response.ok) throw new Error(await failure(response));
+	return externalProjectSchema.parse(await response.json());
+}
+
 const claimSchema = z.object({
 	id: z.string(),
 	provider: z.string(),
