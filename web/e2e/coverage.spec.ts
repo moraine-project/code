@@ -37,6 +37,21 @@ test('renders the public routes and navigation surfaces', async ({ page }) => {
 	await page.getByRole('button', { name: 'Game', exact: true }).click();
 	await page.getByRole('option', { name: 'Minecraft' }).click();
 	await expect(page).toHaveURL(/game=/);
+	await page.getByLabel('Loader').click();
+	await page.getByRole('option', { name: 'Fabric', exact: true }).click();
+	await expect(page).toHaveURL(/loader=/);
+	await page.getByLabel('Sort by').click();
+	await page.getByRole('option', { name: 'Recently updated' }).click();
+	await expect(page).toHaveURL(/sort=updated/);
+	await page.getByLabel('Game version').click();
+	await page.getByRole('option', { name: '1.20.1' }).click();
+	await expect(page).toHaveURL(/game_version=1.20.1/);
+	await page.getByLabel('Category').click();
+	await page.getByRole('option', { name: 'Adventure' }).click();
+	await expect(page).toHaveURL(/category=adventure/);
+	await page.getByLabel('Channel').click();
+	await page.getByRole('option', { name: 'release' }).click();
+	await expect(page).toHaveURL(/channel=release/);
 	await page.getByRole('button', { name: 'Clear' }).click();
 	await expect(page).toHaveURL(/\/search$/);
 
@@ -118,6 +133,39 @@ test('covers operator account, dashboard, organizations, federation, and permiss
 	await page.getByRole('button', { name: 'Approve' }).click();
 	await expect(page.getByRole('alert')).toContainText('claim approved');
 	await expect(page.getByText('No pending external project claims.')).toBeVisible();
+	const rejectedExternalData = {
+		...externalData,
+		canonical_source_url: 'https://modrinth.com/mod/rejected-e2e',
+		observed_profile: { name: 'Rejected External E2E Project', summary: 'Rejected by the test.' },
+		files: [{ ...externalData.files[0], external_file_id: 'rejected-release-1' }],
+	};
+	const rejectedProject = await page.evaluate(async (data) => {
+		const csrf = document.cookie
+			.split('; ')
+			.find((entry) => entry.startsWith('moraine_csrf='))
+			?.slice('moraine_csrf='.length);
+		const response = await fetch('/v1/external-projects/modrinth/rejected-e2e', {
+			method: 'PUT',
+			headers: {
+				'content-type': 'application/json',
+				...(csrf ? { 'x-csrf-token': decodeURIComponent(csrf) } : {}),
+			},
+			body: JSON.stringify(data),
+		});
+		return { ok: response.ok, status: response.status, body: await response.text() };
+	}, rejectedExternalData);
+	expect(rejectedProject.ok, `${rejectedProject.status} ${rejectedProject.body}`).toBeTruthy();
+	await page.goto('/external/modrinth/rejected-e2e');
+	await page.getByLabel('Claimant reference').fill('rejected@example.org');
+	await page.getByLabel('Challenge reference').fill('https://example.org/challenge/rejected');
+	await page.getByRole('button', { name: 'Record claim' }).click();
+	await expect(page.getByRole('alert')).toContainText('awaits review');
+	await page.goto('/dashboard');
+	await page.getByRole('tab', { name: 'Moderation' }).click();
+	await expect(page.getByText('modrinth/rejected-e2e')).toBeVisible();
+	await page.getByRole('button', { name: 'Reject' }).click();
+	await expect(page.getByRole('alert')).toContainText('claim rejected');
+	await expect(page.getByText('No pending external project claims.')).toBeVisible();
 
 	await page.goto('/account');
 	await page.getByLabel('API key name').fill(`e2e-${Date.now()}`);
@@ -142,6 +190,12 @@ test('covers operator account, dashboard, organizations, federation, and permiss
 	const accountText = (await accountNotice.textContent()) ?? '';
 	let memberPassword = accountText.split('Temporary password: ')[1]?.split(' —')[0] ?? '';
 	expect(memberPassword.length).toBeGreaterThan(12);
+	const memberId = await page.evaluate(async (email) => {
+		const response = await fetch('/v1/auth/users');
+		const accounts = (await response.json()) as { user_id: string; email: string }[];
+		return accounts.find((account) => account.email === email)?.user_id ?? '';
+	}, memberEmail);
+	expect(memberId).toMatch(/^[0-9a-f]{32}$/);
 
 	const memberRow = page.getByText(memberEmail).locator('xpath=ancestor::li');
 	await memberRow.getByRole('button', { name: 'reset' }).click();
@@ -167,6 +221,17 @@ test('covers operator account, dashboard, organizations, federation, and permiss
 	await page.getByLabel('From home').fill('http://127.0.0.1:1');
 	await page.getByRole('button', { name: 'Subscribe and pull' }).click();
 	await expect(page.getByRole('alert')).toBeVisible();
+	const gameId = await page.evaluate(async () => {
+		const response = await fetch('/v1/games');
+		const games = (await response.json()) as { id: string }[];
+		return games[0]?.id ?? '';
+	});
+	expect(gameId).toMatch(/^gd:sha256:/);
+	await page.getByLabel('Definition ID').fill(gameId);
+	await page.getByLabel('From home').fill(state.baseURL);
+	await page.getByRole('button', { name: 'Subscribe and pull' }).click();
+	await expect(page.getByRole('alert')).toContainText('Subscribed to game');
+	await expect(page.getByText(`from ${state.baseURL}`)).toBeVisible();
 
 	await page.goto('/dashboard');
 	await page.getByRole('tab', { name: 'Federation' }).click();
@@ -185,6 +250,10 @@ test('covers operator account, dashboard, organizations, federation, and permiss
 	await page.getByLabel('Mirror public key').fill('not-hex');
 	await page.getByRole('button', { name: 'Pin mirror key' }).click();
 	await expect(page.getByRole('alert')).toBeVisible();
+	await page.getByLabel('Mirror ID').fill('archive.example');
+	await page.getByLabel('Mirror public key').fill('11'.repeat(32));
+	await page.getByRole('button', { name: 'Pin mirror key' }).click();
+	await expect(page.getByRole('alert')).toContainText('Mirror key pinned');
 	await page.getByRole('tab', { name: 'Policy' }).click();
 	await expect(page.getByText('No local policy overrides')).toBeVisible();
 	await page.getByLabel('Policy project id').fill('gd:sha256:policy-e2e');
@@ -193,21 +262,42 @@ test('covers operator account, dashboard, organizations, federation, and permiss
 	await expect(page.getByText('gd:sha256:policy-e2e')).toBeVisible();
 	const policyRow = page.getByText('gd:sha256:policy-e2e').locator('xpath=ancestor::li');
 	await policyRow.getByRole('combobox', { name: 'State' }).selectOption('blocked');
+	const blockedPolicyResponse = page.waitForResponse(
+		(response) =>
+			response.url().includes('/v1/directory/policy/') && response.request().method() === 'PUT',
+	);
 	await policyRow.getByRole('button', { name: 'Save' }).click();
+	await expect((await blockedPolicyResponse).ok()).toBeTruthy();
 	await expect(policyRow.getByRole('combobox', { name: 'State' })).toHaveValue('blocked');
 	await policyRow.getByRole('combobox', { name: 'State' }).selectOption('listed');
+	const listedPolicyResponse = page.waitForResponse(
+		(response) =>
+			response.url().includes('/v1/directory/policy/') && response.request().method() === 'PUT',
+	);
 	await policyRow.getByRole('button', { name: 'Save' }).click();
-	await expect(page.getByText('No local policy overrides')).toBeVisible();
+	await expect((await listedPolicyResponse).ok()).toBeTruthy();
+	await expect(page.getByText('gd:sha256:policy-e2e')).toHaveCount(0);
 	await page.getByLabel('Grant project id').fill('gd:sha256:invalid');
 	await page.getByRole('button', { name: 'Load grants' }).click();
 	await expect(page.getByText('No grants for this project.')).toBeVisible();
 	await page.getByRole('tab', { name: 'Moderation' }).click();
 	await expect(page.getByText('No sanctions recorded.')).toBeVisible();
 	await expect(page.getByText('No impersonation reports recorded.')).toBeVisible();
+	await page.getByLabel('Subject account id').fill(memberId);
+	await page.getByLabel('Reason code').fill('policy-disallowed');
+	await page.getByLabel('Scope id').fill(memberId);
+	await page.getByRole('button', { name: 'Record sanction' }).click();
+	await expect(
+		page.getByText(new RegExp(`warning · ${memberId} · account:${memberId}`)),
+	).toBeVisible();
 	await page.getByLabel('Provider id').fill('scanner.example');
 	await page.getByLabel('Provider public key').fill('not-hex');
 	await page.getByRole('button', { name: 'Pin provider key' }).click();
 	await expect(page.getByRole('alert')).toBeVisible();
+	await page.getByLabel('Provider id').fill('scanner.example');
+	await page.getByLabel('Provider public key').fill('22'.repeat(32));
+	await page.getByRole('button', { name: 'Pin provider key' }).click();
+	await expect(page.getByRole('alert')).toContainText('Provider key pinned');
 	await page.getByLabel('Claim kind').fill('impersonation');
 	await page.getByLabel('Report claimant').fill('claimant@example.org');
 	await page.getByLabel('Reported handle').fill('reported-project');

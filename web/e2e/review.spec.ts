@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const state = JSON.parse(readFileSync(join(tmpdir(), 'moraine-e2e.json'), 'utf8')) as {
 	baseURL: string;
@@ -12,6 +12,33 @@ const state = JSON.parse(readFileSync(join(tmpdir(), 'moraine-e2e.json'), 'utf8'
 
 const reviewUrl = (path: string) => `${state.reviewBaseURL}${path}`;
 const short = (id: string) => id.slice('gd:sha256:'.length, 'gd:sha256:'.length + 16);
+
+async function submitRelease(page: Page, version: string, filename: string): Promise<string> {
+	await page.goto(reviewUrl('/publish'));
+	await page.getByRole('button', { name: 'Generate a key' }).click();
+	await expect(page.getByText('Key ready')).toBeVisible();
+	await page.getByRole('button', { name: 'Game', exact: true }).click();
+	await page.getByRole('option', { name: 'Minecraft' }).click();
+	await page.getByRole('button', { name: 'Create the project' }).click();
+	const created = page.getByText(/Project created:/);
+	await expect(created).toBeVisible({ timeout: 30_000 });
+	await page.setInputFiles('input[aria-label="File to publish"]', {
+		name: filename,
+		mimeType: 'application/java-archive',
+		buffer: Buffer.from(`${filename} bytes`),
+	});
+	await page.getByRole('button', { name: 'Game versions' }).click();
+	await page.getByRole('option', { name: '1.20.1' }).click();
+	await page.keyboard.press('Escape');
+	await page.getByLabel('Version', { exact: true }).fill(version);
+	await page.getByRole('button', { name: 'Publish release' }).click();
+	const releaseLine = page.getByText(/Release signed:/);
+	await expect(releaseLine).toBeVisible({ timeout: 30_000 });
+	const releaseId = (await releaseLine.textContent())?.split(': ').at(-1)?.trim() ?? '';
+	expect(releaseId).toMatch(/^gd:sha256:/);
+	await expect(page.getByText(/Submitted for review/).last()).toBeVisible();
+	return releaseId;
+}
 
 test('submits, assigns, and accepts a release in review mode', async ({ page }) => {
 	await page.goto(reviewUrl('/account'));
@@ -56,6 +83,21 @@ test('submits, assigns, and accepts a release in review mode', async ({ page }) 
 
 	await page.goto(reviewUrl('/submissions'));
 	await expect(page.getByText('accepted', { exact: true })).toBeVisible();
+
+	for (const [decision, version] of [
+		['reject', '2.0.0'],
+		['quarantine', '3.0.0'],
+	] as const) {
+		const decisionReleaseId = await submitRelease(page, version, `review-${version}.jar`);
+		await page.goto(reviewUrl('/review'));
+		const row = page.locator('tr').filter({ hasText: short(decisionReleaseId) });
+		await row.getByRole('button', { name: 'Take' }).click();
+		await row
+			.getByRole('button', { name: decision === 'reject' ? 'Reject' : 'Quarantine' })
+			.click();
+		await expect(page.getByRole('alert')).toContainText(`${decision} recorded`);
+		await expect(page.getByText('Nothing to review')).toBeVisible();
+	}
 
 	await page.goto(`${state.baseURL}/account`);
 	await page.getByLabel('Email').fill('ops@example.org');

@@ -21,6 +21,17 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 	await page.goto('/publish');
 	await page.getByRole('button', { name: 'Generate a key' }).click();
 	await expect(page.getByText('Key ready')).toBeVisible();
+	const savedSeed = await page.locator('input[placeholder="64 hex characters"]').inputValue();
+	expect(savedSeed).toMatch(/^[0-9a-f]{64}$/);
+	const keyDownload = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'Download the key' }).click();
+	await expect((await keyDownload).suggestedFilename()).toBe('publisher.key');
+	await page.setInputFiles('input[aria-label="Open a key file"]', {
+		name: 'publisher.key',
+		mimeType: 'text/plain',
+		buffer: Buffer.from(`${savedSeed}\n`),
+	});
+	await expect(page.getByText('Key ready')).toBeVisible();
 
 	await page.getByRole('button', { name: 'Game', exact: true }).click();
 	await page.getByRole('option', { name: 'Minecraft' }).click();
