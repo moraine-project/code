@@ -1,14 +1,15 @@
 use axum::body::Body;
-use axum::http::header;
+use axum::http::{StatusCode, header};
 use moraine_crypto::{ObjectKind as Kind, object_id};
+use moraine_model::Canonical;
 use moraine_model::advisory::{Advisory, Affected, Category, Severity};
 use moraine_model::compatibility::Side;
 use moraine_model::dependency::TargetKind;
+use moraine_model::feed::FeedEntry;
 use moraine_model::modpack::{ModpackEntry, ModpackManifest, ModpackOverride};
 use moraine_model::signed::sign_payload;
 use tower::ServiceExt;
 
-use super::*;
 use crate::test_support::*;
 
 #[tokio::test]

@@ -1,8 +1,8 @@
+use axum::Router;
 use axum::body::Body;
-use axum::http::header;
+use axum::http::{StatusCode, header};
 use tower::ServiceExt;
 
-use super::*;
 use crate::test_support::*;
 
 #[tokio::test]
