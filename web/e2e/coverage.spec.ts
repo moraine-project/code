@@ -54,6 +54,15 @@ test('renders the public routes and navigation surfaces', async ({ page }) => {
 	await expect(page).toHaveURL(/channel=release/);
 	await page.getByRole('button', { name: 'Clear' }).click();
 	await expect(page).toHaveURL(/\/search$/);
+	for (const [label, query] of [
+		['Newest', 'created'],
+		['Name', 'name'],
+		['Popularity', 'popularity'],
+	] as const) {
+		await page.getByLabel('Sort by').click();
+		await page.getByRole('option', { name: label, exact: true }).click();
+		await expect(page).toHaveURL(new RegExp(`sort=${query}`));
+	}
 
 	await page.goto('/games');
 	const minecraft = page.getByRole('link', { name: /Minecraft/ }).first();
@@ -79,6 +88,27 @@ test('renders the public routes and navigation surfaces', async ({ page }) => {
 	await expect(page.getByRole('link', { name: 'Browse', exact: true })).toBeVisible();
 	await page.getByRole('link', { name: 'Instance information' }).click();
 	await expect(page.getByRole('heading', { name: 'Instance information' })).toBeVisible();
+});
+
+test('registers, signs in, and deletes a public account', async ({ page }) => {
+	const email = `browser-${Date.now()}@example.org`;
+	const password = 'browser account password 123';
+
+	await page.goto('/account');
+	await page.getByRole('tab', { name: 'Create account' }).click();
+	await page.getByLabel('Email').fill(email);
+	await page.getByLabel('Password').fill(password);
+	await page.getByRole('button', { name: 'Create account' }).click();
+	await expect(page.getByRole('alert')).toContainText('Account created');
+
+	await page.getByLabel('Email').fill(email);
+	await page.getByLabel('Password').fill(password);
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+
+	page.once('dialog', (dialog) => dialog.accept());
+	await page.getByRole('button', { name: 'Delete my account' }).click();
+	await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
 });
 
 test('covers operator account, dashboard, organizations, federation, and permissions', async ({
@@ -190,6 +220,15 @@ test('covers operator account, dashboard, organizations, federation, and permiss
 	const accountText = (await accountNotice.textContent()) ?? '';
 	let memberPassword = accountText.split('Temporary password: ')[1]?.split(' —')[0] ?? '';
 	expect(memberPassword.length).toBeGreaterThan(12);
+	const adminEmail = `admin-${Date.now()}@example.org`;
+	await page.locator('main input[type="email"]').fill(adminEmail);
+	await page.getByRole('button', { name: 'Create account' }).click();
+	const adminNotice = page.getByRole('alert').filter({ hasText: adminEmail });
+	await expect(adminNotice).toBeVisible();
+	const adminPassword =
+		((await adminNotice.textContent()) ?? '').split('Temporary password: ')[1]?.split(' —')[0] ??
+		'';
+	expect(adminPassword.length).toBeGreaterThan(12);
 	const memberId = await page.evaluate(async (email) => {
 		const response = await fetch('/v1/auth/users');
 		const accounts = (await response.json()) as { user_id: string; email: string }[];
@@ -328,6 +367,11 @@ test('covers operator account, dashboard, organizations, federation, and permiss
 	await page.getByLabel('Member email').fill(memberEmail);
 	await page.getByRole('button', { name: 'Add member' }).click();
 	await expect(page.getByText(memberEmail)).toBeVisible();
+	await page.getByLabel('Member email').fill(adminEmail);
+	await page.getByLabel('Role').click();
+	await page.getByRole('option', { name: 'admin', exact: true }).click();
+	await page.getByRole('button', { name: 'Add member' }).click();
+	await expect(page.getByText(adminEmail)).toBeVisible();
 
 	await page.goto('/account');
 	const download = page.waitForEvent('download');
@@ -361,8 +405,22 @@ test('covers operator account, dashboard, organizations, federation, and permiss
 	await page.locator('summary[aria-label="Your account"]').click();
 	await page.locator('details.dropdown').getByRole('button', { name: 'Sign out' }).click();
 
+	await page.goto('/account');
+	await page.getByLabel('Email').fill(adminEmail);
+	await page.getByLabel('Password').fill(adminPassword);
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+	await page.goto(`/orgs/${handle}`);
+	await expect(page.getByText('Your role: admin')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Add member' })).toBeVisible();
+	await page.locator('summary[aria-label="Your account"]').click();
+	await page.locator('details.dropdown').getByRole('button', { name: 'Sign out' }).click();
+
 	await signIn(page, state.password);
 	await page.goto(`/orgs/${handle}`);
+	const ownerAdminRow = page.getByText(adminEmail).locator('xpath=ancestor::li');
+	await ownerAdminRow.getByRole('button', { name: `Remove ${adminEmail}` }).click();
+	await expect(page.getByText(adminEmail)).not.toBeVisible();
 	const ownerMemberRow = page.getByText(memberEmail).locator('xpath=ancestor::li');
 	await ownerMemberRow.getByRole('button', { name: `Remove ${memberEmail}` }).click();
 	await expect(page.getByText(memberEmail)).not.toBeVisible();

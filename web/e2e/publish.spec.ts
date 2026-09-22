@@ -21,7 +21,7 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 	await page.goto('/publish');
 	await page.getByRole('button', { name: 'Generate a key' }).click();
 	await expect(page.getByText('Key ready')).toBeVisible();
-	const savedSeed = await page.locator('input[placeholder="64 hex characters"]').inputValue();
+	const savedSeed = await page.getByRole('textbox', { name: 'Paste a key (hex)' }).inputValue();
 	expect(savedSeed).toMatch(/^[0-9a-f]{64}$/);
 	const keyDownload = page.waitForEvent('download');
 	await page.getByRole('button', { name: 'Download the key' }).click();
@@ -35,6 +35,8 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 
 	await page.getByRole('button', { name: 'Game', exact: true }).click();
 	await page.getByRole('option', { name: 'Minecraft' }).click();
+	const transferSeed = '11'.repeat(32);
+	await page.getByLabel('Additional root signing key').fill(transferSeed);
 	const gameId = await page.evaluate(async () => {
 		const response = await fetch('/v1/games');
 		const games = (await response.json()) as { id: string }[];
@@ -51,6 +53,10 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 	await expect(page.getByRole('button', { name: 'Publish the profile' })).toBeVisible();
 	await page.getByRole('button', { name: 'Publish the profile' }).click();
 	await expect(page.getByText(/Profile published:/)).toBeVisible({ timeout: 30_000 });
+	await page.getByLabel('New owner signing key').fill(transferSeed);
+	await page.getByLabel('New owner id').fill('transfer-target-e2e');
+	await page.getByRole('button', { name: 'Store ownership transfer' }).click();
+	await expect(page.getByText(/Ownership transfer stored:/)).toBeVisible({ timeout: 30_000 });
 	await page.getByLabel('Artifact kind').selectOption('modpack');
 	await expect(page.getByLabel('Signed modpack manifest JSON')).toBeVisible();
 	await page.getByLabel('Artifact kind').selectOption('mod');
@@ -128,6 +134,12 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 	await expect(page.getByRole('link', { name: 'Download' })).toBeVisible();
 	await page.getByRole('tab', { name: /Versions/ }).click();
 	await expect(page.getByRole('link', { name: 'View' })).toHaveCount(1);
+	await page.getByLabel('Game version').click();
+	await page.getByRole('option', { name: '1.20.1' }).click();
+	await expect(page).toHaveURL(/game_version=1.20.1/);
+	await page.getByLabel('Loader').click();
+	await page.getByRole('option', { name: 'Fabric', exact: true }).click();
+	await expect(page).toHaveURL(/loader=/);
 	await expect(page.getByRole('button', { name: 'Unfollow' })).toBeVisible();
 	const releaseHref = `/p/${encodeURIComponent(projectId)}/release/${releaseId.split(':').at(-1)}`;
 	await page.goto('/notifications');

@@ -115,6 +115,8 @@ fn markdown_sections(body: &str) -> Vec<ChangelogSection> {
 struct GenesisInput {
 	nonce: String,
 	authorized_kinds: Vec<String>,
+	#[serde(default)]
+	additional_root_seeds: Vec<String>,
 	#[serde(default = "one")]
 	threshold: u32,
 	#[serde(default)]
@@ -126,20 +128,30 @@ fn one() -> u32 {
 	1
 }
 
-fn build_genesis(input: &GenesisInput, seed: &[u8; 32]) -> Result<Signed, String> {
-	let key = SigningKey::from_seed(seed);
+fn build_genesis(input: &GenesisInput, signing_seed: &[u8; 32]) -> Result<Signed, String> {
+	let key = SigningKey::from_seed(signing_seed);
+	let mut roots =
+		vec![RootKey::from_public_key(key.verifying_key().to_bytes().to_vec()).map_err(|error| error.to_string())?];
+	for additional_seed in &input.additional_root_seeds {
+		let additional_seed = seed(additional_seed)?;
+		let additional_key = SigningKey::from_seed(&additional_seed);
+		roots.push(
+			RootKey::from_public_key(additional_key.verifying_key().to_bytes().to_vec())
+				.map_err(|error| error.to_string())?,
+		);
+	}
 	let genesis = Genesis {
 		protocol: 1,
 		kind: GenesisKind::Project,
 		nonce: bytes(&input.nonce, "the nonce")?,
-		roots: vec![RootKey::from_public_key(key.verifying_key().to_bytes().to_vec()).map_err(|error| error.to_string())?],
+		roots,
 		threshold: input.threshold.max(1),
 		authorized_kinds: input.authorized_kinds.clone(),
 		home_hint: input.home_hint.clone(),
 		contacts: None,
 		created_at: input.created_at,
 	};
-	Ok(finish(ObjectKind::Genesis, &genesis, seed))
+	Ok(finish(ObjectKind::Genesis, &genesis, signing_seed))
 }
 
 #[derive(Deserialize)]
@@ -602,6 +614,7 @@ mod tests {
 			&GenesisInput {
 				nonce: "00112233445566778899aabbccddeeff".to_string(),
 				authorized_kinds: vec!["delegation".to_string(), "release".to_string(), "profile".to_string()],
+				additional_root_seeds: Vec::new(),
 				threshold: 1,
 				home_hint: None,
 				created_at: 1_760_000_000,

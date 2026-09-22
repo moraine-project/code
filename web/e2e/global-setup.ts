@@ -9,6 +9,7 @@ const server = join(root, 'target/debug/moraine-server');
 const publish = join(root, 'target/debug/moraine-publish');
 const port = Number(process.env.MORAINE_E2E_PORT ?? 8137);
 const reviewPort = Number(process.env.MORAINE_E2E_REVIEW_PORT ?? 8138);
+const progressivePort = Number(process.env.MORAINE_E2E_PROGRESSIVE_PORT ?? 8139);
 export const stateFile = join(tmpdir(), 'moraine-e2e.json');
 
 type Instance = { child: ChildProcess; dataDir: string; password: string };
@@ -34,9 +35,11 @@ async function waitFor(url: string) {
 export default async function globalSetup() {
 	const open = startInstance(port, 'open', 'open');
 	const review = startInstance(reviewPort, 'review', 'review');
-	instances.push(open, review);
+	const progressive = startInstance(progressivePort, 'progressive', 'progressive');
+	instances.push(open, review, progressive);
 	await waitFor(`http://127.0.0.1:${port}/healthz`);
 	await waitFor(`http://127.0.0.1:${reviewPort}/healthz`);
+	await waitFor(`http://127.0.0.1:${progressivePort}/healthz`);
 	writeFileSync(
 		stateFile,
 		JSON.stringify({
@@ -44,6 +47,8 @@ export default async function globalSetup() {
 			password: open.password,
 			reviewBaseURL: `http://127.0.0.1:${reviewPort}`,
 			reviewPassword: review.password,
+			progressiveBaseURL: `http://127.0.0.1:${progressivePort}`,
+			progressivePassword: progressive.password,
 		}),
 	);
 
@@ -94,7 +99,10 @@ function startInstance(instancePort: number, mode: string, prefix: string): Inst
 			'--bind',
 			`127.0.0.1:${instancePort}`,
 			'--web-dir',
-			join(root, `web/${mode === 'review' ? 'build-review' : 'build'}`),
+			join(
+				root,
+				`web/${mode === 'review' ? 'build-review' : mode === 'progressive' ? 'build-progressive' : 'build'}`,
+			),
 			'--publishing',
 			mode,
 			'--registration',

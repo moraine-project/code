@@ -64,6 +64,9 @@
 			const last = submissions.at(-1);
 			const page = await reviewQueue(pageSize, last ? `${last.created_at}:${last.id}` : undefined);
 			submissions = submissions.concat(page);
+			for (const submission of page) {
+				reasons[submission.id] ??= reasonCodes[0];
+			}
 			hasMore = page.length === pageSize;
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'could not load more submissions';

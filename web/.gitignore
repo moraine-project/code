@@ -8,6 +8,7 @@ node_modules
 /.svelte-kit
 /build
 /build-review
+/build-progressive
 
 # OS
 .DS_Store

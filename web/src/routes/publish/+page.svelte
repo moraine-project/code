@@ -50,6 +50,7 @@
 	let keyGenerated = $state(false);
 	let keyMessage = $state<string | null>(null);
 	let keyOpen = $state(false);
+	let additionalRootSeed = $state('');
 
 	let mode = $state('review');
 	let games = $state<DefinitionSummary[]>([]);
@@ -168,6 +169,7 @@
 			const genesis = await signGenesis(seed, {
 				nonce: randomNonce(),
 				authorized_kinds: ['delegation', 'release', 'profile', 'changelog', 'modpack'],
+				additional_root_seeds: additionalRootSeed.trim() ? [additionalRootSeed.trim()] : [],
 				created_at: Math.floor(Date.now() / 1000),
 			});
 			const created = await createProject(genesis.wire);
@@ -425,6 +427,20 @@
 							This key exists only in this tab until you download it. Do that before you publish.
 						</p>
 					{/if}
+					<label class="floating-label max-w-xl">
+						<span>Additional root signing key (optional)</span>
+						<input
+							class="input w-full font-mono text-xs"
+							type="password"
+							bind:value={additionalRootSeed}
+							placeholder="64 hex characters"
+							aria-label="Additional root signing key"
+						/>
+					</label>
+					<p class="text-xs text-base-content/60">
+						Add a second root you control if this project may later need a two-signature ownership
+						transfer.
+					</p>
 				{/if}
 			</div>
 		</section>
