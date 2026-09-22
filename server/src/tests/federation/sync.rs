@@ -460,7 +460,9 @@ async fn bounds_the_home_response_body() {
 		let _ = axum::serve(listener, mock).await;
 	});
 	let base = format!("http://127.0.0.1:{}", address.port());
-	let client = super::HomeClient::new(&base, true, 1024, &[]).await.expect("client");
+	let client = crate::federation::HomeClient::new(&base, true, 1024, &[])
+		.await
+		.expect("client");
 	assert_eq!(client.get_bytes("small").await.expect("small"), b"ok");
 	assert!(client.get_bytes("huge").await.is_err());
 }
@@ -474,7 +476,9 @@ async fn reaches_a_local_home_by_name_not_only_by_literal() {
 		let _ = axum::serve(listener, mock).await;
 	});
 	let base = format!("http://localhost:{}", address.port());
-	let client = super::HomeClient::new(&base, true, 1024, &[]).await.expect("client");
+	let client = crate::federation::HomeClient::new(&base, true, 1024, &[])
+		.await
+		.expect("client");
 	assert_eq!(client.get_bytes("small").await.expect("small"), b"ok");
 }
 

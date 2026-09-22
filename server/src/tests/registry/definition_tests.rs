@@ -11,10 +11,10 @@ use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::signed::sign_payload;
 use tower::ServiceExt;
 
-use super::definitions::load_directory;
 use crate::blob::BlobStore;
 use crate::capability::Capability;
 use crate::db::MetadataStore;
+use crate::registry::definitions::load_directory;
 use crate::routes::AppState;
 
 async fn state(directory: &std::path::Path) -> AppState {

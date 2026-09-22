@@ -1,143 +1,23 @@
-use std::sync::Arc;
-use std::time::Duration;
-
 use axum::body::Body;
-use axum::extract::{DefaultBodyLimit, Path, State};
-use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
+use axum::extract::{Path, State};
+use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::post;
 use axum::{Json, Router};
 use futures_util::TryStreamExt;
 use serde::Serialize;
 use tokio_util::io::StreamReader;
-use tower_http::cors::{AllowOrigin, Any, CorsLayer};
-use tower_http::services::{ServeDir, ServeFile};
-use tower_http::set_header::SetResponseHeaderLayer;
-use tower_http::timeout::TimeoutLayer;
 
 use crate::auth::AuthenticatedUser;
-use crate::blob::{BlobError, BlobStore};
-use crate::capability::Capability;
-use crate::db::MetadataStore;
-
-const MAX_REQUEST_BODY_BYTES: usize = 256 * 1024;
-const REQUEST_TIMEOUT_SECONDS: u64 = 30;
+use crate::blob::BlobError;
+use crate::routes::AppState;
 
 static UPLOAD_LOCKS: std::sync::OnceLock<crate::blob::UploadLocks> = std::sync::OnceLock::new();
 
-#[derive(Clone)]
-pub struct AppState {
-	pub store: Arc<BlobStore>,
-	pub metadata: Arc<MetadataStore>,
-	pub capability: Arc<Capability>,
-	pub login_limiter: Arc<crate::auth::LoginLimiter>,
-	pub metrics: Arc<crate::ops::metrics::Metrics>,
-	pub rate_limiter: Arc<crate::auth::ratelimit::RateLimiter>,
-	pub web_dir: Option<Arc<std::path::PathBuf>>,
-}
-
-pub fn router(state: AppState) -> Router {
-	let web_dir = state.web_dir.clone();
-	let web_origins = state.capability.web_origins.clone();
-	let app = Router::new()
-		.route("/.well-known/mod-registry", get(well_known))
-		.route("/healthz", get(|| async { "ok" }))
-		.route("/readyz", get(ready))
+pub(super) fn routes() -> Router<AppState> {
+	Router::new()
 		.route("/v1/blobs", post(blob_upload))
-		.route("/v1/blobs/sha256/{digest}", get(blob_get).head(blob_head))
-		.merge(crate::registry::routes())
-		.merge(crate::auth::routes())
-		.merge(crate::registry::review::routes())
-		.merge(crate::federation::routes())
-		.merge(crate::registry::search::routes())
-		.merge(crate::auth::orgs::routes())
-		.merge(crate::registry::advisories::routes())
-		.merge(crate::registry::attestations::routes())
-		.merge(crate::federation::mirrors::routes())
-		.merge(crate::federation::notifications::routes())
-		.merge(crate::federation::webhooks::routes())
-		.merge(crate::registry::definitions::routes())
-		.merge(crate::ops::metrics::routes())
-		.merge(crate::ops::overview::routes())
-		.layer(axum::middleware::from_fn_with_state(
-			state.clone(),
-			crate::ops::metrics::track,
-		))
-		.layer(axum::middleware::from_fn_with_state(
-			state.clone(),
-			crate::auth::ratelimit::limit,
-		))
-		.with_state(state);
-	let app = match web_dir {
-		Some(directory) => {
-			let index = directory.join("index.html");
-			app.fallback_service(ServeDir::new(&*directory).fallback(ServeFile::new(index)))
-		}
-		None => app,
-	};
-	app.layer(cors(&web_origins))
-		.layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
-		.layer(TimeoutLayer::with_status_code(
-			StatusCode::REQUEST_TIMEOUT,
-			Duration::from_secs(REQUEST_TIMEOUT_SECONDS),
-		))
-		.layer(SetResponseHeaderLayer::if_not_present(
-			axum::http::header::CONTENT_SECURITY_POLICY,
-			HeaderValue::from_static("frame-ancestors 'none'; base-uri 'self'; object-src 'none'"),
-		))
-		.layer(SetResponseHeaderLayer::if_not_present(
-			axum::http::header::X_CONTENT_TYPE_OPTIONS,
-			HeaderValue::from_static("nosniff"),
-		))
-		.layer(SetResponseHeaderLayer::if_not_present(
-			axum::http::header::REFERRER_POLICY,
-			HeaderValue::from_static("no-referrer"),
-		))
-}
-
-fn cors(origins: &[String]) -> CorsLayer {
-	if origins.is_empty() {
-		return CorsLayer::new()
-			.allow_origin(Any)
-			.allow_methods([Method::GET, Method::HEAD])
-			.allow_headers(Any)
-			.max_age(Duration::from_secs(3600));
-	}
-	let allowed: Vec<HeaderValue> = origins.iter().filter_map(|origin| origin.parse().ok()).collect();
-	CorsLayer::new()
-		.allow_origin(AllowOrigin::list(allowed))
-		.allow_credentials(true)
-		.allow_methods([
-			Method::GET,
-			Method::HEAD,
-			Method::POST,
-			Method::PUT,
-			Method::PATCH,
-			Method::DELETE,
-		])
-		.allow_headers([
-			header::CONTENT_TYPE,
-			header::ACCEPT,
-			header::RANGE,
-			header::IF_NONE_MATCH,
-			axum::http::HeaderName::from_static("x-csrf-token"),
-		])
-		.max_age(Duration::from_secs(3600))
-}
-
-async fn well_known(State(state): State<AppState>) -> Json<Capability> {
-	Json((*state.capability).clone())
-}
-
-async fn ready(State(state): State<AppState>) -> Response {
-	let probe = [0u8; 32];
-	match state.store.size(&probe).await {
-		Ok(_) => (StatusCode::OK, "ok").into_response(),
-		Err(error) => {
-			tracing::warn!(%error, "readiness probe failed");
-			(StatusCode::SERVICE_UNAVAILABLE, "not ready").into_response()
-		}
-	}
+		.route("/v1/blobs/sha256/{digest}", axum::routing::get(blob_get).head(blob_head))
 }
 
 #[derive(Serialize)]
@@ -366,6 +246,3 @@ pub(crate) fn parse_range(value: &str, length: u64) -> Option<Result<(u64, u64),
 	}
 	Some(Ok((start, end)))
 }
-
-#[cfg(test)]
-mod tests;
