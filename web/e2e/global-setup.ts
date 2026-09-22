@@ -107,7 +107,14 @@ function startInstance(instancePort: number, mode: string, prefix: string): Inst
 			'open',
 			'--allow-insecure-federation-local',
 		],
-		{ stdio: 'inherit', env: { ...process.env, MORAINE_REGISTRATION: 'open' } },
+		{
+			stdio: 'inherit',
+			env: {
+				...process.env,
+				MORAINE_REGISTRATION: 'open',
+				MORAINE_REQUESTS_PER_MINUTE: '0',
+			},
+		},
 	);
 	return { child, dataDir, password };
 }
