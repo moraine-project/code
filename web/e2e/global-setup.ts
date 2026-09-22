@@ -24,9 +24,7 @@ async function waitFor(url: string) {
 			if (response.ok) {
 				return;
 			}
-		} catch {
-			// not up yet
-		}
+		} catch {}
 		await new Promise((ready) => setTimeout(ready, 200));
 	}
 	throw new Error(`the server never became ready at ${url}`);

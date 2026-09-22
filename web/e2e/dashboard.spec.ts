@@ -86,4 +86,71 @@ test('an operator sees the dashboard and its accounts', async ({ page }) => {
 	await expect(page.getByRole('alert')).toContainText('External catalog observation saved');
 	await page.getByRole('button', { name: 'Load observation' }).click();
 	await expect(page.getByRole('alert')).toContainText('Loaded external catalog observation');
+	await page.route('**/v1/scanners', async (route) => {
+		if (route.request().method() === 'GET') {
+			await route.fulfill({
+				contentType: 'application/json',
+				body: JSON.stringify([
+					{
+						provider_id: 'local-clamav',
+						kind: 'clamav',
+						command: 'clamscan',
+						args: [],
+						public_key: '00',
+						enabled: true,
+					},
+				]),
+			});
+		} else {
+			await route.fulfill({
+				contentType: 'application/json',
+				body: JSON.stringify({ provider_id: 'local-clamav' }),
+			});
+		}
+	});
+	await page.route('**/v1/scans', async (route) => {
+		if (route.request().method() === 'GET') {
+			await route.fulfill({
+				contentType: 'application/json',
+				body: JSON.stringify([
+					{
+						id: 'scan-1',
+						provider_id: 'local-clamav',
+						artifact_digest: 'sha256:test',
+						status: 'succeeded',
+						requested_by: 'ops',
+						attempts: 1,
+					},
+				]),
+			});
+		} else {
+			await route.fulfill({
+				contentType: 'application/json',
+				body: JSON.stringify({ id: 'scan-2' }),
+			});
+		}
+	});
+	await page.route('**/v1/scans/*/rescan', async (route) => {
+		await route.fulfill({
+			contentType: 'application/json',
+			body: JSON.stringify({ id: 'scan-3' }),
+		});
+	});
+	await page.route('**/v1/scanner-policies', async (route) => {
+		await route.fulfill({
+			contentType: 'application/json',
+			body: JSON.stringify(route.request().method() === 'GET' ? [] : {}),
+		});
+	});
+	await page.route('**/v1/scanner-subscriptions', async (route) => {
+		await route.fulfill({
+			contentType: 'application/json',
+			body: JSON.stringify(route.request().method() === 'GET' ? [] : { id: 'subscription-1' }),
+		});
+	});
+	await page.getByRole('tab', { name: 'Scanners' }).click();
+	await expect(page.getByRole('heading', { name: 'Scanner provider' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Manual scan' })).toBeVisible();
+	await page.getByRole('heading', { name: 'Scan jobs' }).scrollIntoViewIfNeeded();
+	await expect(page.getByText('succeeded')).toBeVisible();
 });

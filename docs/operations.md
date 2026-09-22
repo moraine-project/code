@@ -81,6 +81,12 @@ Every setting has a `MORAINE_*` environment variable and the same flag.
 | `MORAINE_REGISTRATION` | `closed` | `open` lets anyone create an account; `closed` only lets the operator add accounts |
 | `MORAINE_OPERATOR_EMAIL` | unset | Used by `bootstrap` |
 | `MORAINE_TLS_EXTRA_ROOTS` | unset | PEM bundle trusted in addition to the system roots, for federation |
+| `MORAINE_SCANNER_ENABLED` | `false` | Enable the optional local scanner worker |
+| `MORAINE_SCANNER_PROVIDER_ID` | `local-clamav` | Provider identity used for local scanner attestations |
+| `MORAINE_SCANNER_KIND` | `clamav` | Scanner adapter label included in attestations |
+| `MORAINE_SCANNER_COMMAND` | `clamscan` | Executable for the generic `command` adapter; ignored by built-in adapters |
+| `MORAINE_SCANNER_ARGS` | empty | Comma-separated arguments for the generic `command` adapter |
+| `MORAINE_SCANNER_TIMEOUT_SECONDS` | `300` | Maximum runtime for one local scan |
 
 Retention and limits:
 
@@ -112,6 +118,40 @@ Retention and limits:
 Set a limit to `0` to turn that limit off. An operator running a public
 instance wants the defaults; an operator running one for a small group may
 lower them.
+
+### Scanning
+
+The optional worker can run an administrator-configured local command, queue
+manual or automatic scans, and publish the result as a signed `scanner-result`
+attestation. The worker normalizes the provider's verdict and findings while
+retaining bounded stdout/stderr under `raw`, because scanner CLIs do not share
+an output format. `clamav` uses its documented exit codes; `neko` also treats
+its textual infection markers as findings. Enable it only when the configured
+executable is trusted:
+
+```sh
+MORAINE_SCANNER_ENABLED=true
+MORAINE_SCANNER_KIND=clamav
+```
+
+The built-in `clamav` adapter supplies `clamscan --no-summary` itself. The
+command and argument settings are only for a custom provider using the generic
+`command` adapter.
+
+The worker is disabled by default. The command adapter currently executes on
+the host/container where the Moraine server runs; it is not a sandbox. For a
+public instance, put the worker in a separate container or VM, mount only the
+scanner data directory, use a read-only artifact mount, disable network access,
+drop Linux capabilities, set CPU/memory/process limits, and run as an
+unprivileged user. Docker is the practical first isolation boundary for
+ClamAV; a microVM such as smolvm/Firecracker is stronger but requires a
+separate worker service and KVM-oriented operations. Neko or a Fractureiser
+detector can use the same command adapter, but should use that stronger
+boundary because they parse hostile archives and bytecode.
+
+External providers do not receive signing authority. Register their pinned
+Ed25519 key and an HTTPS feed under the dashboard; imported attestations are
+verified against that key before they are stored.
 
 ## The dashboard
 

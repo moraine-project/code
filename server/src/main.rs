@@ -130,6 +130,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		Err(error) => tracing::warn!(%error, "the definition directory was not loaded"),
 	}
 	let worker_state = state.clone();
+	let scanner_state = state.clone();
+	let scanner_config = config.clone();
 	let prune_state = state.clone();
 	let staging_retention = config.staging_retention_seconds;
 	let blob_retention = config.blob_retention_seconds;
@@ -143,6 +145,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				tracing::warn!(%error, "webhook dispatch failed");
 			}
 		}
+	});
+	tokio::spawn(async move {
+		registry::scanner::run_worker(scanner_state, scanner_config).await;
 	});
 
 	let maintenance_interval = config.maintenance_interval_seconds;

@@ -160,6 +160,24 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_MAX_FEED_SCAN_PAGES", default_value_t = 50)]
 	pub max_feed_scan_pages: u32,
 
+	#[arg(long, env = "MORAINE_SCANNER_ENABLED", default_value_t = false)]
+	pub scanner_enabled: bool,
+
+	#[arg(long, env = "MORAINE_SCANNER_PROVIDER_ID", default_value = "local-clamav")]
+	pub scanner_provider_id: String,
+
+	#[arg(long, env = "MORAINE_SCANNER_KIND", default_value = "clamav")]
+	pub scanner_kind: String,
+
+	#[arg(long, env = "MORAINE_SCANNER_COMMAND", default_value = "clamscan")]
+	pub scanner_command: String,
+
+	#[arg(long, env = "MORAINE_SCANNER_ARGS", value_delimiter = ',')]
+	pub scanner_args: Vec<String>,
+
+	#[arg(long, env = "MORAINE_SCANNER_TIMEOUT_SECONDS", default_value_t = 300)]
+	pub scanner_timeout_seconds: u64,
+
 	#[arg(long, env = "MORAINE_PUBLISHING", value_enum, default_value_t = Publishing::Review)]
 	pub publishing: Publishing,
 
@@ -256,6 +274,12 @@ mod tests {
 			max_mirror_probe_bytes: 268_435_456,
 			max_feed_page_entries: 100,
 			max_feed_scan_pages: 50,
+			scanner_enabled: false,
+			scanner_provider_id: "local-clamav".to_string(),
+			scanner_kind: "clamav".to_string(),
+			scanner_command: "clamscan".to_string(),
+			scanner_args: Vec::new(),
+			scanner_timeout_seconds: 300,
 			skip_migrate_on_start: false,
 			database_url,
 			max_response_bytes: 16_777_216,

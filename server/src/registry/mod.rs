@@ -19,6 +19,7 @@ pub mod profile;
 pub mod recovery;
 pub mod review;
 pub mod sanctions;
+pub mod scanner;
 pub mod search;
 pub mod search_facets;
 pub mod search_index;
@@ -65,6 +66,7 @@ pub fn routes() -> Router<AppState> {
 		.merge(recovery::routes())
 		.merge(impersonation::routes())
 		.merge(sanctions::routes())
+		.merge(scanner::routes())
 		.merge(grants::routes())
 		.merge(external::routes())
 }

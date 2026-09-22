@@ -81,6 +81,14 @@ services:
       # Allow http:// federation to loopback, for local tests only.
       # MORAINE_FEDERATION_ALLOW_HTTP_LOCAL: "false"
 
+      # ---- Scanning (disabled by default) ---------------------------------
+      # The command adapter runs inside this container; isolate it separately
+      # before enabling it for untrusted archives. See docs/operations.md.
+      MORAINE_SCANNER_ENABLED: ${MORAINE_SCANNER_ENABLED:-false}
+      MORAINE_SCANNER_PROVIDER_ID: ${MORAINE_SCANNER_PROVIDER_ID:-local-clamav}
+      MORAINE_SCANNER_KIND: ${MORAINE_SCANNER_KIND:-clamav}
+      MORAINE_SCANNER_TIMEOUT_SECONDS: ${MORAINE_SCANNER_TIMEOUT_SECONDS:-300}
+
       # ---- Limits (0 disables where noted) ---------------------------------
       # MORAINE_MAX_ARTIFACT_BYTES: "536870912"             # 512 MiB per file
       # MORAINE_MAX_UPLOAD_BYTES_PER_ACCOUNT: "5368709120"  # 5 GiB, 0 off
