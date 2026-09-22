@@ -63,9 +63,15 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - uses: jetli/wasm-pack-action@v0.4.0
+      - id: wasm-pack-install
+        continue-on-error: true
+        uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa
         with:
-          version: latest
+          version: v0.13.1
+      - if: steps.wasm-pack-install.outcome == 'failure'
+        uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa
+        with:
+          version: v0.13.1
       - name: Signer tests in Node
         run: wasm-pack test --node
         working-directory: wasm
@@ -80,9 +86,15 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - uses: jetli/wasm-pack-action@v0.4.0
+      - id: wasm-pack-install
+        continue-on-error: true
+        uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa
         with:
-          version: latest
+          version: v0.13.1
+      - if: steps.wasm-pack-install.outcome == 'failure'
+        uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa
+        with:
+          version: v0.13.1
       - uses: pnpm/action-setup@v4
         with:
           version: 12
@@ -109,9 +121,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - uses: jetli/wasm-pack-action@v0.4.0
+      - id: wasm-pack-install
+        continue-on-error: true
+        uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa
         with:
-          version: latest
+          version: v0.13.1
+      - if: steps.wasm-pack-install.outcome == 'failure'
+        uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa
+        with:
+          version: v0.13.1
       - uses: pnpm/action-setup@v4
         with:
           version: 12
