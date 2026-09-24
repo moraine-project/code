@@ -8,8 +8,12 @@ export const load: PageLoad = async ({ url, fetch }) => {
 		const base = homeFromUrl(url);
 		const [games, recent, popular] = await Promise.all([
 			listDefinitions(base, 'games', fetch).catch(() => []),
-			searchProjects(base, { sort: 'updated', limit: 6 }, fetch).catch(() => []),
-			searchProjects(base, { sort: 'popularity', limit: 6 }, fetch).catch(() => []),
+			searchProjects(base, { sort: 'updated', limit: 6 }, fetch)
+				.then((page) => page.results)
+				.catch(() => []),
+			searchProjects(base, { sort: 'popularity', limit: 6 }, fetch)
+				.then((page) => page.results)
+				.catch(() => []),
 		]);
 		return { home: base, games, recent, popular, error: null };
 	} catch (cause) {

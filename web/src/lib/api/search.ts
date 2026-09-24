@@ -69,6 +69,7 @@ export type SearchQueryParams = {
 	platform?: string;
 	state?: string;
 	sort?: string;
+	cursor?: string;
 	limit?: number;
 };
 
@@ -86,6 +87,7 @@ function searchParams(query: SearchQueryParams): URLSearchParams {
 	if (query.platform) params.set('platform', query.platform);
 	if (query.state) params.set('state', query.state);
 	if (query.sort) params.set('sort', query.sort);
+	if (query.cursor) params.set('cursor', query.cursor);
 	return params;
 }
 
@@ -103,16 +105,27 @@ export async function searchFacets(
 	return facetsSchema.parse((await response.json()).facets);
 }
 
+export type SearchPage = {
+	results: SearchResult[];
+	nextCursor: string | null;
+	totalEstimate: number | null;
+};
+
 export async function searchProjects(
 	base: string,
 	query: SearchQueryParams,
 	fetchFn: Fetcher = fetch,
-): Promise<SearchResult[]> {
+): Promise<SearchPage> {
 	const params = searchParams(query);
 	params.set('limit', String(query.limit ?? 20));
 	const response = await fetchFn(registryUrl(base, `/v1/search?${params.toString()}`));
 	if (!response.ok) {
 		throw new Error(`home returned ${response.status} for the search`);
 	}
-	return searchResponseSchema.parse(await response.json()).results;
+	const parsed = searchResponseSchema.parse(await response.json());
+	return {
+		results: parsed.results,
+		nextCursor: parsed.next_cursor ?? null,
+		totalEstimate: parsed.total_estimate ?? null,
+	};
 }

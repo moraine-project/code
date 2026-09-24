@@ -12,8 +12,9 @@ export const load: PageLoad = async ({ url, fetch }) => {
 	const gameVersion = url.searchParams.get('game_version') ?? '';
 	const channel = url.searchParams.get('channel') ?? '';
 	const sort = url.searchParams.get('sort') ?? '';
+	const cursor = url.searchParams.get('cursor') ?? '';
 	const query = { q, game, loader, category, tag, gameVersion, channel, sort, limit: 20 };
-	const filtered = [q, game, loader, category, tag, gameVersion, channel].some(
+	const filtered = [q, game, loader, category, tag, gameVersion, channel, sort].some(
 		(value) => value.trim().length > 0,
 	);
 
@@ -25,7 +26,9 @@ export const load: PageLoad = async ({ url, fetch }) => {
 			searchFacets(base, query, fetch).catch(() => emptyFacets),
 			game ? fetchGamePayload(base, game, fetch).catch(() => null) : Promise.resolve(null),
 		]);
-		const results = filtered ? await searchProjects(base, query, fetch) : [];
+		const page = filtered
+			? await searchProjects(base, { ...query, cursor: cursor || undefined }, fetch)
+			: { results: [], nextCursor: null, totalEstimate: null };
 		return {
 			home: base,
 			q,
@@ -36,11 +39,14 @@ export const load: PageLoad = async ({ url, fetch }) => {
 			gameVersion,
 			channel,
 			sort,
+			cursor,
 			games,
 			loaders,
 			facets,
 			gamePayload,
-			results,
+			results: page.results,
+			nextCursor: page.nextCursor,
+			totalEstimate: page.totalEstimate,
 			error: null,
 		};
 	} catch (cause) {
@@ -54,11 +60,14 @@ export const load: PageLoad = async ({ url, fetch }) => {
 			gameVersion,
 			channel,
 			sort,
+			cursor,
 			games: [],
 			loaders: [],
 			facets: emptyFacets,
 			gamePayload: null,
 			results: [],
+			nextCursor: null,
+			totalEstimate: null,
 			error: cause instanceof Error ? cause.message : 'the search failed',
 		};
 	}

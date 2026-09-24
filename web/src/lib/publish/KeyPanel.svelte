@@ -21,6 +21,7 @@
 	async function applySeed(value: string) {
 		keyMessage = null;
 		if (!isSeed(value)) {
+			seed = '';
 			keyFingerprint = '';
 			keyPublic = '';
 			return;

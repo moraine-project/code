@@ -17,6 +17,7 @@
 	import MultiSelectField from '$lib/components/MultiSelectField.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SelectField, { type SelectOption } from '$lib/components/SelectField.svelte';
+	import { home } from '$lib/home.svelte';
 	import { normalizeHome } from '$lib/home';
 	import KeyPanel from '$lib/publish/KeyPanel.svelte';
 	import TransferPanel from '$lib/publish/TransferPanel.svelte';
@@ -292,7 +293,19 @@
 		<div role="alert" class="alert alert-error"><span>{error}</span></div>
 	{/if}
 
-	{#if !session.user}
+	{#if home.isForeign}
+		<EmptyState
+			title="Publishing stays on your own home"
+			message={`This console signs and uploads through ${home.configured || 'this site'}, not through ${home.base}. Follow the link to publish there.`}
+		>
+			<a
+				class="btn btn-primary"
+				href={home.configured ? `/?home=${encodeURIComponent(home.configured)}` : '/'}
+			>
+				Back to {home.configured || 'your home'}
+			</a>
+		</EmptyState>
+	{:else if !session.user}
 		<EmptyState
 			title="Sign in to publish"
 			message="You need an account on this instance to upload files. Creating the project itself is signed by your key."
@@ -331,7 +344,7 @@
 						class="btn btn-outline w-fit"
 						type="button"
 						onclick={withdrawRelease}
-						disabled={busy || !seed || !withdrawalRelease}>Publish withdrawal</button
+						disabled={busy || !keyPublic || !withdrawalRelease}>Publish withdrawal</button
 					>
 					<TransferPanel {busy} {seed} {projectId} {report} {fail} />
 				</div>
@@ -439,7 +452,7 @@
 				<button
 					class="btn btn-sm w-fit"
 					onclick={createProjectOrPublishProfile}
-					disabled={busy || !seed || !gameId}
+					disabled={busy || !keyPublic || !gameId}
 				>
 					{projectMode === 'new' ? 'Create the project' : 'Publish the profile'}
 				</button>
@@ -547,7 +560,7 @@
 					class="btn btn-primary w-fit"
 					onclick={publishRelease}
 					disabled={busy ||
-						!seed ||
+						!keyPublic ||
 						!projectId ||
 						!artifact ||
 						!gameId ||

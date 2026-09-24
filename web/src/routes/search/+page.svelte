@@ -94,9 +94,16 @@
 	);
 
 	const hasFilters = $derived(
-		[data.q, data.game, data.loader, data.category, data.tag, data.gameVersion, data.channel].some(
-			(value) => value.trim().length > 0,
-		),
+		[
+			data.q,
+			data.game,
+			data.loader,
+			data.category,
+			data.tag,
+			data.gameVersion,
+			data.channel,
+			data.sort,
+		].some((value) => value.trim().length > 0),
 	);
 
 	function apply(updates: Record<string, string>) {
@@ -108,7 +115,18 @@
 				params.delete(key);
 			}
 		}
+		params.delete('cursor');
 		goto(home.url(`/search?${params.toString()}`), { keepFocus: true, noScroll: true });
+	}
+
+	function pageLink(cursor: string | null) {
+		const params = new URLSearchParams(page.url.searchParams);
+		if (cursor) {
+			params.set('cursor', cursor);
+		} else {
+			params.delete('cursor');
+		}
+		return home.url(`/search?${params.toString()}`);
 	}
 
 	function clearAll() {
@@ -201,7 +219,7 @@
 			{#if !hasFilters}
 				<EmptyState
 					title="Start with a search or a filter"
-					message="Type a name, or pick a game on the left. Results show every matching project this instance can reach."
+					message="Type a name, or pick a game on the left. Results are scoped to the projects this instance indexes."
 				/>
 			{:else if data.results.length === 0}
 				<EmptyState
@@ -210,14 +228,31 @@
 				/>
 			{:else}
 				<p class="text-sm text-base-content/60">
-					{data.results.length}
-					{data.results.length === 1 ? 'result' : 'results'}
+					{#if data.totalEstimate !== null && data.totalEstimate > data.results.length}
+						Showing {data.results.length} of about {data.totalEstimate}
+					{:else}
+						{data.results.length}
+						{data.results.length === 1 ? 'result' : 'results'}
+					{/if}
 				</p>
 				<div class="flex flex-col gap-3">
 					{#each data.results as result (result.project_id)}
 						<ProjectCard {result} gameName={gameNames.get(result.game_id) ?? ''} />
 					{/each}
 				</div>
+			{/if}
+
+			{#if hasFilters && (data.cursor || data.nextCursor)}
+				<nav class="flex items-center justify-between gap-2" aria-label="Search pages">
+					{#if data.cursor}
+						<a class="btn btn-sm btn-outline" href={pageLink(null)}>First page</a>
+					{:else}
+						<span></span>
+					{/if}
+					{#if data.nextCursor}
+						<a class="btn btn-sm" href={pageLink(data.nextCursor)}>Next page</a>
+					{/if}
+				</nav>
 			{/if}
 		</section>
 	</div>
