@@ -1,6 +1,16 @@
 use sqlx::Row;
 
-use super::{FeedRow, MetadataStore, ProjectRow, WithdrawalRow, insert_feed_entry};
+use super::{AppendFeed, FeedRow, MetadataStore, ProjectRow, WithdrawalRow, insert_feed_entry};
+
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+	matches!(
+		error
+			.as_database_error()
+			.and_then(sqlx::error::DatabaseError::code)
+			.as_deref(),
+		Some("1555" | "2067" | "23505")
+	)
+}
 
 impl MetadataStore {
 	pub async fn project(&self, id: &str) -> Result<Option<ProjectRow>, sqlx::Error> {
@@ -49,15 +59,28 @@ impl MetadataStore {
 		Ok(result.rows_affected() == 1)
 	}
 
-	pub async fn append_feed(&self, entry: &FeedRow) -> Result<(), sqlx::Error> {
+	pub async fn append_feed(&self, entry: &FeedRow) -> Result<AppendFeed, sqlx::Error> {
 		let mut transaction = self.pool.begin().await?;
-		insert_feed_entry(&mut transaction, entry).await?;
-		sqlx::query("UPDATE projects SET head_seq = $1, head_digest = $2 WHERE id = $3")
+		if let Err(error) = insert_feed_entry(&mut transaction, entry).await {
+			if is_unique_violation(&error) {
+				transaction.rollback().await?;
+				return Ok(AppendFeed::HeadMoved);
+			}
+			return Err(error);
+		}
+		let moved = sqlx::query("UPDATE projects SET head_seq = $1, head_digest = $2 WHERE id = $3 AND head_seq = $4")
 			.bind(entry.seq)
 			.bind(&entry.entry_digest)
 			.bind(&entry.project_id)
+			.bind(entry.seq - 1)
 			.execute(&mut *transaction)
-			.await?;
+			.await?
+			.rows_affected()
+			== 1;
+		if !moved {
+			transaction.rollback().await?;
+			return Ok(AppendFeed::HeadMoved);
+		}
 		if entry.kind == "profile-updated" {
 			sqlx::query("UPDATE projects SET profile_digest = $1 WHERE id = $2")
 				.bind(&entry.object_digest)
@@ -66,7 +89,28 @@ impl MetadataStore {
 				.await?;
 		}
 		transaction.commit().await?;
-		Ok(())
+		Ok(AppendFeed::Appended)
+	}
+
+	pub async fn feed_at(&self, project_id: &str, seq: i64) -> Result<Option<FeedRow>, sqlx::Error> {
+		let row = sqlx::query(
+			"SELECT project_id, seq, previous, entry_digest, kind, object_digest, payload, wire
+			 FROM feed_entries WHERE project_id = $1 AND seq = $2",
+		)
+		.bind(project_id)
+		.bind(seq)
+		.fetch_optional(&self.pool)
+		.await?;
+		Ok(row.map(|row| FeedRow {
+			project_id: row.get("project_id"),
+			seq: row.get("seq"),
+			previous: row.get("previous"),
+			entry_digest: row.get("entry_digest"),
+			kind: row.get("kind"),
+			object_digest: row.get("object_digest"),
+			payload: row.get("payload"),
+			wire: row.get("wire"),
+		}))
 	}
 
 	pub async fn feed_after(&self, project_id: &str, after: i64, limit: i64) -> Result<Vec<FeedRow>, sqlx::Error> {

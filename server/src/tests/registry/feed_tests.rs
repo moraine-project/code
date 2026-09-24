@@ -92,6 +92,52 @@ async fn publishes_project_object_and_feed_end_to_end() {
 }
 
 #[tokio::test]
+async fn replaying_an_applied_feed_entry_is_idempotent() {
+	let (application, _directory) = app().await;
+	let signer = key(9);
+	let request = axum::http::Request::post("/v1/projects")
+		.body(Body::from(genesis_wire(&signer, PROJECT_KINDS)))
+		.expect("request");
+	let response = application.clone().oneshot(request).await.expect("response");
+	let receipt = body_json(response).await;
+	let project_id = receipt["project_id"].as_str().expect("project id").to_string();
+
+	let (release, release_digest) = release_wire(&signer, &project_id);
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
+		.body(Body::from(release))
+		.expect("request");
+	application.clone().oneshot(request).await.expect("response");
+
+	let feed = feed_wire(&signer, &project_id, 1, None, release_digest);
+	let path = format!("/v1/projects/{project_id}/feed");
+	let request = axum::http::Request::post(&path)
+		.body(Body::from(feed.clone()))
+		.expect("request");
+	let first = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(first.status(), StatusCode::CREATED);
+
+	let request = axum::http::Request::post(&path).body(Body::from(feed)).expect("request");
+	let replayed = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(
+		replayed.status(),
+		StatusCode::CREATED,
+		"a replayed entry must not be a conflict"
+	);
+	let receipt = body_json(replayed).await;
+	assert_eq!(receipt["seq"], 1);
+
+	let page = body_json(
+		application
+			.oneshot(axum::http::Request::get(&path).body(Body::empty()).expect("request"))
+			.await
+			.expect("response"),
+	)
+	.await;
+	assert_eq!(page["entries"].as_array().expect("entries").len(), 1);
+	assert_eq!(page["head_seq"], 1);
+}
+
+#[tokio::test]
 async fn rejects_a_feed_gap() {
 	let (application, _directory) = app().await;
 	let signer = key(2);

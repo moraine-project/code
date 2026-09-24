@@ -211,6 +211,7 @@ pub(crate) async fn sync(state: &AppState, home_url: &str, project_id: &str) -> 
 		let Some(last) = page.entries.last() else {
 			break;
 		};
+		let page_start = cursor;
 		for entry in &page.entries {
 			if let Some(kind) = object_kind_for_event(&entry.kind) {
 				let wire = client.get_bytes(&format!("/v1/objects/{}", hex_of(&entry.object)?)).await?;
@@ -234,20 +235,20 @@ pub(crate) async fn sync(state: &AppState, home_url: &str, project_id: &str) -> 
 			registry::ingest_feed(state, project_id, &entry_wire)
 				.await
 				.map_err(|error| rejected(*error))?;
+			state
+				.metadata
+				.set_subscription_cursor(home_url, project_id, entry.seq, head_seq, "active", now())
+				.await
+				.map_err(storage)?;
+			cursor = entry.seq;
 			applied += 1;
 		}
 		if last.seq == head_seq {
 			observed_head = Some((head_seq, last.entry.clone()));
 		}
-		if last.seq <= cursor {
+		if last.seq <= page_start {
 			break;
 		}
-		state
-			.metadata
-			.set_subscription_cursor(home_url, project_id, last.seq, head_seq, "active", now())
-			.await
-			.map_err(storage)?;
-		cursor = last.seq;
 		if last.seq >= head_seq {
 			break;
 		}

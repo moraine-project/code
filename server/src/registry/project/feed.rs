@@ -12,7 +12,7 @@ use moraine_model::trust::{RootSet, verify_key_delegation};
 use serde::Serialize;
 
 use super::projects::{apply_ownership_transfer, apply_withdrawal};
-use crate::db::{FeedRow, ProjectRow, StoredObject};
+use crate::db::{AppendFeed, FeedRow, ProjectRow, StoredObject};
 use crate::registry::{migration, recovery};
 use crate::routes::AppState;
 use crate::verify::{self, VerifyError};
@@ -76,6 +76,22 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	let entry = prepared.entry;
 	let object = prepared.object;
 
+	let replayed = match state.metadata.feed_at(project_id, entry.sequence as i64).await {
+		Ok(Some(stored_entry)) => {
+			if stored_entry.entry_digest != object.digest {
+				return Err(Box::new(
+					(StatusCode::CONFLICT, "a different entry already occupies this sequence").into_response(),
+				));
+			}
+			Some(stored_entry)
+		}
+		Ok(None) => None,
+		Err(error) => return Err(Box::new(storage_error(error))),
+	};
+	if let Some(stored_entry) = replayed {
+		return Ok((stored_entry.seq, id_for(&stored_entry.entry_digest)));
+	}
+
 	let expected_seq = prepared.project.head_seq + 1;
 	if entry.sequence as i64 != expected_seq {
 		return Err(Box::new(
@@ -106,8 +122,14 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 		payload: object.payload_bytes,
 		wire: object.wire_bytes,
 	};
-	if let Err(error) = state.metadata.append_feed(&row).await {
-		return Err(Box::new(storage_error(error)));
+	match state.metadata.append_feed(&row).await {
+		Ok(AppendFeed::Appended) => {}
+		Ok(AppendFeed::HeadMoved) => {
+			return Err(Box::new(
+				(StatusCode::CONFLICT, "the feed head moved while this entry was being stored").into_response(),
+			));
+		}
+		Err(error) => return Err(Box::new(storage_error(error))),
 	}
 	if row.kind == "profile-updated"
 		&& let Err(error) = crate::registry::search_index::refresh_search_document(state, &row.object_digest).await

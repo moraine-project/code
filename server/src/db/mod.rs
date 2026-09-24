@@ -40,6 +40,12 @@ pub struct FeedRow {
 	pub wire: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppendFeed {
+	Appended,
+	HeadMoved,
+}
+
 #[derive(Debug, Clone)]
 pub struct WithdrawalRow {
 	pub reason: String,
@@ -196,6 +202,43 @@ mod tests {
 		store.index_artifact(&[1u8; 32], "p", &[2u8; 32]).await.expect("index");
 		let matches = store.artifacts_for_digest(&[1u8; 32]).await.expect("lookup");
 		assert_eq!(matches.len(), 1);
+	}
+
+	async fn append(store: &MetadataStore, seq: i64, previous: Option<Vec<u8>>, digest: u8) -> AppendFeed {
+		store
+			.append_feed(&FeedRow {
+				project_id: "p".to_string(),
+				seq,
+				previous,
+				entry_digest: vec![digest; 32],
+				kind: "release-published".to_string(),
+				object_digest: vec![digest; 32],
+				payload: vec![digest],
+				wire: vec![digest],
+			})
+			.await
+			.expect("append")
+	}
+
+	#[tokio::test]
+	async fn a_racing_feed_entry_cannot_move_the_head_backwards() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = MetadataStore::open_url(&crate::db::sqlite_url(&directory.path().join("metadata.sqlite")))
+			.await
+			.expect("store");
+		store.create_project("p", &[9u8; 32]).await.expect("project");
+
+		assert_eq!(append(&store, 1, None, 1).await, AppendFeed::Appended);
+		assert_eq!(append(&store, 2, Some(vec![1u8; 32]), 2).await, AppendFeed::Appended);
+		assert_eq!(store.project("p").await.expect("project").expect("present").head_seq, 2);
+
+		assert_eq!(append(&store, 2, Some(vec![1u8; 32]), 2).await, AppendFeed::HeadMoved);
+		assert_eq!(append(&store, 4, Some(vec![3u8; 32]), 4).await, AppendFeed::HeadMoved);
+
+		let project = store.project("p").await.expect("project").expect("present");
+		assert_eq!(project.head_seq, 2);
+		assert_eq!(project.head_digest, Some(vec![2u8; 32]));
+		assert_eq!(store.feed_after("p", 0, 10).await.expect("feed").len(), 2);
 	}
 
 	#[tokio::test]

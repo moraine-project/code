@@ -329,25 +329,15 @@ impl MetadataStore {
 		Ok(())
 	}
 
-	pub async fn has_unused_recovery_code(&self, user_id: &str, hash: &[u8]) -> Result<bool, sqlx::Error> {
-		let found = sqlx::query_scalar::<_, i64>(
-			"SELECT COUNT(*) FROM recovery_codes WHERE user_id = $1 AND code_hash = $2 AND used_at IS NULL",
-		)
-		.bind(user_id)
-		.bind(hash)
-		.fetch_one(&self.pool)
-		.await?;
-		Ok(found > 0)
-	}
-
-	pub async fn consume_recovery_code(&self, user_id: &str, hash: &[u8], used_at: i64) -> Result<(), sqlx::Error> {
-		sqlx::query("UPDATE recovery_codes SET used_at = $1 WHERE user_id = $2 AND code_hash = $3")
-			.bind(used_at)
-			.bind(user_id)
-			.bind(hash)
-			.execute(&self.pool)
-			.await?;
-		Ok(())
+	pub async fn claim_recovery_code(&self, user_id: &str, hash: &[u8], used_at: i64) -> Result<bool, sqlx::Error> {
+		let result =
+			sqlx::query("UPDATE recovery_codes SET used_at = $1 WHERE user_id = $2 AND code_hash = $3 AND used_at IS NULL")
+				.bind(used_at)
+				.bind(user_id)
+				.bind(hash)
+				.execute(&self.pool)
+				.await?;
+		Ok(result.rows_affected() == 1)
 	}
 
 	pub async fn create_api_key(&self, key: &ApiKeyRow) -> Result<(), sqlx::Error> {
@@ -432,5 +422,31 @@ impl MetadataStore {
 				.execute(&self.pool)
 				.await?;
 		Ok(result.rows_affected() == 1)
+	}
+}
+
+#[cfg(test)]
+mod recovery_claim_tests {
+	use crate::db::MetadataStore;
+
+	#[tokio::test]
+	async fn a_recovery_code_can_only_be_spent_once() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let store = MetadataStore::open_url(&crate::db::sqlite_url(&directory.path().join("metadata.sqlite")))
+			.await
+			.expect("store");
+		let hash = crate::auth::password::hash_password("correct horse battery").expect("hash");
+		store
+			.create_user("u", "user@example.org", &hash, "user", 1)
+			.await
+			.expect("user");
+		store.replace_recovery_codes("u", &[vec![7u8; 32]], 1).await.expect("codes");
+
+		assert!(store.claim_recovery_code("u", &[7u8; 32], 2).await.expect("claim"));
+		assert!(
+			!store.claim_recovery_code("u", &[7u8; 32], 3).await.expect("claim"),
+			"a spent recovery code must not be claimable again"
+		);
+		assert!(!store.claim_recovery_code("u", &[8u8; 32], 4).await.expect("claim"));
 	}
 }
