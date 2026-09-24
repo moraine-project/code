@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
-use moraine_model::delegation::{Delegation, KeyDelegation};
+use moraine_model::delegation::Delegation;
 use moraine_model::feed::FeedEntry;
 use moraine_model::signed::SignedObject;
 use moraine_model::trust::{RootSet, verify_key_delegation};
@@ -209,10 +209,11 @@ pub(crate) async fn load_root(state: &AppState, project_id: &str) -> Result<Root
 					));
 				}
 			};
-			RootSet::new(&keys, threshold, parsed.authorized_kinds.clone(), parsed.kind)
+			RootSet::new(project_id, &keys, threshold, parsed.authorized_kinds.clone(), parsed.kind)
 				.map_err(|error| Box::new(bad_request(state, VerifyError::Decode(error))))
 		}
-		Ok(None) => RootSet::from_genesis(&parsed).map_err(|error| Box::new(bad_request(state, VerifyError::Decode(error)))),
+		Ok(None) => RootSet::from_genesis(&parsed, project_id)
+			.map_err(|error| Box::new(bad_request(state, VerifyError::Decode(error)))),
 		Err(error) => Err(Box::new(storage_error(error))),
 	}
 }
@@ -221,7 +222,7 @@ pub(crate) async fn load_delegations(
 	state: &AppState,
 	project_id: &str,
 	root: &RootSet,
-) -> Result<Vec<KeyDelegation>, Box<Response>> {
+) -> Result<Vec<SignedObject<Delegation>>, Box<Response>> {
 	let stored = match state.metadata.project_delegations(project_id, 500).await {
 		Ok(stored) => stored,
 		Err(error) => return Err(Box::new(storage_error(error))),
@@ -231,16 +232,13 @@ pub(crate) async fn load_delegations(
 		let Ok(signed) = SignedObject::<Delegation>::from_bytes(&object.wire) else {
 			continue;
 		};
-		let Delegation::Key(key) = &signed.payload else {
-			continue;
-		};
-		if key.project_id != project_id {
+		if !matches!(signed.payload, Delegation::Key(_)) {
 			continue;
 		}
 		if verify_key_delegation(&signed, root).is_err() {
 			continue;
 		}
-		delegations.push(key.clone());
+		delegations.push(signed);
 	}
 	Ok(delegations)
 }

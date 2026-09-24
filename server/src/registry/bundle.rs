@@ -52,7 +52,7 @@ async fn release_bundle(State(state): State<AppState>, Path((id, hex_digest)): P
 	let Ok(genesis) = Genesis::from_canonical_bytes(&genesis_object.payload) else {
 		return (StatusCode::INTERNAL_SERVER_ERROR, "stored genesis does not decode").into_response();
 	};
-	let Ok(root) = RootSet::from_genesis(&genesis) else {
+	let Ok(root) = RootSet::from_genesis(&genesis, &id) else {
 		return (StatusCode::INTERNAL_SERVER_ERROR, "stored genesis does not build a root set").into_response();
 	};
 

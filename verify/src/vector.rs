@@ -187,6 +187,15 @@ fn evaluate_predicate(vector: &Vector) -> Actual {
 	}
 }
 
+fn payload_subject(payload: &Delegation) -> Result<String, ModelError> {
+	match payload {
+		Delegation::Key(delegation) => Ok(delegation.project_id.clone()),
+		Delegation::OwnershipTransfer(transfer) => Ok(transfer.project_id.clone()),
+		Delegation::Migration(migration) => Ok(migration.project_id.clone()),
+		Delegation::Recovery(recovery) => Ok(recovery.project_id.clone()),
+	}
+}
+
 fn verify_genesis_object(
 	vector: &Vector,
 	payload: Vec<u8>,
@@ -196,7 +205,7 @@ fn verify_genesis_object(
 	let signed = SignedObject::<Genesis>::from_raw_payload(payload, envelope.clone())?;
 	check_expected_id(vector, ObjectKind::Genesis, &signed.payload_bytes)?;
 	let message = signed.signed_message(verify_kind);
-	let root = RootSet::from_genesis(&signed.payload)?;
+	let root = RootSet::from_genesis(&signed.payload, &signed.id(ObjectKind::Genesis))?;
 	root.verify(&message, envelope)?;
 	Ok(())
 }
@@ -213,7 +222,7 @@ fn verify_delegation_object(
 		.trust
 		.as_ref()
 		.expect("trusted keys are required for delegation vectors");
-	let root = trust.to_root_set()?;
+	let root = trust.to_root_set(&payload_subject(&signed.payload)?)?;
 	if verify_kind != ObjectKind::Delegation {
 		let message = signed.signed_message(verify_kind);
 		root.verify(&message, envelope)?;
@@ -358,7 +367,7 @@ impl TrustJson {
 		self.delegated_keys.iter().map(|key| decode_key(key)).collect()
 	}
 
-	fn to_root_set(&self) -> Result<RootSet, ModelError> {
+	fn to_root_set(&self, subject: &str) -> Result<RootSet, ModelError> {
 		let kinds = if self.authorized_kinds.is_empty() {
 			all_kind_strings()
 		} else {
@@ -369,7 +378,7 @@ impl TrustJson {
 			.iter()
 			.map(|root| hex::decode(root).map_err(|_| ModelError::new(RejectReason::InvalidEncoding, "root hex")))
 			.collect::<Result<Vec<_>, _>>()?;
-		RootSet::new(&public_keys, self.threshold, kinds, GenesisKind::Project)
+		RootSet::new(subject, &public_keys, self.threshold, kinds, GenesisKind::Project)
 	}
 }
 

@@ -7,6 +7,7 @@ use crate::signed::{SignedObject, TrustedKey, verify_envelope};
 
 #[derive(Debug, Clone)]
 pub struct RootSet {
+	subject: String,
 	keys: Vec<TrustedKey>,
 	threshold: usize,
 	authorized_kinds: Vec<String>,
@@ -15,6 +16,7 @@ pub struct RootSet {
 
 impl RootSet {
 	pub fn new(
+		subject: &str,
 		public_keys: &[Vec<u8>],
 		threshold: usize,
 		authorized_kinds: Vec<String>,
@@ -30,7 +32,14 @@ impl RootSet {
 				"a root set needs at least one key and a threshold within it",
 			));
 		}
+		if subject.is_empty() {
+			return Err(ModelError::new(
+				RejectReason::InvalidFieldValue,
+				"a root set must name the identity it establishes",
+			));
+		}
 		Ok(Self {
+			subject: subject.to_string(),
 			keys,
 			threshold,
 			authorized_kinds,
@@ -38,7 +47,7 @@ impl RootSet {
 		})
 	}
 
-	pub fn from_genesis(genesis: &Genesis) -> Result<Self, ModelError> {
+	pub fn from_genesis(genesis: &Genesis, subject: &str) -> Result<Self, ModelError> {
 		genesis.validate()?;
 		let keys = genesis
 			.roots
@@ -46,11 +55,16 @@ impl RootSet {
 			.map(|root| TrustedKey::new(&root.public_key))
 			.collect::<Result<Vec<_>, _>>()?;
 		Ok(Self {
+			subject: subject.to_string(),
 			keys,
 			threshold: usize::try_from(genesis.threshold).unwrap_or(usize::MAX),
 			authorized_kinds: genesis.authorized_kinds.clone(),
 			genesis_kind: genesis.kind,
 		})
+	}
+
+	pub fn subject(&self) -> &str {
+		&self.subject
 	}
 
 	pub const fn threshold(&self) -> usize {
@@ -74,8 +88,8 @@ impl RootSet {
 	}
 }
 
-pub fn verify_genesis(signed: &SignedObject<Genesis>) -> Result<RootSet, ModelError> {
-	let root = RootSet::from_genesis(&signed.payload)?;
+pub fn verify_genesis(signed: &SignedObject<Genesis>, subject: &str) -> Result<RootSet, ModelError> {
+	let root = RootSet::from_genesis(&signed.payload, subject)?;
 	let message = signed.signed_message(ObjectKind::Genesis);
 	root.verify(&message, &signed.envelope)?;
 	Ok(root)
@@ -85,6 +99,12 @@ pub fn verify_key_delegation(signed: &SignedObject<Delegation>, root: &RootSet) 
 	let Delegation::Key(delegation) = &signed.payload else {
 		return Err(ModelError::new(RejectReason::WrongObjectKind, "expected a key delegation"));
 	};
+	if delegation.project_id != root.subject() {
+		return Err(ModelError::new(
+			RejectReason::WrongSubject,
+			"the delegation names a different project than the root set",
+		));
+	}
 	if !root.authorizes_kind("delegation") {
 		return Err(ModelError::new(
 			RejectReason::UnauthorizedKind,

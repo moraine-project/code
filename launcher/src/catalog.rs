@@ -5,7 +5,7 @@ use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
 use moraine_model::compatibility::{Predicate, Side};
 use moraine_model::definition::{GameDef, LoaderObject};
-use moraine_model::delegation::{Delegation, KeyDelegation};
+use moraine_model::delegation::Delegation;
 use moraine_model::dependency::{DependencyKind, TargetKind};
 use moraine_model::genesis::GenesisKind;
 use moraine_model::release::ReleaseObject;
@@ -351,7 +351,11 @@ fn feed_entries(fetcher: &dyn HomeFetcher, project: &str) -> Result<(Vec<Value>,
 	Ok((entries, head))
 }
 
-fn project_delegations(fetcher: &dyn HomeFetcher, entries: &[Value], root: &RootSet) -> Result<Vec<KeyDelegation>, String> {
+fn project_delegations(
+	fetcher: &dyn HomeFetcher,
+	entries: &[Value],
+	root: &RootSet,
+) -> Result<Vec<SignedObject<Delegation>>, String> {
 	let mut delegations = Vec::new();
 	for entry in entries {
 		let kind = entry.get("kind").and_then(Value::as_str).unwrap_or_default();
@@ -363,9 +367,9 @@ fn project_delegations(fetcher: &dyn HomeFetcher, entries: &[Value], root: &Root
 		};
 		let wire = fetch_object(fetcher, object_id)?;
 		let signed = SignedObject::<Delegation>::from_bytes(&wire).map_err(|error| error.to_string())?;
-		if let Delegation::Key(delegation) = &signed.payload {
+		if matches!(signed.payload, Delegation::Key(_)) {
 			verify_key_delegation(&signed, root).map_err(|error| format!("{object_id} did not verify: {error}"))?;
-			delegations.push(delegation.clone());
+			delegations.push(signed);
 		}
 	}
 	Ok(delegations)
