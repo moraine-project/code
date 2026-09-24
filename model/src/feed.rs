@@ -27,6 +27,9 @@ impl FeedEntry {
 		if self.sequence == 0 {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "sequence"));
 		}
+		if self.sequence > i64::MAX as u64 {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "sequence"));
+		}
 		match (&self.previous, self.sequence) {
 			(Some(previous), 1) if previous.len() == 32 => {
 				return Err(ModelError::new(

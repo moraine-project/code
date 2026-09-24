@@ -101,6 +101,44 @@ fn rejects_a_container_length_larger_than_the_input() {
 }
 
 #[test]
+fn round_trips_the_whole_signed_integer_range() {
+	for number in [
+		0,
+		1,
+		-1,
+		23,
+		24,
+		255,
+		256,
+		-24,
+		-25,
+		-256,
+		-257,
+		65_535,
+		65_536,
+		-65_536,
+		-65_537,
+		i64::MAX - 1,
+		i64::MAX,
+		-i64::MAX,
+		i64::MIN,
+	] {
+		let bytes = encode(&Value::Integer(number)).expect("encode");
+		assert_eq!(
+			decode(&bytes).expect("decode"),
+			Value::Integer(number),
+			"{number} did not survive"
+		);
+	}
+}
+
+#[test]
+fn rejects_a_non_canonical_integer_width() {
+	assert_eq!(decode(&[0x18, 0x01]), Err(CodecError::NonMinimalInteger));
+	assert_eq!(decode(&[0x38, 0x01]), Err(CodecError::NonMinimalInteger));
+}
+
+#[test]
 fn accepts_a_large_but_well_formed_array() {
 	let mut bytes = vec![0x9a, 0x00, 0x01, 0x00, 0x00];
 	bytes.extend(std::iter::repeat_n(0x00, 0x1_0000));

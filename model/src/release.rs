@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use moraine_codec::Value;
 
 use crate::artifact::Artifact;
-use crate::canonical::{Canonical, Fields, expect_array, expect_bytes, expect_i64, expect_text, expect_u32, map_of};
+use crate::canonical::{
+	Canonical, Fields, expect_array, expect_bytes, expect_canonical_u64, expect_i64, expect_text, expect_u32, map_of,
+};
 use crate::compatibility::{Compatibility, Rights};
 use crate::dependency::Dependency;
 use crate::error::{ModelError, RejectReason};
@@ -53,6 +55,9 @@ impl ReleasePayload {
 				RejectReason::InvalidFieldValue,
 				"release must list at least one artifact",
 			));
+		}
+		for artifact in &self.artifacts {
+			expect_canonical_u64(artifact.size, "artifact size")?;
 		}
 		if !self.critical_extensions.is_empty() {
 			return Err(ModelError::new(

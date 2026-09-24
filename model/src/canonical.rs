@@ -89,6 +89,13 @@ pub fn expect_u64(value: &Value, key: &str) -> Result<u64, ModelError> {
 	u64::try_from(number).map_err(|_| ModelError::field(RejectReason::InvalidFieldValue, key))
 }
 
+pub fn expect_canonical_u64(value: u64, key: &str) -> Result<u64, ModelError> {
+	if value > i64::MAX as u64 {
+		return Err(ModelError::field(RejectReason::InvalidFieldValue, key));
+	}
+	Ok(value)
+}
+
 pub fn expect_u32(value: &Value, key: &str) -> Result<u32, ModelError> {
 	let number = expect_u64(value, key)?;
 	u32::try_from(number).map_err(|_| ModelError::field(RejectReason::InvalidFieldValue, key))
