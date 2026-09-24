@@ -405,6 +405,8 @@ pub fn request_for(
 		runtime_id: runtime.as_ref().map(|(id, _)| id.clone()),
 		runtime_version: runtime.as_ref().and_then(|(_, version)| version.clone()),
 		side: Side::parse(side).ok_or_else(|| format!("unknown side `{side}`"))?,
+		os: Some(std::env::consts::OS.to_string()),
+		arch: Some(std::env::consts::ARCH.to_string()),
 		root_project: root_project.to_string(),
 		root_predicate: moraine_model::compatibility::Predicate::new(moraine_model::compatibility::Scheme::Any, Vec::new()),
 	})

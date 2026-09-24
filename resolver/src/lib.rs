@@ -15,6 +15,8 @@ pub struct Request {
 	pub runtime_id: Option<String>,
 	pub runtime_version: Option<String>,
 	pub side: Side,
+	pub os: Option<String>,
+	pub arch: Option<String>,
 	pub root_project: String,
 	pub root_predicate: Predicate,
 }
@@ -63,6 +65,9 @@ pub struct LockedDependency {
 	pub target_kind: String,
 	pub target_id: String,
 	pub kind: String,
+	pub game_id: String,
+	pub predicate_scheme: String,
+	pub predicate_values: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,9 +102,6 @@ pub enum ResolveError {
 		project_id: String,
 		detail: String,
 	},
-	Cycle {
-		path: String,
-	},
 	CrossGame {
 		project_id: String,
 		game_id: String,
@@ -120,7 +122,6 @@ impl std::fmt::Display for ResolveError {
 		match self {
 			Self::NoCandidate { project_id, detail } => write!(f, "no candidate for `{project_id}`: {detail}"),
 			Self::Conflict { project_id, detail } => write!(f, "conflict on `{project_id}`: {detail}"),
-			Self::Cycle { path } => write!(f, "dependency cycle: {path}"),
 			Self::CrossGame { project_id, game_id } => {
 				write!(f, "`{project_id}` targets game `{game_id}`, not this one")
 			}
@@ -149,18 +150,16 @@ pub fn resolve<'a>(request: &Request, context: &Context, candidates: &'a [Candid
 		by_project.entry(candidate.project_id.as_str()).or_default().push(candidate);
 	}
 	for group in by_project.values_mut() {
-		group.sort_by(|a, b| compare_versions(&b.human_version, &a.human_version));
+		group.sort_by(|a, b| compare_versions(&context.game, &b.human_version, &a.human_version));
 	}
 
 	let mut selected: BTreeMap<String, &'a Candidate> = BTreeMap::new();
-	let mut path = Vec::new();
 	solve(
 		request,
 		context,
 		&by_project,
 		vec![(request.root_project.clone(), request.root_predicate.clone())],
 		&mut selected,
-		&mut path,
 	)?;
 
 	let mut releases = Vec::new();
@@ -185,6 +184,9 @@ pub fn resolve<'a>(request: &Request, context: &Context, candidates: &'a [Candid
 					target_kind: dependency.target_kind.as_str().to_string(),
 					target_id: dependency.target_id.clone(),
 					kind: dependency.kind.as_str().to_string(),
+					game_id: dependency.game_id.clone(),
+					predicate_scheme: dependency.predicate.scheme.clone(),
+					predicate_values: dependency.predicate.values.clone(),
 				})
 				.collect(),
 		});
@@ -248,27 +250,18 @@ fn solve<'a>(
 	by_project: &BTreeMap<&'a str, Vec<&'a Candidate>>,
 	mut queue: Vec<(String, Predicate)>,
 	selected: &mut BTreeMap<String, &'a Candidate>,
-	path: &mut Vec<String>,
 ) -> Result<(), ResolveError> {
 	if queue.is_empty() {
 		return Ok(());
 	}
-	if path.len() > MAX_DEPTH {
+	if selected.len() > MAX_DEPTH {
 		return Err(ResolveError::TooDeep);
 	}
 	let (project_id, predicate) = queue.remove(0);
 
-	if path.contains(&project_id) {
-		let mut chain = path.clone();
-		chain.push(project_id);
-		return Err(ResolveError::Cycle {
-			path: chain.join(" -> "),
-		});
-	}
-
 	if let Some(existing) = selected.get(&project_id) {
 		if satisfies(&predicate, &existing.human_version) {
-			return solve(request, context, by_project, queue, selected, path);
+			return solve(request, context, by_project, queue, selected);
 		}
 		return Err(ResolveError::Conflict {
 			project_id,
@@ -293,14 +286,12 @@ fn solve<'a>(
 		}
 
 		selected.insert(project_id.clone(), candidate);
-		path.push(project_id.clone());
 		let mut next = dependencies;
 		next.extend(queue.clone());
-		match solve(request, context, by_project, next, selected, path) {
+		match solve(request, context, by_project, next, selected) {
 			Ok(()) => return Ok(()),
 			Err(ResolveError::Conflict { .. } | ResolveError::NoCandidate { .. }) => {
 				selected.remove(&project_id);
-				path.pop();
 			}
 			Err(error) => return Err(error),
 		}
@@ -401,8 +392,17 @@ fn compatible(request: &Request, context: &Context, candidate: &Candidate) -> bo
 					.as_deref()
 					.is_some_and(|version| satisfies_catalog(predicate, version, context.runtime.as_ref()))
 			});
-			game_ok && side_ok && loader_ok && runtime_ok
+			let platform_ok = platform_matches(entry.os_predicate.as_deref(), request.os.as_deref())
+				&& platform_matches(entry.arch_predicate.as_deref(), request.arch.as_deref());
+			game_ok && side_ok && loader_ok && runtime_ok && platform_ok
 		}) && entry_side_supported(candidate, request.side)
+}
+
+fn platform_matches(predicate: Option<&[String]>, wanted: Option<&str>) -> bool {
+	let (Some(predicate), Some(wanted)) = (predicate, wanted) else {
+		return true;
+	};
+	predicate.iter().any(|value| value == "any" || value == wanted)
 }
 
 fn entry_side_supported(candidate: &Candidate, side: Side) -> bool {
@@ -445,8 +445,7 @@ fn primary_artifact(candidate: &Candidate) -> Option<&moraine_model::artifact::A
 		.or_else(|| candidate.payload.artifacts.first())
 }
 
-fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
-	let catalog = VersionCatalog::new(OrderingScheme::Semver, Vec::new());
+fn compare_versions(catalog: &VersionCatalog, a: &str, b: &str) -> std::cmp::Ordering {
 	catalog.compare(a, b).unwrap_or_else(|| a.cmp(b))
 }
 
@@ -523,6 +522,8 @@ mod tests {
 			runtime_id: None,
 			runtime_version: None,
 			side: Side::Client,
+			os: None,
+			arch: None,
 			root_project: "root".to_string(),
 			root_predicate: Predicate::new(Scheme::Any, Vec::new()),
 		}
@@ -650,13 +651,79 @@ mod tests {
 	}
 
 	#[test]
-	fn detects_a_cycle() {
+	fn resolves_a_mutual_dependency() {
 		let candidates = vec![
 			candidate("root", "1.0.0", vec![require("a", Predicate::new(Scheme::Any, Vec::new()))]),
 			candidate("a", "1.0.0", vec![require("root", Predicate::new(Scheme::Any, Vec::new()))]),
 		];
-		let error = resolve(&request(), &context(), &candidates).expect_err("cycle");
-		assert!(matches!(error, ResolveError::Cycle { .. }));
+		let lock = resolve(&request(), &context(), &candidates).expect("a shared dependency is not a cycle");
+		assert_eq!(lock.releases.len(), 2);
+	}
+
+	#[test]
+	fn refuses_a_release_that_excludes_the_requested_platform() {
+		let mut windows = candidate("root", "1.0.0", Vec::new());
+		windows.payload.compatibility[0].os_predicate = Some(vec!["windows".to_string()]);
+		let mut linux = candidate("root", "2.0.0", Vec::new());
+		linux.payload.compatibility[0].os_predicate = Some(vec!["linux".to_string()]);
+
+		let mut windows_only = candidate("root", "1.0.0", Vec::new());
+		windows_only.payload.compatibility[0].os_predicate = Some(vec!["windows".to_string()]);
+		let mut request = request();
+		request.os = Some("linux".to_string());
+		let lock = resolve(&request, &context(), &[windows, linux]).expect("the linux build is chosen");
+		assert_eq!(lock.releases[0].human_version, "2.0.0");
+
+		request.os = Some("macos".to_string());
+		assert!(
+			resolve(&request, &context(), &[windows_only]).is_err(),
+			"a platform no build names cannot be satisfied"
+		);
+	}
+
+	#[test]
+	fn a_release_without_a_platform_predicate_matches_any_platform() {
+		let candidates = vec![candidate("root", "1.0.0", Vec::new())];
+		let mut request = request();
+		request.os = Some("linux".to_string());
+		assert!(
+			resolve(&request, &context(), &candidates).is_ok(),
+			"a release that names no platform is not platform-specific"
+		);
+	}
+
+	#[test]
+	fn orders_candidates_with_the_games_declared_scheme() {
+		let mut context = context();
+		context.game = VersionCatalog::new(
+			OrderingScheme::OrderedList,
+			vec!["1.0".to_string(), "1.2".to_string(), "1.10".to_string()],
+		);
+		let candidates = vec![
+			candidate("root", "1.0", Vec::new()),
+			candidate("root", "1.10", Vec::new()),
+			candidate("root", "1.2", Vec::new()),
+		];
+		let lock = resolve(&request(), &context, &candidates).expect("resolves");
+		assert_eq!(
+			lock.releases[0].human_version, "1.10",
+			"an ordered-list game must not be sorted as semver"
+		);
+	}
+
+	#[test]
+	fn resolves_a_diamond_dependency() {
+		let any = || Predicate::new(Scheme::Any, Vec::new());
+		let candidates = vec![
+			candidate("root", "1.0.0", vec![require("left", any()), require("right", any())]),
+			candidate("left", "1.0.0", vec![require("shared", any())]),
+			candidate("right", "1.0.0", vec![require("shared", any())]),
+			candidate("shared", "1.0.0", Vec::new()),
+		];
+		let lock = resolve(&request(), &context(), &candidates).expect("a diamond is not a cycle");
+		let mut ids: Vec<&str> = lock.releases.iter().map(|release| release.project_id.as_str()).collect();
+		ids.sort_unstable();
+		assert_eq!(ids, vec!["left", "right", "root", "shared"]);
 	}
 
 	#[test]
