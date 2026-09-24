@@ -312,6 +312,28 @@ mod postgres_tests {
 		assert_eq!(popularities.get("p"), Some(&1));
 
 		store
+			.record_confirmation(&[1u8; 32], "mirror-a", 1_760_000_000, true)
+			.await
+			.expect("confirmation reachable");
+		let reachable = store
+			.confirmation_for(&[1u8; 32], "mirror-a")
+			.await
+			.expect("confirmation")
+			.expect("present");
+		assert!(reachable.reachable);
+		store
+			.record_confirmation(&[1u8; 32], "mirror-a", 1_760_000_100, false)
+			.await
+			.expect("confirmation unreachable");
+		let unreachable = store
+			.confirmation_for(&[1u8; 32], "mirror-a")
+			.await
+			.expect("confirmation")
+			.expect("present");
+		assert!(!unreachable.reachable);
+		assert_eq!(unreachable.checked_at, 1_760_000_100);
+
+		store
 			.create_submission(&SubmissionRow {
 				id: "s".to_string(),
 				project_id: "p".to_string(),

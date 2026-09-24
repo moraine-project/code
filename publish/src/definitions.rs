@@ -26,6 +26,7 @@ fn trimmed(value: Option<&str>) -> Option<String> {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DefinitionFile {
 	kind: String,
 	#[serde(default)]
@@ -81,6 +82,7 @@ struct DefinitionFile {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CategoryFile {
 	id: String,
 	label: String,
@@ -89,6 +91,7 @@ struct CategoryFile {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct TagFile {
 	id: String,
 	label: String,

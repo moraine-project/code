@@ -142,7 +142,7 @@ impl MetadataStore {
 		.bind(artifact_digest)
 		.bind(mirror_id)
 		.bind(checked_at)
-		.bind(reachable)
+		.bind(i64::from(reachable))
 		.execute(&self.pool)
 		.await?;
 		Ok(())

@@ -60,6 +60,8 @@ enum Command {
 		roots: Vec<String>,
 		#[arg(long, default_value_t = 1)]
 		threshold: usize,
+		#[arg(long)]
+		decode_only: bool,
 	},
 
 	Artifact {
@@ -96,7 +98,8 @@ fn run(cli: Cli) -> Result<(), String> {
 			file,
 			roots,
 			threshold,
-		} => verify_object(&kind, &file, &roots, threshold),
+			decode_only,
+		} => verify_object(&kind, &file, &roots, threshold, decode_only),
 		Command::Artifact {
 			release,
 			file,
@@ -161,7 +164,13 @@ fn print_key_id(public: &str) -> Result<(), String> {
 	Ok(())
 }
 
-fn verify_object(kind: &str, file: &PathBuf, roots: &[String], threshold: usize) -> Result<(), String> {
+fn verify_object(kind: &str, file: &PathBuf, roots: &[String], threshold: usize, decode_only: bool) -> Result<(), String> {
+	if roots.is_empty() && !decode_only {
+		return Err(
+			"no trusted roots supplied, so no signature was checked; pass --root <public-key-hex> to verify, or --decode-only to inspect the bytes without trusting them"
+				.to_string(),
+		);
+	}
 	let kind = ObjectKind::parse(kind).ok_or_else(|| format!("unknown object kind `{kind}`"))?;
 	let bytes = std::fs::read(file).map_err(|error| format!("{}: {error}", file.display()))?;
 	let trusted: Vec<TrustedKey> = roots
@@ -189,7 +198,7 @@ fn verify_object(kind: &str, file: &PathBuf, roots: &[String], threshold: usize)
 	};
 	println!("id: {id}");
 	if trusted.is_empty() {
-		println!("signatures: not checked (no trusted roots supplied)");
+		println!("signatures: not checked (--decode-only)");
 		return Ok(());
 	}
 	let envelope = decode_envelope(kind, &bytes)?;
@@ -255,7 +264,8 @@ mod tests {
 			sign_payload(ObjectKind::Changelog, &changelog, &[&key]).wire_bytes(),
 		)
 		.expect("write");
-		super::verify_object("changelog", &changelog_path, std::slice::from_ref(&root), 1).expect("changelog verifies");
+		super::verify_object("changelog", &changelog_path, std::slice::from_ref(&root), 1, false)
+			.expect("changelog verifies");
 
 		let modpack = ModpackManifest {
 			protocol: 1,
@@ -280,7 +290,7 @@ mod tests {
 			sign_payload(ObjectKind::Modpack, &modpack, &[&key]).wire_bytes(),
 		)
 		.expect("write");
-		super::verify_object("modpack", &modpack_path, &[root], 1).expect("modpack verifies");
+		super::verify_object("modpack", &modpack_path, &[root], 1, false).expect("modpack verifies");
 	}
 
 	#[test]
@@ -309,5 +319,17 @@ mod tests {
 				.iter()
 				.any(|listing| listing.source_instance == "https://dir-b.example")
 		);
+	}
+
+	#[test]
+	fn an_object_without_roots_is_a_refusal_not_a_pass() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let path = directory.path().join("object");
+		std::fs::write(&path, b"not really an object").expect("write");
+
+		let refusal =
+			super::verify_object("changelog", &path, &[], 1, false).expect_err("a rootless verification must not succeed");
+		assert!(refusal.contains("no trusted roots"), "{refusal}");
+		assert!(refusal.contains("--decode-only"), "{refusal}");
 	}
 }

@@ -116,9 +116,10 @@ Retention and limits:
 | `MORAINE_FEDERATION_ALLOW_HTTP_LOCAL` | `false` | Allow `http://` federation to loopback, for local tests |
 | `MORAINE_INSTANCE_BRANDING` | unset | Path to a JSON file that names and themes this instance |
 
-Set a limit to `0` to turn that limit off. An operator running a public
-instance wants the defaults; an operator running one for a small group may
-lower them.
+Set a limit to `0` to turn that limit off, with one exception:
+`MORAINE_MAX_FEED_PAGE_ENTRIES` must be at least 1, because a page that returns
+nothing cannot be paged through. An operator running a public instance wants
+the defaults; an operator running one for a small group may lower them.
 
 ### Scanning
 

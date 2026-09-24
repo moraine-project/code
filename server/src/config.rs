@@ -281,6 +281,9 @@ impl Default for Config {
 
 impl Config {
 	pub fn check_binding(&self) -> Result<(), String> {
+		if self.max_feed_page_entries == 0 {
+			return Err("max feed page entries must be at least 1; a page has to carry one entry".to_string());
+		}
 		if self.bind.ip().is_loopback() || self.tls_terminated || self.allow_insecure_http {
 			return Ok(());
 		}
@@ -362,6 +365,16 @@ mod tests {
 
 		config.tls_terminated = false;
 		config.allow_insecure_http = true;
+		assert!(config.check_binding().is_ok());
+	}
+
+	#[test]
+	fn refuses_a_feed_page_that_could_not_carry_an_entry() {
+		let mut config = config(None);
+		config.max_feed_page_entries = 0;
+		assert!(config.check_binding().is_err());
+
+		config.max_feed_page_entries = 1;
 		assert!(config.check_binding().is_ok());
 	}
 

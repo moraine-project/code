@@ -54,10 +54,8 @@ pub(crate) async fn page(State(state): State<AppState>, Path(id): Path<String>, 
 		Ok(None) => return (StatusCode::NOT_FOUND, "no such project").into_response(),
 		Err(error) => return storage_error(error),
 	};
-	let limit = query
-		.limit
-		.unwrap_or(state.capability.max_feed_page_entries as i64)
-		.clamp(1, state.capability.max_feed_page_entries as i64);
+	let ceiling = (state.capability.max_feed_page_entries as i64).max(1);
+	let limit = query.limit.unwrap_or(ceiling).clamp(1, ceiling);
 	let mut entries = Vec::with_capacity(limit as usize);
 	let mut catalog: Option<Option<moraine_model::version::VersionCatalog>> = None;
 	let mut loader_scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;

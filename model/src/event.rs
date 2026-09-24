@@ -23,32 +23,28 @@ pub enum EventKind {
 }
 
 impl EventKind {
-	pub const fn as_str(self) -> &'static str {
-		match self {
-			Self::ReleasePublished => "release-published",
-			Self::ReleaseWithdrawn => "release-withdrawn",
-			Self::ProfileUpdated => "profile-updated",
-			Self::KeyChanged => "key-changed",
-			Self::Recovery => "recovery",
-			Self::Migration => "migration",
-			Self::Advisory => "advisory",
-			Self::ForkDetected => "fork-detected",
-			Self::OwnershipTransferred => "ownership-transferred",
-		}
+	const NAMES: &'static [(&'static str, Self)] = &[
+		("release-published", Self::ReleasePublished),
+		("release-withdrawn", Self::ReleaseWithdrawn),
+		("profile-updated", Self::ProfileUpdated),
+		("key-changed", Self::KeyChanged),
+		("recovery", Self::Recovery),
+		("migration", Self::Migration),
+		("advisory", Self::Advisory),
+		("fork-detected", Self::ForkDetected),
+		("ownership-transferred", Self::OwnershipTransferred),
+	];
+
+	pub fn as_str(self) -> &'static str {
+		Self::NAMES
+			.iter()
+			.find(|(_, kind)| *kind == self)
+			.map(|(name, _)| *name)
+			.expect("every event kind is listed in NAMES")
 	}
 
 	pub fn parse(value: &str) -> Option<Self> {
-		Some(match value {
-			"release-published" => Self::ReleasePublished,
-			"release-withdrawn" => Self::ReleaseWithdrawn,
-			"profile-updated" => Self::ProfileUpdated,
-			"key-changed" => Self::KeyChanged,
-			"recovery" => Self::Recovery,
-			"migration" => Self::Migration,
-			"advisory" => Self::Advisory,
-			"fork-detected" => Self::ForkDetected,
-			_ => return None,
-		})
+		Self::NAMES.iter().find(|(name, _)| *name == value).map(|(_, kind)| *kind)
 	}
 
 	pub const fn is_feed_derived(self) -> bool {
@@ -193,5 +189,18 @@ mod tests {
 			issued_at: 1,
 		};
 		assert_eq!(event.validate().unwrap_err().reason, RejectReason::MissingField);
+	}
+
+	#[test]
+	fn every_event_kind_survives_its_own_name() {
+		for (name, kind) in EventKind::NAMES {
+			assert_eq!(kind.as_str(), *name);
+			assert_eq!(EventKind::parse(name), Some(*kind));
+		}
+	}
+
+	#[test]
+	fn an_unknown_event_kind_is_rejected() {
+		assert_eq!(EventKind::parse("not-an-event"), None);
 	}
 }
