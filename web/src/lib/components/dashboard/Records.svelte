@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fetchExternalProject, upsertExternalProject } from '$lib/api/external';
-	import { mirrorLocations } from '$lib/api/registry';
+	import { mirrorLocations } from '$lib/api/releases';
 	import {
 		publishAdvisory,
 		publishAttestation,

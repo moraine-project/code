@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { DefinitionSummary } from '$lib/api/registry';
+	import type { DefinitionSummary } from '$lib/api/definitions';
+	import { home } from '$lib/home.svelte';
 	import { ChevronRight } from '@lucide/svelte';
 	import Avatar from './Avatar.svelte';
 	import SourceBadge from './SourceBadge.svelte';
@@ -9,7 +10,7 @@
 
 <a
 	class="card card-border bg-base-200 transition hover:border-primary hover:bg-base-300/60"
-	href={`/search?game=${encodeURIComponent(game.id)}`}
+	href={home.url(`/search?game=${encodeURIComponent(game.id)}`)}
 >
 	<div class="card-body flex-row items-center gap-4">
 		<Avatar name={game.display_name ?? 'Game'} id={game.id} size={48} />

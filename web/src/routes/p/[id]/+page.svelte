@@ -1,12 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { Download } from '@lucide/svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import SelectField, { type SelectOption } from '$lib/components/SelectField.svelte';
-	import { safeExternalUrl, shortDigest, type FeedEntry } from '$lib/api/registry';
+	import { safeExternalUrl } from '$lib/api/external-url';
+	import { shortDigest } from '$lib/api/digests';
+	import type { FeedEntry } from '$lib/api/projects';
 	import { follow, follows, unfollow } from '$lib/api/notifications';
 	import { session } from '$lib/session.svelte';
+	import { home } from '$lib/home.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -31,6 +36,10 @@
 			goto('/account');
 			return;
 		}
+		if (!session.canWrite) {
+			followError = session.writeBlockedReason;
+			return;
+		}
 		followBusy = true;
 		followError = null;
 		try {
@@ -49,7 +58,7 @@
 	}
 
 	function releaseUrl(entry: FeedEntry): string {
-		return `/p/${encodeURIComponent(data.projectId)}/release/${hexOf(entry.object)}?home=${encodeURIComponent(data.home)}`;
+		return home.url(`/p/${encodeURIComponent(data.projectId)}/release/${hexOf(entry.object)}`);
 	}
 
 	function formatDate(seconds: number): string {
@@ -100,14 +109,16 @@
 	]);
 
 	function apply(updates: Record<string, string>) {
-		const params = new URLSearchParams();
+		const params = new URLSearchParams(page.url.searchParams);
 		for (const [key, value] of Object.entries(updates)) {
 			if (value) {
 				params.set(key, value);
+			} else {
+				params.delete(key);
 			}
 		}
 		const query = params.toString();
-		goto(`/p/${encodeURIComponent(data.projectId)}${query ? `?${query}` : ''}`, {
+		goto(home.url(`/p/${encodeURIComponent(data.projectId)}${query ? `?${query}` : ''}`), {
 			keepFocus: true,
 			noScroll: true,
 		});
@@ -115,7 +126,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.profile?.display_name ?? data.projectId} · Moraine</title>
+	<title>{pageTitle(data.profile?.display_name ?? data.projectId)}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">
@@ -165,7 +176,12 @@
 		</div>
 
 		<div class="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
-			<button class="btn btn-outline" type="button" onclick={toggleFollow} disabled={followBusy}>
+			<button
+				class="btn btn-outline"
+				type="button"
+				onclick={toggleFollow}
+				disabled={followBusy || !session.canWrite}
+			>
 				{followBusy
 					? 'Saving…'
 					: following
@@ -174,6 +190,9 @@
 							? 'Follow'
 							: 'Sign in to follow'}
 			</button>
+			{#if session.writeBlockedReason}
+				<p class="max-w-xs text-xs text-base-content/60">{session.writeBlockedReason}</p>
+			{/if}
 			{#if followError}<p role="alert" class="max-w-xs text-xs text-error">{followError}</p>{/if}
 			{#if latest}
 				<a class="btn btn-primary" href={releaseUrl(latest)}>
@@ -331,7 +350,7 @@
 					{#each packs as entry (entry.entry)}
 						<a
 							class="link link-hover font-mono text-sm"
-							href={`/packs/${hexOf(entry.object)}?home=${encodeURIComponent(data.home)}`}
+							href={home.url(`/packs/${hexOf(entry.object)}`)}
 						>
 							{shortDigest(entry.object)} · {formatDate(entry.declared_at)}
 						</a>

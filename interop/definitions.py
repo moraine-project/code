@@ -54,6 +54,16 @@ def reject_duplicates(ids, key):
         seen.add(item)
 
 
+def version_catalog(value, name="version_catalog"):
+    if value is None:
+        return []
+    entries = text_array(value, name)
+    if any(entry == "" for entry in entries):
+        raise Reject("invalid-field-value", name)
+    reject_duplicates(entries, name)
+    return entries
+
+
 def parse_game_def(value):
     fields = Fields("GameDef", value).known(
         [
@@ -62,6 +72,7 @@ def parse_game_def(value):
             "display_name",
             "version_syntax",
             "version_ordering",
+            "version_catalog",
             "loaders_allowed",
             "loader_authorities",
             "categories",
@@ -78,6 +89,7 @@ def parse_game_def(value):
     ordering = one_of(
         fields.required("version_ordering"), "version_ordering", ORDERING_SCHEMES
     )
+    version_catalog(fields.optional("version_catalog"))
     boolean(fields.required("loaders_allowed"), "loaders_allowed")
     text_array(fields.required("loader_authorities"), "loader_authorities")
     categories = [
@@ -108,6 +120,7 @@ def parse_runtime_def(value):
             "kind",
             "display_name",
             "version_ordering",
+            "version_catalog",
             "declared_time",
         ]
     )
@@ -116,6 +129,7 @@ def parse_runtime_def(value):
     one_of(fields.required("kind"), "kind", RUNTIME_KINDS)
     text(fields.required("display_name"), "display_name")
     one_of(fields.required("version_ordering"), "version_ordering", ORDERING_SCHEMES)
+    version_catalog(fields.optional("version_catalog"))
     i64(fields.required("declared_time"), "declared_time")
     if protocol != 1:
         raise Reject("invalid-field-value", "protocol")
@@ -159,6 +173,8 @@ def loader_definition(value):
             "game_id",
             "display_name",
             "version_ordering",
+            "version_catalog",
+            "game_versions",
             "bootstrap",
             "accepted_artifacts",
             "declared_time",
@@ -172,6 +188,9 @@ def loader_definition(value):
     ordering = one_of(
         fields.required("version_ordering"), "version_ordering", ORDERING_SCHEMES
     )
+    version_catalog(fields.optional("version_catalog"))
+    if fields.optional("game_versions") is not None:
+        predicate(fields.optional("game_versions"))
     if fields.optional("bootstrap") is not None:
         artifact_ref(fields.optional("bootstrap"))
     if fields.optional("accepted_artifacts") is not None:

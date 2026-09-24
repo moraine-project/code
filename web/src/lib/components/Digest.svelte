@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Check, Copy } from '@lucide/svelte';
 	import { onDestroy } from 'svelte';
-	import { shortDigest } from '$lib/api/registry';
+	import { shortDigest } from '$lib/api/digests';
 
 	let {
 		value,

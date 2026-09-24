@@ -31,9 +31,9 @@ const witnessObservationSchema = z.object({
 });
 
 const witnessConflictSchema = z.object({
+	source_home: z.string(),
 	sequence: z.number(),
 	entries: z.array(z.string()),
-	homes: z.array(z.string()),
 	observers: z.array(z.string()),
 });
 

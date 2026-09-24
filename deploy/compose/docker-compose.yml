@@ -50,6 +50,10 @@ services:
       # Only for a throwaway test: serve plain HTTP on a public bind.
       # MORAINE_ALLOW_INSECURE_HTTP: "false"
 
+      # ---- Branding (optional) ----------------------------------------------
+      # A JSON file naming and theming this instance. Mount it read-only.
+      # MORAINE_INSTANCE_BRANDING: /data/branding.json
+
       # ---- Email (optional; off without SMTP_URL) --------------------------
       MORAINE_SMTP_URL: ${MORAINE_SMTP_URL:-}
       MORAINE_MAIL_FROM: ${MORAINE_MAIL_FROM:-}

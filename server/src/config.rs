@@ -190,11 +190,14 @@ pub struct Config {
 	#[arg(long, env = "MORAINE_WEB_DIR")]
 	pub web_dir: Option<PathBuf>,
 
+	#[arg(long, env = "MORAINE_INSTANCE_BRANDING")]
+	pub instance_branding: Option<PathBuf>,
+
 	#[command(flatten)]
 	pub s3: S3Settings,
 }
 
-#[derive(Debug, Clone, Default, Args)]
+#[derive(Debug, Clone, Args)]
 pub struct S3Settings {
 	#[arg(long, env = "MORAINE_S3_BUCKET")]
 	pub bucket: Option<String>,
@@ -213,6 +216,67 @@ pub struct S3Settings {
 
 	#[arg(long, env = "MORAINE_S3_PREFIX", default_value = "moraine")]
 	pub prefix: String,
+}
+
+impl Default for S3Settings {
+	fn default() -> Self {
+		Self {
+			bucket: None,
+			endpoint: None,
+			region: None,
+			access_key_id: None,
+			secret_access_key: None,
+			prefix: "moraine".to_string(),
+		}
+	}
+}
+
+impl Default for Config {
+	fn default() -> Self {
+		Self {
+			bind: "127.0.0.1:8080".parse().expect("a valid default address"),
+			tls_terminated: false,
+			allow_insecure_http: false,
+			web_origins: Vec::new(),
+			data_dir: "./data".into(),
+			max_artifact_bytes: 536_870_912,
+			max_upload_bytes_per_account: 5_368_709_120,
+			max_projects: 10_000,
+			max_definitions: 1_000,
+			max_sync_entries: 10_000,
+			metrics_token: None,
+			smtp_url: None,
+			mail_from: None,
+			public_url: None,
+			require_verified_email: false,
+			max_mirror_probes_per_cycle: 20,
+			max_mirror_probe_bytes: 268_435_456,
+			max_feed_page_entries: 100,
+			max_response_bytes: 16_777_216,
+			staging_retention_seconds: 3_600,
+			blob_retention_seconds: 604_800,
+			max_sync_pages: 200,
+			requests_per_minute: 600,
+			max_concurrent_syncs: 4,
+			maintenance_interval_seconds: 3_600,
+			tls_extra_roots: None,
+			skip_migrate_on_start: false,
+			database_url: None,
+			max_feed_scan_pages: 50,
+			scanner_enabled: false,
+			scanner_provider_id: "local-clamav".to_string(),
+			scanner_kind: "clamav".to_string(),
+			scanner_command: "clamscan".to_string(),
+			scanner_args: Vec::new(),
+			scanner_timeout_seconds: 300,
+			publishing: Publishing::Review,
+			registration: Registration::Closed,
+			allow_insecure_federation_local: false,
+			web_dir: None,
+			instance_branding: None,
+			s3: S3Settings::default(),
+		}
+	}
 }
 
 impl Config {
@@ -257,44 +321,22 @@ mod tests {
 			bind: "127.0.0.1:0".parse().expect("addr"),
 			data_dir: std::path::PathBuf::from("/tmp/moraine"),
 			max_artifact_bytes: 1024,
-			max_upload_bytes_per_account: 5_368_709_120,
-			max_projects: 10_000,
-			tls_terminated: false,
-			allow_insecure_http: false,
-			web_origins: Vec::new(),
-			registration: crate::config::Registration::Open,
-			max_definitions: 1_000,
-			max_sync_entries: 10_000,
-			metrics_token: None,
-			smtp_url: None,
-			mail_from: None,
-			public_url: None,
-			require_verified_email: false,
-			max_mirror_probes_per_cycle: 20,
-			max_mirror_probe_bytes: 268_435_456,
-			max_feed_page_entries: 100,
-			max_feed_scan_pages: 50,
-			scanner_enabled: false,
-			scanner_provider_id: "local-clamav".to_string(),
-			scanner_kind: "clamav".to_string(),
-			scanner_command: "clamscan".to_string(),
-			scanner_args: Vec::new(),
-			scanner_timeout_seconds: 300,
-			skip_migrate_on_start: false,
+			registration: Registration::Open,
 			database_url,
-			max_response_bytes: 16_777_216,
-			staging_retention_seconds: 3_600,
-			blob_retention_seconds: 604_800,
-			max_sync_pages: 200,
-			requests_per_minute: 600,
-			max_concurrent_syncs: 4,
-			maintenance_interval_seconds: 3_600,
-			tls_extra_roots: None,
-			allow_insecure_federation_local: false,
-			publishing: Publishing::Review,
-			web_dir: None,
-			s3: Default::default(),
+			..Config::default()
 		}
+	}
+
+	#[test]
+	fn default_matches_the_clap_defaults() {
+		let parsed = Config::parse_from(["moraine-server"]);
+		assert_eq!(format!("{parsed:?}"), format!("{:?}", Config::default()));
+	}
+
+	#[test]
+	fn environment_overrides_reach_the_parsed_config() {
+		let parsed = Config::parse_from(["moraine-server", "--max-artifact-bytes", "17"]);
+		assert_eq!(parsed.max_artifact_bytes, 17);
 	}
 
 	#[test]

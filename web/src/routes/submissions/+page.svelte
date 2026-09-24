@@ -5,7 +5,8 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { mySubmissions, type SubmissionDetail } from '$lib/api/review';
-	import { safeExternalUrl } from '$lib/api/registry';
+	import { safeExternalUrl } from '$lib/api/external-url';
+	import { pageTitle } from '$lib/title.svelte';
 
 	const pageSize = 50;
 
@@ -67,7 +68,7 @@
 </script>
 
 <svelte:head>
-	<title>Your submissions · Moraine</title>
+	<title>{pageTitle('Your submissions')}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">

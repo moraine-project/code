@@ -33,6 +33,7 @@ pub struct Provider {
 	pub args: Vec<String>,
 	pub public_key: Vec<u8>,
 	pub enabled: bool,
+	pub local: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -99,6 +100,7 @@ struct ProviderView {
 	args: Vec<String>,
 	public_key: String,
 	enabled: bool,
+	local: bool,
 }
 
 #[derive(Serialize)]
@@ -162,6 +164,7 @@ async fn list_providers(State(state): State<AppState>, user: AuthenticatedUser) 
 					args: item.args,
 					public_key: hex::encode(item.public_key),
 					enabled: item.enabled,
+					local: item.local,
 				})
 				.collect::<Vec<_>>(),
 		)
@@ -191,13 +194,22 @@ async fn create_provider(
 	{
 		return (StatusCode::BAD_REQUEST, "invalid scanner provider").into_response();
 	}
+	let id = request.provider_id.trim().to_string();
+	match state.metadata.scanner_provider(&id).await {
+		Ok(Some(existing)) if existing.local => {
+			return (StatusCode::CONFLICT, "the local scanner provider is owned by the worker").into_response();
+		}
+		Ok(_) => {}
+		Err(error) => return storage_error(error),
+	}
 	let provider = Provider {
-		id: request.provider_id.trim().to_string(),
+		id,
 		kind: request.kind.trim().to_string(),
 		command: request.command,
 		args: request.args,
 		public_key,
 		enabled: request.enabled,
+		local: false,
 	};
 	match state.metadata.put_scanner_provider(&provider, now()).await {
 		Ok(()) => (
@@ -209,6 +221,7 @@ async fn create_provider(
 				args: provider.args,
 				public_key: hex::encode(provider.public_key),
 				enabled: provider.enabled,
+				local: provider.local,
 			}),
 		)
 			.into_response(),

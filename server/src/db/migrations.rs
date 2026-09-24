@@ -152,6 +152,16 @@ const MIGRATIONS: &[Migration] = &[
 		sqlite: include_str!("../../migrations/sqlite/0026_scanners.sql"),
 		postgres: include_str!("../../migrations/postgres/0026_scanners.sql"),
 	},
+	Migration {
+		name: "0027_scanner_local_provider",
+		sqlite: include_str!("../../migrations/sqlite/0027_scanner_local_provider.sql"),
+		postgres: include_str!("../../migrations/postgres/0027_scanner_local_provider.sql"),
+	},
+	Migration {
+		name: "0028_scanner_integer_flags",
+		sqlite: include_str!("../../migrations/sqlite/0028_scanner_integer_flags.sql"),
+		postgres: include_str!("../../migrations/postgres/0028_scanner_integer_flags.sql"),
+	},
 ];
 
 pub(super) async fn run_migrations(pool: &AnyPool, engine: Engine) -> Result<usize, sqlx::Error> {

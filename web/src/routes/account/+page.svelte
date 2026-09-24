@@ -18,11 +18,12 @@
 		revokeApiKey,
 		type ApiKey,
 	} from '$lib/api/session';
-	import { registrationMode } from '$lib/api/registry';
+	import { instance } from '$lib/instance.svelte';
 	import { createWebhook, revokeWebhook, webhooks, type Webhook } from '$lib/api/webhooks';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { session } from '$lib/session.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 
 	let user = $state<typeof session.user>(null);
 	let email = $state('');
@@ -32,7 +33,7 @@
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 	let notice = $state<string | null>(null);
-	let registrationOpen = $state(true);
+	let registrationOpen = $derived(instance.registration === 'open');
 
 	let current = $state('');
 	let next = $state('');
@@ -50,9 +51,6 @@
 
 	onMount(() => {
 		void refresh();
-		void registrationMode()
-			.then((mode) => (registrationOpen = mode === 'open'))
-			.catch(() => (registrationOpen = false));
 		const token = page.url.searchParams.get('verify');
 		if (token) {
 			void verifyEmail(token)
@@ -275,7 +273,7 @@
 </script>
 
 <svelte:head>
-	<title>Account · Moraine</title>
+	<title>{pageTitle('Account')}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">

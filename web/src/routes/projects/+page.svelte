@@ -2,14 +2,15 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import { shortDigest } from '$lib/api/registry';
+	import { shortDigest } from '$lib/api/digests';
+	import { pageTitle } from '$lib/title.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 </script>
 
 <svelte:head>
-	<title>Following · Moraine</title>
+	<title>{pageTitle('Following')}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">
@@ -32,7 +33,7 @@
 			{#each data.projects as project (project.id)}
 				<a
 					class="card card-border bg-base-200 transition hover:border-primary"
-					href={`/p/${encodeURIComponent(project.id)}${data.base ? `?home=${encodeURIComponent(data.base)}` : ''}`}
+					href={`/p/${encodeURIComponent(project.id)}`}
 				>
 					<div class="card-body flex-row items-center gap-4">
 						<Avatar name={project.name ?? 'Project'} id={project.id} size={44} />

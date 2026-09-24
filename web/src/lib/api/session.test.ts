@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('$env/static/public', () => ({ PUBLIC_MORAINE_REGISTRY: 'http://127.0.0.1:8080' }));
 
-import { apiBase, sameOrigin } from './session';
+import { sameOrigin, sessionBase } from './session';
 
 describe('sameOrigin', () => {
 	it('treats the exact origin as same', () => {
@@ -23,16 +23,16 @@ describe('sameOrigin', () => {
 describe('apiBase', () => {
 	it('uses a relative base when the page is the configured home', () => {
 		vi.stubGlobal('window', { location: { origin: 'http://127.0.0.1:8080' } });
-		expect(apiBase()).toBe('');
+		expect(sessionBase()).toBe('');
 	});
 
 	it('uses a relative base across loopback aliases', () => {
 		vi.stubGlobal('window', { location: { origin: 'http://localhost:8080' } });
-		expect(apiBase()).toBe('');
+		expect(sessionBase()).toBe('');
 	});
 
 	it('uses the configured base on a different origin', () => {
 		vi.stubGlobal('window', { location: { origin: 'https://site.example' } });
-		expect(apiBase()).toBe('http://127.0.0.1:8080');
+		expect(sessionBase()).toBe('http://127.0.0.1:8080');
 	});
 });

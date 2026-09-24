@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Check, ShieldAlert, UserCheck, X } from '@lucide/svelte';
-	import { shortDigest } from '$lib/api/registry';
+	import { shortDigest } from '$lib/api/digests';
 	import Digest from '$lib/components/Digest.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SelectField from '$lib/components/SelectField.svelte';
 	import { assign, decide, reasonCodes, reviewQueue, type Submission } from '$lib/api/review';
 	import { session } from '$lib/session.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 
 	const pageSize = 100;
 
@@ -98,7 +99,7 @@
 </script>
 
 <svelte:head>
-	<title>Review queue · Moraine</title>
+	<title>{pageTitle('Review queue')}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">

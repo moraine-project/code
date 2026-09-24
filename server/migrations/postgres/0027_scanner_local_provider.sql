@@ -1,0 +1,1 @@
+ALTER TABLE scanner_providers ADD COLUMN local INTEGER NOT NULL DEFAULT 0;

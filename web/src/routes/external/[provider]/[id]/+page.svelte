@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { createExternalClaim } from '$lib/api/external';
-	import { safeExternalUrl, shortDigest } from '$lib/api/registry';
+	import { safeExternalUrl } from '$lib/api/external-url';
+	import { shortDigest } from '$lib/api/digests';
 	import { session } from '$lib/session.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -50,8 +52,10 @@
 <svelte:head>
 	<title
 		>{data.project
-			? `${data.project.observed_profile.name ?? data.project.external_project_id} · External project`
-			: 'External project · Moraine'}</title
+			? pageTitle(
+					`${data.project.observed_profile.name ?? data.project.external_project_id} · External project`,
+				)
+			: pageTitle('External project')}</title
 	>
 </svelte:head>
 

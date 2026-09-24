@@ -2,7 +2,9 @@
 	import GameCard from '$lib/components/GameCard.svelte';
 	import ProjectCard from '$lib/components/ProjectCard.svelte';
 	import SearchBar from '$lib/components/SearchBar.svelte';
-	import { shortDigest } from '$lib/api/registry';
+	import { shortDigest } from '$lib/api/digests';
+	import { home } from '$lib/home.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -13,7 +15,7 @@
 </script>
 
 <svelte:head>
-	<title>Moraine · publish and find game mods</title>
+	<title>{pageTitle('publish and find game mods')}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-12">
@@ -49,7 +51,7 @@
 		<section class="flex flex-col gap-4">
 			<div class="flex items-center justify-between">
 				<h2 class="text-xl font-semibold">Popular games</h2>
-				<a class="link link-hover text-sm" href="/games">Browse all</a>
+				<a class="link link-hover text-sm" href={home.url('/games')}>Browse all</a>
 			</div>
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each data.games.slice(0, 6) as game (game.id)}
@@ -63,7 +65,7 @@
 		<section class="flex flex-col gap-4">
 			<div class="flex items-center justify-between">
 				<h2 class="text-xl font-semibold">Recently updated</h2>
-				<a class="link link-hover text-sm" href="/search?sort=updated">See more</a>
+				<a class="link link-hover text-sm" href={home.url('/search?sort=updated')}>See more</a>
 			</div>
 			<div class="grid gap-3 lg:grid-cols-2">
 				{#each data.recent as result (result.project_id)}
@@ -77,7 +79,7 @@
 		<section class="flex flex-col gap-4">
 			<div class="flex items-center justify-between">
 				<h2 class="text-xl font-semibold">Popular on this instance</h2>
-				<a class="link link-hover text-sm" href="/search?sort=popularity">See more</a>
+				<a class="link link-hover text-sm" href={home.url('/search?sort=popularity')}>See more</a>
 			</div>
 			<div class="grid gap-3 lg:grid-cols-2">
 				{#each data.popular as result (result.project_id)}

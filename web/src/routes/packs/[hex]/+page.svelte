@@ -1,12 +1,13 @@
 <script lang="ts">
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 </script>
 
-<svelte:head><title>Modpack manifest · Moraine</title></svelte:head>
+<svelte:head><title>{pageTitle('Modpack manifest')}</title></svelte:head>
 
 <div class="flex flex-col gap-6">
 	<PageHeader

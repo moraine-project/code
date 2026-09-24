@@ -4,14 +4,15 @@
 	import GameCard from '$lib/components/GameCard.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SourceBadge from '$lib/components/SourceBadge.svelte';
-	import { shortDigest } from '$lib/api/registry';
+	import { shortDigest } from '$lib/api/digests';
+	import { pageTitle } from '$lib/title.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 </script>
 
 <svelte:head>
-	<title>Browse games · Moraine</title>
+	<title>{pageTitle('Browse games')}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-8">

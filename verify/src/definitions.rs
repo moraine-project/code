@@ -345,6 +345,58 @@ pub(crate) fn vectors() -> Vec<Vector> {
 		Some(trust(&[&k1], 1)),
 	));
 
+	let mut catalog_game = build_game_def("ordered-list", vec![category("utility")]);
+	catalog_game.version_catalog = vec!["1.0".to_string(), "1.1".to_string(), "1.2".to_string()];
+	let signed_catalog_game = sign_payload(ObjectKind::GameDef, &catalog_game, &[&k1]);
+	vectors.push(object_vector(
+		"game-def-version-catalog",
+		"definitions",
+		ObjectKind::GameDef,
+		&signed_catalog_game,
+		"accept",
+		None,
+		Some(trust(&[&k1], 1)),
+	));
+
+	let mut duplicate_catalog = build_game_def("ordered-list", vec![category("utility")]);
+	duplicate_catalog.version_catalog = vec!["1.0".to_string(), "1.0".to_string()];
+	let signed_duplicate_catalog = sign_payload(ObjectKind::GameDef, &duplicate_catalog, &[&k1]);
+	vectors.push(object_vector(
+		"game-def-duplicate-version-catalog",
+		"definitions",
+		ObjectKind::GameDef,
+		&signed_duplicate_catalog,
+		"reject",
+		Some("invalid-field-value"),
+		Some(trust(&[&k1], 1)),
+	));
+
+	let mut empty_catalog = build_game_def("ordered-list", vec![category("utility")]);
+	empty_catalog.version_catalog = vec![String::new()];
+	let signed_empty_catalog = sign_payload(ObjectKind::GameDef, &empty_catalog, &[&k1]);
+	vectors.push(object_vector(
+		"game-def-empty-version-catalog-entry",
+		"definitions",
+		ObjectKind::GameDef,
+		&signed_empty_catalog,
+		"reject",
+		Some("invalid-field-value"),
+		Some(trust(&[&k1], 1)),
+	));
+
+	let mut catalog_runtime = build_runtime_def();
+	catalog_runtime.version_catalog = vec!["17".to_string(), "21".to_string()];
+	let signed_catalog_runtime = sign_payload(ObjectKind::RuntimeDef, &catalog_runtime, &[&k1]);
+	vectors.push(object_vector(
+		"runtime-def-version-catalog",
+		"definitions",
+		ObjectKind::RuntimeDef,
+		&signed_catalog_runtime,
+		"accept",
+		None,
+		Some(trust(&[&k1], 1)),
+	));
+
 	let loader = build_loader_def();
 	let signed_loader = sign_payload(ObjectKind::LoaderDef, &LoaderObject::Definition(loader), &[&k1]);
 	vectors.push(object_vector(
@@ -354,6 +406,37 @@ pub(crate) fn vectors() -> Vec<Vector> {
 		&signed_loader,
 		"accept",
 		None,
+		Some(trust(&[&k1], 1)),
+	));
+
+	let mut catalog_loader = build_loader_def();
+	catalog_loader.version_catalog = vec!["0.15.0".to_string(), "0.16.0".to_string()];
+	catalog_loader.game_versions = Some(Predicate::new(Scheme::Semver, vec![">=1.20.1".to_string()]));
+	let signed_catalog_loader = sign_payload(ObjectKind::LoaderDef, &LoaderObject::Definition(catalog_loader), &[&k1]);
+	vectors.push(object_vector(
+		"loader-def-version-catalog-and-game-versions",
+		"definitions",
+		ObjectKind::LoaderDef,
+		&signed_catalog_loader,
+		"accept",
+		None,
+		Some(trust(&[&k1], 1)),
+	));
+
+	let mut duplicate_loader_catalog = build_loader_def();
+	duplicate_loader_catalog.version_catalog = vec!["0.15.0".to_string(), "0.15.0".to_string()];
+	let signed_duplicate_loader_catalog = sign_payload(
+		ObjectKind::LoaderDef,
+		&LoaderObject::Definition(duplicate_loader_catalog),
+		&[&k1],
+	);
+	vectors.push(object_vector(
+		"loader-def-duplicate-version-catalog",
+		"definitions",
+		ObjectKind::LoaderDef,
+		&signed_duplicate_loader_catalog,
+		"reject",
+		Some("invalid-field-value"),
 		Some(trust(&[&k1], 1)),
 	));
 

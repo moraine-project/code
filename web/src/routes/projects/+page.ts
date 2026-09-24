@@ -1,10 +1,11 @@
-import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
 import { follows } from '$lib/api/notifications';
-import { fetchProfile, normalizeBase } from '$lib/api/registry';
+import { fetchProfile } from '$lib/api/projects';
+import { configuredHome, isForeignHome } from '$lib/home';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ fetch }) => {
-	const base = normalizeBase(PUBLIC_MORAINE_REGISTRY ?? '');
+	const base = configuredHome();
+	const foreign = isForeignHome(base);
 	let ids: string[] = [];
 	let error: string | null = null;
 	try {
@@ -22,5 +23,5 @@ export const load: PageLoad = async ({ fetch }) => {
 			}
 		}),
 	);
-	return { base, projects, error };
+	return { base, projects, error, foreign };
 };

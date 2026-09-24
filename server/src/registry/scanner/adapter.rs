@@ -111,6 +111,7 @@ mod tests {
 			args: Vec::new(),
 			public_key: Vec::new(),
 			enabled: true,
+			local: true,
 		}
 	}
 

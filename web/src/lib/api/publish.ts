@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { apiBase, authorizedFetch } from './session';
+import { authorizedFetch } from './session';
 
 export const projectReceiptSchema = z.object({
 	project_id: z.string(),
@@ -34,7 +34,7 @@ async function failure(response: Response): Promise<Error> {
 }
 
 async function postWire(path: string, wire: Uint8Array): Promise<Response> {
-	return fetch(`${apiBase()}${path}`, {
+	return authorizedFetch(path, {
 		method: 'POST',
 		headers: { 'content-type': 'application/octet-stream' },
 		body: wire as BodyInit,

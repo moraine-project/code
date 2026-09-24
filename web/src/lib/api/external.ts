@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { normalizeBase, type Fetcher } from './registry';
+import { normalizeHome } from '../home';
+import type { Fetcher } from './request';
 import { authorizedFetch, failure } from './session';
 
 export const externalProjectSchema = z.object({
@@ -133,7 +134,7 @@ export async function fetchExternalProject(
 	fetchFn: Fetcher = fetch,
 ): Promise<ExternalProject> {
 	const response = await fetchFn(
-		`${normalizeBase(base)}/v1/external-projects/${encodeURIComponent(provider)}/${encodeURIComponent(externalProjectId)}`,
+		`${normalizeHome(base)}/v1/external-projects/${encodeURIComponent(provider)}/${encodeURIComponent(externalProjectId)}`,
 	);
 	if (!response.ok) {
 		throw new Error(`home returned ${response.status} for the external project`);

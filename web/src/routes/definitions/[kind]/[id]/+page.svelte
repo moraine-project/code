@@ -3,6 +3,8 @@
 	import Digest from '$lib/components/Digest.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SourceBadge from '$lib/components/SourceBadge.svelte';
+	import { home } from '$lib/home.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -22,11 +24,11 @@
 </script>
 
 <svelte:head>
-	<title>{data.definition?.display_name ?? data.id} · Moraine</title>
+	<title>{pageTitle(data.definition?.display_name ?? data.id)}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">
-	<a class="link link-hover inline-flex w-fit items-center gap-1 text-sm" href="/games">
+	<a class="link link-hover inline-flex w-fit items-center gap-1 text-sm" href={home.url('/games')}>
 		<ChevronLeft size={16} />
 		Back to browse
 	</a>

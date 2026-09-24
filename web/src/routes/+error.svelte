@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { Home, SearchX } from '@lucide/svelte';
+	import { pageTitle } from '$lib/title.svelte';
 
 	const notFound = $derived(page.status === 404);
 </script>
 
 <svelte:head>
-	<title>{page.status} · Moraine</title>
+	<title>{pageTitle(String(page.status))}</title>
 </svelte:head>
 
 <div class="flex flex-col items-center gap-4 py-24 text-center">

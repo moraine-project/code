@@ -1,9 +1,10 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 </script>
 
 <svelte:head>
-	<title>Security · Moraine</title>
+	<title>{pageTitle('Security')}</title>
 </svelte:head>
 
 <div class="flex max-w-3xl flex-col gap-6">

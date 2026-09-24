@@ -5,6 +5,7 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 
 	let orgs = $state<OrgMembership[]>([]);
 	let error = $state<string | null>(null);
@@ -44,7 +45,7 @@
 </script>
 
 <svelte:head>
-	<title>Organizations · Moraine</title>
+	<title>{pageTitle('Organizations')}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">

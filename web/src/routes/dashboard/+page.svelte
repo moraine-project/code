@@ -12,6 +12,7 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { session } from '$lib/session.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 
 	type Tab =
 		| 'overview'
@@ -28,7 +29,7 @@
 </script>
 
 <svelte:head>
-	<title>Dashboard · Moraine</title>
+	<title>{pageTitle('Dashboard')}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">

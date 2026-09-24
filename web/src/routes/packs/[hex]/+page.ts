@@ -1,9 +1,9 @@
-import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
-import { fetchPack, normalizeBase } from '$lib/api/registry';
+import { fetchPack } from '$lib/api/releases';
+import { homeFromUrl } from '$lib/home';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ params, url, fetch }) => {
-	const home = normalizeBase(url.searchParams.get('home') ?? PUBLIC_MORAINE_REGISTRY ?? '');
+	const home = homeFromUrl(url);
 	try {
 		return { home, pack: await fetchPack(home, params.hex, fetch), error: null };
 	} catch (cause) {

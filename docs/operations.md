@@ -114,6 +114,7 @@ Retention and limits:
 | `MORAINE_BLOB_RETENTION_SECONDS` | 604800 | Unreferenced blobs kept this long |
 | `MORAINE_MAINTENANCE_INTERVAL_SECONDS` | 3600 | Background cycle interval |
 | `MORAINE_FEDERATION_ALLOW_HTTP_LOCAL` | `false` | Allow `http://` federation to loopback, for local tests |
+| `MORAINE_INSTANCE_BRANDING` | unset | Path to a JSON file that names and themes this instance |
 
 Set a limit to `0` to turn that limit off. An operator running a public
 instance wants the defaults; an operator running one for a small group may
@@ -259,6 +260,53 @@ public origin explicitly.
 If the site and the API share one hostname, for example a proxy that forwards
 `/api` to the server, leave the list empty: requests are same-origin, the
 cookies stay `SameSite=Lax`, and none of this applies.
+
+## Branding an instance
+
+Every field is optional. Without the file the site uses the Moraine name, the
+built-in mark, and the built-in colours.
+
+```json
+{
+  "name": "Example Mods",
+  "logo": "https://cdn.example/logo.svg",
+  "theme": { "primary": "#7c3aed", "radius-box": "1rem" },
+  "nav": [
+    { "label": "Server status", "href": "https://status.example" },
+    { "label": "Rules", "href": "/about" }
+  ]
+}
+```
+
+```sh
+MORAINE_INSTANCE_BRANDING=/etc/moraine/branding.json
+```
+
+The server reads the file once at startup. A missing or malformed file is logged
+and ignored, so a bad edit falls back to the defaults rather than keeping the
+server down. The document is served at `GET /v1/instance` alongside the
+capabilities the website already needs, so the site makes one request per home
+instead of one per capability.
+
+`theme` takes daisyUI token names, not CSS. Colours accept hex and the
+`rgb`, `hsl`, `oklch`, and `lab` families; `radius-*`, `size-*`, `border`,
+`depth`, and `noise` take lengths or plain numbers. Anything else is ignored by
+the site, which is deliberate: a token value can never carry a declaration
+through into the stylesheet, and an operator cannot repoint the page at a
+stylesheet or an image they did not review.
+
+`logo` is fetched by the browser over the content security policy's connect
+rules, checked to be an image, and rendered from a local object URL. The site
+never puts a foreign origin in an image tag, so a third-party logo cannot track
+visitors or read anything about the page. There is no size limit: the file is
+fetched straight from wherever you point it, so the size that matters is
+whatever your CDN and your visitors' connections can handle, not ours. Point it
+at an SVG or PNG you host yourself if that matters to you.
+
+`nav` appears after the built-in Browse and Mods links. Relative paths stay on
+the active home, including its `home` parameter; absolute `http` and `https`
+links are left alone. Other schemes, and protocol-relative `//host` paths, are
+dropped.
 
 ## Game and loader definitions
 

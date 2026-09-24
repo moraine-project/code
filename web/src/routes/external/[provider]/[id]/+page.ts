@@ -1,12 +1,11 @@
-import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
 import { fetchExternalProject } from '$lib/api/external';
-import { normalizeBase } from '$lib/api/registry';
+import { homeFromUrl } from '$lib/home';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ params, url, fetch }) => {
-	const requested = url.searchParams.get('home') ?? PUBLIC_MORAINE_REGISTRY ?? '';
+	const requested = url.searchParams.get('home') ?? '';
 	try {
-		const home = normalizeBase(requested);
+		const home = homeFromUrl(url);
 		return {
 			home,
 			project: await fetchExternalProject(home, params.provider, params.id, fetch),

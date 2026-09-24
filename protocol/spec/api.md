@@ -13,6 +13,15 @@ takes.
 The document is a hint about limits, not an authority. A rejected request still
 answers with its own status.
 
+`GET /v1/instance` returns the same capability document under `capabilities`,
+plus a `branding` object the operator configures: an optional `name`, an
+optional `logo` URL, a `theme` map of daisyUI token names to values, and a `nav`
+list of `{ label, href }` links. The website reads this once per home and
+applies the branding it recognises; tokens outside the daisyUI set and links
+outside `http`, `https`, and site-relative paths are ignored by the client. The
+route is unauthenticated and carries no more than the discovery document plus
+operator-supplied presentation.
+
 ## Limits and timeouts
 
 Every request is bounded. Metadata request bodies are limited to 256 KiB, and
@@ -543,7 +552,7 @@ homes and their cursors. Both routes need the `federation:manage` scope.
 
 Every sync records the head it observed, as the entry ID the home presented at a
 sequence, in a local witness log. `GET /v1/projects/{id}/witness` returns those
-observations and any sequence where two observations disagree:
+observations and any source home and sequence where observations disagree:
 
 ```json
 {
@@ -552,13 +561,22 @@ observations and any sequence where two observations disagree:
     { "source_home": "https://example.org", "sequence": 1, "head_entry": "gd:sha256:...", "observed_at": 1760000000 }
   ],
   "conflicts": [
-    { "sequence": 1, "entries": ["gd:sha256:...", "gd:sha256:..."], "homes": ["https://example.org"] }
+    {
+      "source_home": "https://example.org",
+      "sequence": 1,
+      "entries": ["gd:sha256:...", "gd:sha256:..."],
+      "observers": ["local", "ed25519:..."]
+    }
   ]
 }
 ```
 
-A sequence maps to one entry, so two different entries recorded at the same
-sequence is evidence that a home rewrote history. It stays visible after the
+A sequence maps to one entry within one home, so two different entries recorded
+for the same source home at the same sequence is evidence that a home rewrote
+history. Different homes are independent projects with their own sequences, so
+they are never compared against each other. Two observers that disagree about
+one home at one sequence are a witnessed fork; observers that agree are not a
+conflict. It stays visible after the
 head has moved on. The log is per instance and database-backed, deduplicated by
 project, home, sequence, and entry.
 

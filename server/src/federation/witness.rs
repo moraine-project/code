@@ -41,9 +41,9 @@ pub(super) async fn observe(
 		.iter()
 		.map(|conflict| {
 			serde_json::json!({
+				"source_home": conflict.source_home,
 				"sequence": conflict.sequence,
 				"entries": conflict.entries,
-				"homes": conflict.homes,
 				"observers": conflict.observers,
 			})
 		})

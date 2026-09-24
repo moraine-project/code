@@ -6,7 +6,7 @@ use super::{Job, Provider, new_id};
 impl crate::db::MetadataStore {
 	pub async fn scanner_providers(&self) -> Result<Vec<Provider>, sqlx::Error> {
 		let rows = sqlx::query(
-			"SELECT provider_id, kind, command, args_json, public_key, enabled FROM scanner_providers ORDER BY provider_id",
+			"SELECT provider_id, kind, command, args_json, public_key, enabled, local FROM scanner_providers ORDER BY provider_id",
 		)
 		.fetch_all(&self.pool)
 		.await?;
@@ -15,7 +15,7 @@ impl crate::db::MetadataStore {
 
 	pub async fn scanner_provider(&self, id: &str) -> Result<Option<Provider>, sqlx::Error> {
 		let row = sqlx::query(
-			"SELECT provider_id, kind, command, args_json, public_key, enabled FROM scanner_providers WHERE provider_id = $1",
+			"SELECT provider_id, kind, command, args_json, public_key, enabled, local FROM scanner_providers WHERE provider_id = $1",
 		)
 		.bind(id)
 		.fetch_optional(&self.pool)
@@ -25,13 +25,14 @@ impl crate::db::MetadataStore {
 
 	pub async fn put_scanner_provider(&self, provider: &Provider, now: i64) -> Result<(), sqlx::Error> {
 		let args = serde_json::to_string(&provider.args).map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
-		sqlx::query("INSERT INTO scanner_providers (provider_id, kind, command, args_json, public_key, enabled, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT(provider_id) DO UPDATE SET kind = $2, command = $3, args_json = $4, public_key = $5, enabled = $6")
+		sqlx::query("INSERT INTO scanner_providers (provider_id, kind, command, args_json, public_key, enabled, local, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT(provider_id) DO UPDATE SET kind = $2, command = $3, args_json = $4, public_key = $5, enabled = $6, local = $7")
 			.bind(&provider.id)
 			.bind(&provider.kind)
 			.bind(&provider.command)
 			.bind(args)
 			.bind(&provider.public_key)
 			.bind(i64::from(provider.enabled))
+			.bind(i64::from(provider.local))
 			.bind(now)
 			.execute(&self.pool)
 			.await?;
@@ -137,18 +138,18 @@ impl crate::db::MetadataStore {
 		now: i64,
 	) -> Result<(), sqlx::Error> {
 		sqlx::query("INSERT INTO scan_policies (id, provider_id, enabled, auto_scan, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT(id) DO UPDATE SET provider_id = $2, enabled = $3, auto_scan = $4")
-			.bind(id)
-			.bind(provider_id)
-			.bind(i64::from(enabled))
-			.bind(i64::from(auto_scan))
-			.bind(now)
-			.execute(&self.pool)
-			.await?;
+		.bind(id)
+		.bind(provider_id)
+		.bind(i64::from(enabled))
+		.bind(i64::from(auto_scan))
+		.bind(now)
+		.execute(&self.pool)
+		.await?;
 		Ok(())
 	}
 
 	pub async fn auto_scan_digests(&self) -> Result<Vec<(String, Vec<u8>)>, sqlx::Error> {
-		let rows = sqlx::query("SELECT DISTINCT p.provider_id, a.digest FROM scan_policies p CROSS JOIN artifact_index a WHERE p.enabled = 1 AND p.auto_scan = 1")
+		let rows = sqlx::query("SELECT DISTINCT p.provider_id, a.digest FROM scan_policies p JOIN scanner_providers s ON s.provider_id = p.provider_id CROSS JOIN artifact_index a WHERE p.enabled = 1 AND p.auto_scan = 1 AND s.enabled = 1 AND s.local = 1")
 			.fetch_all(&self.pool)
 			.await?;
 		Ok(rows
@@ -166,6 +167,7 @@ fn provider_from_row(row: sqlx::any::AnyRow) -> Option<Provider> {
 		args: serde_json::from_str(&row.get::<String, _>("args_json")).ok()?,
 		public_key: row.get("public_key"),
 		enabled: row.get::<i64, _>("enabled") != 0,
+		local: row.get::<i64, _>("local") != 0,
 	})
 }
 

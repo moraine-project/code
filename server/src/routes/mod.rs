@@ -14,6 +14,7 @@ pub fn router(state: AppState) -> Router {
 	let app = Router::new()
 		.merge(health::routes())
 		.merge(blobs::routes())
+		.merge(crate::instance::routes())
 		.merge(crate::registry::routes())
 		.merge(crate::auth::routes())
 		.merge(crate::registry::review::routes())

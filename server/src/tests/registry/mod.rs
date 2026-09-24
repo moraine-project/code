@@ -15,6 +15,7 @@ mod policy_tests;
 mod profile_tests;
 mod recovery_tests;
 mod sanctions_tests;
+mod scanner_tests;
 mod search_index_tests;
 mod search_tests;
 mod views_tests;

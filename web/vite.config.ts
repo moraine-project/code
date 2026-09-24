@@ -21,7 +21,7 @@ export default defineConfig({
 					'default-src': ['self'],
 					'script-src': ['self', 'wasm-unsafe-eval'],
 					'style-src': ['self', 'unsafe-inline'],
-					'img-src': ['self', 'data:'],
+					'img-src': ['self', 'data:', 'blob:'],
 					'connect-src': ['self', 'https:', 'http://127.0.0.1:*', 'http://localhost:*'],
 					'font-src': ['self'],
 					'object-src': ['none'],

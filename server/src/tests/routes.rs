@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use axum::Router;
@@ -38,6 +39,12 @@ async fn test_app_with_origins(origins: Vec<String>) -> (Router, tempfile::TempD
 	(router(state), directory)
 }
 
+async fn test_app_with_branding(branding: crate::instance::Branding) -> (Router, tempfile::TempDir) {
+	let (state, directory) = test_state(None).await;
+	state.branding.replace(branding).expect("the branding is in contract");
+	(router(state), directory)
+}
+
 async fn test_state(web_dir: Option<std::path::PathBuf>) -> (AppState, tempfile::TempDir) {
 	let directory = tempfile::tempdir().expect("tempdir");
 	let store = BlobStore::new(directory.path()).await.expect("store");
@@ -56,48 +63,15 @@ async fn state_with(store: BlobStore, directory: &std::path::Path, web_dir: Opti
 		bind: "127.0.0.1:0".parse().expect("addr"),
 		data_dir: directory.to_path_buf(),
 		max_artifact_bytes: 1024,
-		max_upload_bytes_per_account: 5_368_709_120,
-		max_projects: 10_000,
-		tls_terminated: false,
-		allow_insecure_http: false,
-		web_origins: Vec::new(),
 		registration: crate::config::Registration::Open,
-		max_definitions: 1_000,
-		max_sync_entries: 10_000,
-		metrics_token: None,
-		smtp_url: None,
-		mail_from: None,
-		public_url: None,
-		require_verified_email: false,
-		max_mirror_probes_per_cycle: 20,
-		max_mirror_probe_bytes: 268_435_456,
-		max_feed_page_entries: 100,
-		max_response_bytes: 16_777_216,
-		staging_retention_seconds: 3_600,
-		blob_retention_seconds: 604_800,
-		max_sync_pages: 200,
-		requests_per_minute: 600,
-		max_concurrent_syncs: 4,
-		maintenance_interval_seconds: 3_600,
-		tls_extra_roots: None,
-		max_feed_scan_pages: 50,
-		scanner_enabled: false,
-		scanner_provider_id: "local-clamav".to_string(),
-		scanner_kind: "clamav".to_string(),
-		scanner_command: "clamscan".to_string(),
-		scanner_args: Vec::new(),
-		scanner_timeout_seconds: 300,
-		skip_migrate_on_start: false,
-		database_url: None,
-		allow_insecure_federation_local: false,
-		publishing: crate::config::Publishing::Review,
 		web_dir: web_dir.clone(),
-		s3: Default::default(),
+		..crate::config::Config::default()
 	};
 	AppState {
 		store,
 		metadata,
 		capability: Arc::new(Capability::discover(&config)),
+		branding: std::sync::Arc::new(crate::instance::BrandingSource::default()),
 		login_limiter: std::sync::Arc::new(crate::auth::LoginLimiter::new()),
 		metrics: std::sync::Arc::new(crate::ops::metrics::Metrics::new()),
 		rate_limiter: std::sync::Arc::new(crate::auth::ratelimit::RateLimiter::new()),
@@ -132,6 +106,51 @@ async fn serves_capability_and_health() {
 		.await
 		.expect("response");
 	assert_eq!(health.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn serves_instance_metadata_with_capabilities_and_branding() {
+	let branding = crate::instance::Branding {
+		name: Some("Example Registry".to_string()),
+		logo: Some("https://cdn.example/logo.svg".to_string()),
+		theme: BTreeMap::from([("primary".to_string(), "#ff0000".to_string())]),
+		nav: vec![crate::instance::NavLink {
+			label: "Docs".to_string(),
+			href: "https://docs.example".to_string(),
+		}],
+	};
+	let (app, _directory) = test_app_with_branding(branding).await;
+	let response = app
+		.oneshot(axum::http::Request::get("/v1/instance").body(Body::empty()).expect("request"))
+		.await
+		.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let body = to_bytes(response.into_body(), 64 * 1024).await.expect("body");
+	let document: serde_json::Value = serde_json::from_slice(&body).expect("json");
+
+	assert_eq!(document["capabilities"]["protocol_versions"][0], 1);
+	assert_eq!(document["capabilities"]["publishing"], "review");
+	assert_eq!(document["branding"]["name"], "Example Registry");
+	assert_eq!(document["branding"]["logo"], "https://cdn.example/logo.svg");
+	assert_eq!(document["branding"]["theme"]["primary"], "#ff0000");
+	assert_eq!(document["branding"]["nav"][0]["label"], "Docs");
+}
+
+#[tokio::test]
+async fn serves_empty_branding_when_the_operator_configures_none() {
+	let (app, _directory) = test_app().await;
+	let response = app
+		.oneshot(axum::http::Request::get("/v1/instance").body(Body::empty()).expect("request"))
+		.await
+		.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let body = to_bytes(response.into_body(), 64 * 1024).await.expect("body");
+	let document: serde_json::Value = serde_json::from_slice(&body).expect("json");
+
+	assert!(document["branding"]["name"].is_null());
+	assert!(document["branding"]["logo"].is_null());
+	assert_eq!(document["branding"]["theme"], serde_json::json!({}));
+	assert_eq!(document["branding"]["nav"], serde_json::json!([]));
 }
 
 #[tokio::test]

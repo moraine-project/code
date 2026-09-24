@@ -98,38 +98,37 @@ impl MetadataStore {
 }
 
 pub struct WitnessConflict {
+	pub source_home: String,
 	pub sequence: i64,
 	pub entries: Vec<String>,
-	pub homes: Vec<String>,
 	pub observers: Vec<String>,
 }
 
 pub fn witness_conflicts(observations: &[WitnessObservationRow]) -> Vec<WitnessConflict> {
-	let mut by_sequence: BTreeMap<i64, Vec<&WitnessObservationRow>> = BTreeMap::new();
+	let mut grouped: BTreeMap<(i64, &str), Vec<&WitnessObservationRow>> = BTreeMap::new();
 	for observation in observations {
-		by_sequence.entry(observation.sequence).or_default().push(observation);
+		grouped
+			.entry((observation.sequence, observation.source_home.as_str()))
+			.or_default()
+			.push(observation);
 	}
-	by_sequence
+	grouped
 		.into_iter()
-		.filter_map(|(sequence, rows)| {
+		.filter_map(|((sequence, source_home), rows)| {
 			let mut entries: Vec<String> = Vec::new();
-			let mut homes: Vec<String> = Vec::new();
 			let mut observers: Vec<String> = Vec::new();
 			for row in rows {
 				if !entries.contains(&row.head_entry) {
 					entries.push(row.head_entry.clone());
-				}
-				if !homes.contains(&row.source_home) {
-					homes.push(row.source_home.clone());
 				}
 				if !observers.contains(&row.observer_id) {
 					observers.push(row.observer_id.clone());
 				}
 			}
 			(entries.len() > 1).then_some(WitnessConflict {
+				source_home: source_home.to_string(),
 				sequence,
 				entries,
-				homes,
 				observers,
 			})
 		})

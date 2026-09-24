@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { externalClaims, reviewExternalClaim, type ExternalClaim } from '$lib/api/external';
-	import { safeExternalUrl } from '$lib/api/registry';
+	import { safeExternalUrl } from '$lib/api/external-url';
 	import { authorizedFetch, failure } from '$lib/api/session';
 
 	type Sanction = {

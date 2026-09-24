@@ -1,17 +1,9 @@
-import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
-import {
-	emptyFacets,
-	fetchGamePayload,
-	listDefinitions,
-	listLoaders,
-	normalizeBase,
-	searchFacets,
-	searchProjects,
-} from '$lib/api/registry';
+import { fetchGamePayload, listDefinitions, listLoaders } from '$lib/api/definitions';
+import { emptyFacets, searchFacets, searchProjects } from '$lib/api/search';
+import { homeFromUrl } from '$lib/home';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ url, fetch }) => {
-	const home = url.searchParams.get('home') ?? PUBLIC_MORAINE_REGISTRY ?? '';
 	const q = url.searchParams.get('q') ?? '';
 	const game = url.searchParams.get('game') ?? '';
 	const loader = url.searchParams.get('loader') ?? '';
@@ -26,7 +18,7 @@ export const load: PageLoad = async ({ url, fetch }) => {
 	);
 
 	try {
-		const base = normalizeBase(home);
+		const base = homeFromUrl(url);
 		const [games, loaders, facets, gamePayload] = await Promise.all([
 			listDefinitions(base, 'games', fetch).catch(() => []),
 			listLoaders(base, game || undefined, fetch).catch(() => []),
@@ -53,7 +45,7 @@ export const load: PageLoad = async ({ url, fetch }) => {
 		};
 	} catch (cause) {
 		return {
-			home,
+			home: url.searchParams.get('home') ?? '',
 			q,
 			game,
 			loader,

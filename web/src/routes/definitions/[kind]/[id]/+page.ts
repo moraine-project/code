@@ -1,15 +1,14 @@
-import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
-import { fetchDefinition, normalizeBase } from '$lib/api/registry';
+import { DEFINITION_KINDS, fetchDefinition } from '$lib/api/definitions';
+import { homeFromUrl } from '$lib/home';
 import type { PageLoad } from './$types';
 
-const kinds = ['games', 'loaders', 'runtimes'] as const;
+const kinds = DEFINITION_KINDS;
 
-export const load: PageLoad = async ({ params, fetch }) => {
-	const home = PUBLIC_MORAINE_REGISTRY ?? '';
+export const load: PageLoad = async ({ url, params, fetch }) => {
 	const kind = kinds.find((candidate) => candidate === params.kind);
 	if (!kind) {
 		return {
-			home,
+			home: url.searchParams.get('home') ?? '',
 			kind: params.kind,
 			id: params.id,
 			definition: null,
@@ -17,7 +16,7 @@ export const load: PageLoad = async ({ params, fetch }) => {
 		};
 	}
 	try {
-		const base = normalizeBase(home);
+		const base = homeFromUrl(url);
 		const definition = await fetchDefinition(base, kind, params.id, fetch);
 		return {
 			home: base,
@@ -28,7 +27,7 @@ export const load: PageLoad = async ({ params, fetch }) => {
 		};
 	} catch (cause) {
 		return {
-			home,
+			home: url.searchParams.get('home') ?? '',
 			kind,
 			id: params.id,
 			definition: null,

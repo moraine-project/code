@@ -1,14 +1,12 @@
 <script lang="ts">
 	import { Download } from '@lucide/svelte';
-	import {
-		blobUrl,
-		digestHex,
-		fileSha256,
-		mirrorLocations,
-		safeExternalUrl,
-		type ArtifactLocations,
-	} from '$lib/api/registry';
+	import { blobUrl, fileSha256 } from '$lib/api/blobs';
+	import { digestHex } from '$lib/api/digests';
+	import { safeExternalUrl } from '$lib/api/external-url';
+	import { mirrorLocations, type ArtifactLocations } from '$lib/api/releases';
 	import Digest from '$lib/components/Digest.svelte';
+	import { home } from '$lib/home.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -69,14 +67,14 @@
 </script>
 
 <svelte:head>
-	<title>{data.release?.human_version ?? data.hex} · Moraine</title>
+	<title>{pageTitle(data.release?.human_version ?? data.hex)}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">
 	<nav class="breadcrumbs text-sm">
 		<ul>
 			<li>
-				<a href={`/p/${encodeURIComponent(data.projectId)}?home=${encodeURIComponent(data.home)}`}>
+				<a href={home.url(`/p/${encodeURIComponent(data.projectId)}`)}>
 					{data.profile?.display_name ?? 'Project'}
 				</a>
 			</li>

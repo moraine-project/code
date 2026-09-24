@@ -14,6 +14,7 @@ export type ScannerProvider = {
 	args: string[];
 	public_key: string;
 	enabled: boolean;
+	local: boolean;
 };
 export type ScanResult = {
 	provider: string;
@@ -51,7 +52,7 @@ export type ScannerSubscription = {
 export const listScannerSubscriptions = () =>
 	request<ScannerSubscription[]>('/v1/scanner-subscriptions');
 export function registerScannerProvider(
-	body: Omit<ScannerProvider, 'enabled'> & { enabled?: boolean },
+	body: Omit<ScannerProvider, 'enabled' | 'local'> & { enabled?: boolean },
 ) {
 	return request<ScannerProvider>('/v1/scanners', {
 		method: 'POST',

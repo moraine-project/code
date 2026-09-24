@@ -2,37 +2,27 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { apiOrigin } from '$lib/api/session';
-	import {
-		appendFeed,
-		createProject,
-		storeObject,
-		submitFeed,
-		transferProject,
-	} from '$lib/api/publish';
+	import { appendFeed, createProject, storeObject, submitFeed } from '$lib/api/publish';
+	import { uploadBlob, type UploadReceipt } from '$lib/api/blobs';
 	import {
 		fetchGamePayload,
-		fetchObject,
-		fetchProject,
 		listDefinitions,
 		listLoaders,
-		normalizeBase,
-		publishingMode,
-		uploadBlob,
 		type DefinitionSummary,
 		type GamePayload,
-		type UploadReceipt,
-	} from '$lib/api/registry';
+	} from '$lib/api/definitions';
+	import { fetchObject, fetchProject } from '$lib/api/projects';
+	import { instance } from '$lib/instance.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import MultiSelectField from '$lib/components/MultiSelectField.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SelectField, { type SelectOption } from '$lib/components/SelectField.svelte';
+	import { normalizeHome } from '$lib/home';
+	import KeyPanel from '$lib/publish/KeyPanel.svelte';
+	import TransferPanel from '$lib/publish/TransferPanel.svelte';
 	import { session } from '$lib/session.svelte';
 	import {
-		generateSeed,
 		genesisRoots,
-		isSeed,
-		keyId,
-		publicKey,
 		randomNonce,
 		signChangelog,
 		signFeedEntry,
@@ -40,19 +30,15 @@
 		signModpack,
 		signProfile,
 		signRelease,
-		signTransfer,
 		signWithdrawal,
 	} from '$lib/signer';
+	import { pageTitle } from '$lib/title.svelte';
 
 	let seed = $state('');
-	let keyFingerprint = $state('');
 	let keyPublic = $state('');
-	let keyGenerated = $state(false);
-	let keyMessage = $state<string | null>(null);
-	let keyOpen = $state(false);
 	let additionalRootSeed = $state('');
 
-	let mode = $state('review');
+	const mode = $derived(instance.publishing);
 	let games = $state<DefinitionSummary[]>([]);
 
 	let projectMode = $state<'new' | 'existing'>('new');
@@ -76,24 +62,20 @@
 	let withdrawalRelease = $state('');
 	let withdrawalReason = $state('author-preference');
 	let withdrawalNote = $state('');
-	let newOwnerSeed = $state('');
-	let newOwnerKind = $state('user');
-	let newOwnerId = $state('');
 
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 	let log = $state<string[]>([]);
 
 	onMount(async () => {
-		mode = await publishingMode().catch(() => 'review');
-		games = await listDefinitions(normalizeBase(apiOrigin()), 'games').catch(() => []);
+		games = await listDefinitions(normalizeHome(apiOrigin()), 'games').catch(() => []);
 	});
 
 	const gameInfo = $derived.by(async () => {
 		if (!gameId) {
 			return { payload: null as GamePayload | null, loaders: [] as DefinitionSummary[] };
 		}
-		const base = normalizeBase(apiOrigin());
+		const base = normalizeHome(apiOrigin());
 		const [payload, loaders] = await Promise.all([
 			fetchGamePayload(base, gameId).catch(() => null),
 			listLoaders(base, gameId).catch(() => []),
@@ -106,7 +88,7 @@
 			return false;
 		}
 		try {
-			const base = normalizeBase(apiOrigin());
+			const base = normalizeHome(apiOrigin());
 			const project = await fetchProject(base, projectId);
 			const wire = await fetchObject(base, project.genesis);
 			const roots = await genesisRoots(wire);
@@ -124,42 +106,8 @@
 		log = [...log, line];
 	}
 
-	async function applySeed(value: string) {
-		keyMessage = null;
-		if (!isSeed(value)) {
-			keyFingerprint = '';
-			keyPublic = '';
-			return;
-		}
-		seed = value.trim();
-		keyFingerprint = await keyId(seed);
-		keyPublic = await publicKey(seed);
-	}
-
-	async function generate() {
-		await applySeed(generateSeed());
-		keyGenerated = true;
-		keyOpen = true;
-	}
-
-	async function uploadKey(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		if (file) {
-			await applySeed(await file.text());
-			keyGenerated = false;
-		}
-	}
-
-	function downloadKey() {
-		const blob = new Blob([`${seed}\n`], { type: 'text/plain' });
-		const url = URL.createObjectURL(blob);
-		const anchor = document.createElement('a');
-		anchor.href = url;
-		anchor.download = 'publisher.key';
-		anchor.click();
-		URL.revokeObjectURL(url);
-		keyMessage = 'Saved. Keep this file safe; anyone with it can publish as you.';
+	function fail(message: string) {
+		error = message;
 	}
 
 	async function createNewProject() {
@@ -224,7 +172,7 @@
 	}
 
 	async function publishEntry(objectId: string, kind: string) {
-		const project = await fetchProject(normalizeBase(apiOrigin()), projectId);
+		const project = await fetchProject(normalizeHome(apiOrigin()), projectId);
 		const entry = await signFeedEntry(seed, {
 			project_id: projectId,
 			sequence: project.head_seq + 1,
@@ -328,32 +276,10 @@
 			busy = false;
 		}
 	}
-
-	async function transferOwnership() {
-		busy = true;
-		error = null;
-		try {
-			if (!session.user?.user_id) throw new Error('sign in again before transferring ownership');
-			const transfer = await signTransfer(seed, newOwnerSeed, {
-				project_id: projectId,
-				from_kind: 'user',
-				from_id: session.user.user_id,
-				to_kind: newOwnerKind,
-				to_id: newOwnerId,
-				issued_at: Math.floor(Date.now() / 1000),
-			});
-			const transferReceipt = await transferProject(projectId, transfer.wire);
-			report(`Ownership transfer stored: ${transferReceipt.transfer}`);
-		} catch (cause) {
-			error = cause instanceof Error ? cause.message : 'the ownership transfer could not be stored';
-		} finally {
-			busy = false;
-		}
-	}
 </script>
 
 <svelte:head>
-	<title>Publish · Moraine</title>
+	<title>{pageTitle('Publish')}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">
@@ -374,76 +300,7 @@
 			<a class="btn btn-primary" href="/account">Sign in</a>
 		</EmptyState>
 	{:else}
-		<section class="card card-border bg-base-200">
-			<div class="card-body gap-4">
-				<div class="flex flex-wrap items-center justify-between gap-2">
-					<h2 class="card-title">1. Signing key</h2>
-					{#if keyFingerprint}
-						<span class="badge badge-success badge-sm">Key ready</span>
-					{:else}
-						<span class="badge badge-warning badge-sm">Key needed</span>
-					{/if}
-				</div>
-				<p class="text-sm text-base-content/70">
-					Your key proves a release is yours. Generate one and save the file somewhere safe, or open
-					a key you already have.
-				</p>
-				<div class="flex flex-wrap items-center gap-2">
-					<button class="btn btn-sm" onclick={generate} disabled={busy}>Generate a key</button>
-					<input
-						type="file"
-						class="file-input file-input-sm w-full max-w-xs"
-						onchange={uploadKey}
-						disabled={busy}
-						aria-label="Open a key file"
-					/>
-					{#if seed}
-						<button class="btn btn-sm btn-outline" onclick={downloadKey}>Download the key</button>
-					{/if}
-					<button class="btn btn-ghost btn-sm" onclick={() => (keyOpen = !keyOpen)}>
-						{keyOpen ? 'Hide' : 'Advanced'}
-					</button>
-				</div>
-				{#if keyFingerprint}
-					<p class="text-sm">
-						Key ID: <span class="font-mono text-xs">{keyFingerprint}</span>
-					</p>
-				{/if}
-				{#if keyMessage}
-					<p class="text-sm text-success">{keyMessage}</p>
-				{/if}
-				{#if keyOpen}
-					<label class="floating-label max-w-xl">
-						<span>Paste a key (hex)</span>
-						<input
-							class="input w-full font-mono text-xs"
-							value={seed}
-							oninput={(event) => applySeed(event.currentTarget.value)}
-							placeholder="64 hex characters"
-						/>
-					</label>
-					{#if keyGenerated}
-						<p class="text-sm text-warning">
-							This key exists only in this tab until you download it. Do that before you publish.
-						</p>
-					{/if}
-					<label class="floating-label max-w-xl">
-						<span>Additional root signing key (optional)</span>
-						<input
-							class="input w-full font-mono text-xs"
-							type="password"
-							bind:value={additionalRootSeed}
-							placeholder="64 hex characters"
-							aria-label="Additional root signing key"
-						/>
-					</label>
-					<p class="text-xs text-base-content/60">
-						Add a second root you control if this project may later need a two-signature ownership
-						transfer.
-					</p>
-				{/if}
-			</div>
-		</section>
+		<KeyPanel {busy} bind:seed bind:keyPublic bind:additionalRootSeed />
 
 		{#if projectMode === 'existing' && projectId}
 			<section class="card card-border bg-base-200">
@@ -476,33 +333,7 @@
 						onclick={withdrawRelease}
 						disabled={busy || !seed || !withdrawalRelease}>Publish withdrawal</button
 					>
-					<div class="divider my-1"></div>
-					<h3 class="font-semibold">Transfer ownership</h3>
-					<div class="grid gap-3 sm:grid-cols-2">
-						<input
-							class="input"
-							type="password"
-							bind:value={newOwnerSeed}
-							placeholder="New owner signing key"
-							aria-label="New owner signing key"
-						/>
-						<select class="select" bind:value={newOwnerKind} aria-label="New owner kind"
-							><option value="user">User</option><option value="org">Organization</option></select
-						>
-					</div>
-					<input
-						class="input"
-						bind:value={newOwnerId}
-						placeholder="New owner id"
-						aria-label="New owner id"
-					/>
-					<button
-						class="btn btn-outline w-fit"
-						type="button"
-						onclick={transferOwnership}
-						disabled={busy || !seed || !newOwnerSeed || !newOwnerId}
-						>Store ownership transfer</button
-					>
+					<TransferPanel {busy} {seed} {projectId} {report} {fail} />
 				</div>
 			</section>
 		{/if}

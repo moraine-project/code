@@ -1,0 +1,12 @@
+ALTER TABLE scanner_providers ALTER COLUMN enabled DROP DEFAULT;
+ALTER TABLE scanner_providers ALTER COLUMN enabled TYPE INTEGER USING (enabled::integer);
+ALTER TABLE scanner_providers ALTER COLUMN enabled SET DEFAULT 1;
+ALTER TABLE scan_policies ALTER COLUMN enabled DROP DEFAULT;
+ALTER TABLE scan_policies ALTER COLUMN enabled TYPE INTEGER USING (enabled::integer);
+ALTER TABLE scan_policies ALTER COLUMN enabled SET DEFAULT 1;
+ALTER TABLE scan_policies ALTER COLUMN auto_scan DROP DEFAULT;
+ALTER TABLE scan_policies ALTER COLUMN auto_scan TYPE INTEGER USING (auto_scan::integer);
+ALTER TABLE scan_policies ALTER COLUMN auto_scan SET DEFAULT 1;
+ALTER TABLE scanner_subscriptions ALTER COLUMN enabled DROP DEFAULT;
+ALTER TABLE scanner_subscriptions ALTER COLUMN enabled TYPE INTEGER USING (enabled::integer);
+ALTER TABLE scanner_subscriptions ALTER COLUMN enabled SET DEFAULT 1;

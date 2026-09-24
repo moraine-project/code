@@ -40,14 +40,17 @@ export function sameOrigin(configured: string, origin: string): boolean {
 		const base = new URL(configured);
 		const page = new URL(origin);
 		return (
-			base.port === page.port && isLoopbackHost(base.hostname) && isLoopbackHost(page.hostname)
+			base.protocol === page.protocol &&
+			base.port === page.port &&
+			isLoopbackHost(base.hostname) &&
+			isLoopbackHost(page.hostname)
 		);
 	} catch {
 		return false;
 	}
 }
 
-export function apiBase(): string {
+export function sessionBase(): string {
 	const configured = (PUBLIC_MORAINE_REGISTRY ?? '').replace(/\/+$/, '');
 	if (!configured) {
 		return '';
@@ -59,7 +62,7 @@ export function apiBase(): string {
 }
 
 export function apiOrigin(): string {
-	return apiBase() || (typeof window !== 'undefined' ? window.location.origin : '');
+	return sessionBase() || (typeof window !== 'undefined' ? window.location.origin : '');
 }
 
 export function csrfToken(): string | null {
@@ -74,7 +77,7 @@ export function csrfToken(): string | null {
 }
 
 export async function authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
-	const base = apiBase();
+	const base = sessionBase();
 	const headers = new Headers(init.headers);
 	const token = csrfToken();
 	if (token) {

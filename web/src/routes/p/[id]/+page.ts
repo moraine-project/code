@@ -1,23 +1,21 @@
-import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
+import { fetchGamePayload, listLoaders } from '$lib/api/definitions';
 import {
-	fetchFeed,
-	fetchGamePayload,
 	fetchChannels,
 	fetchDenyEntries,
+	fetchFeed,
+	fetchMigrations,
 	fetchProfile,
 	fetchProject,
-	fetchMigrations,
 	fetchRecovery,
-	listLoaders,
-	normalizeBase,
-} from '$lib/api/registry';
+} from '$lib/api/projects';
+import { homeFromUrl } from '$lib/home';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ params, url, fetch }) => {
 	const gameVersion = url.searchParams.get('game_version') ?? undefined;
 	const loader = url.searchParams.get('loader') ?? undefined;
 	const loaderVersion = url.searchParams.get('loader_version') ?? undefined;
-	const requested = url.searchParams.get('home') ?? PUBLIC_MORAINE_REGISTRY ?? '';
+	const requested = url.searchParams.get('home') ?? '';
 	const empty = {
 		home: requested,
 		projectId: params.id,
@@ -39,7 +37,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 
 	let base: string;
 	try {
-		base = normalizeBase(requested);
+		base = homeFromUrl(url);
 	} catch (cause) {
 		return { ...empty, error: cause instanceof Error ? cause.message : 'invalid home URL' };
 	}

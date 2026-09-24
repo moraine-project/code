@@ -8,11 +8,11 @@
 		type DefinitionSubscription,
 	} from '$lib/api/federation';
 	import {
+		definitionRouteSegment,
 		listDefinitions,
-		normalizeBase,
-		shortDigest,
 		type DefinitionSummary,
-	} from '$lib/api/registry';
+	} from '$lib/api/definitions';
+	import { shortDigest } from '$lib/api/digests';
 	import { apiOrigin } from '$lib/api/session';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import SelectField, { type SelectOption } from '$lib/components/SelectField.svelte';
@@ -36,7 +36,7 @@
 	onMount(load);
 
 	async function load() {
-		const base = normalizeBase(apiOrigin());
+		const base = apiOrigin();
 		const [games, loaders, runtimes, definitionFeeds] = await Promise.all([
 			listDefinitions(base, 'games').catch(() => []),
 			listDefinitions(base, 'loaders').catch(() => []),
@@ -137,16 +137,21 @@
 				</thead>
 				<tbody>
 					{#each definitions as definition (definition.id)}
+						{@const segment = definitionRouteSegment(definition.kind)}
 						<tr>
 							<td><span class="badge badge-ghost badge-sm">{definition.kind}</span></td>
 							<td class="truncate">{definition.display_name ?? '—'}</td>
 							<td>
-								<a
-									class="link link-hover font-mono text-xs"
-									href={`/definitions/${definition.kind}/${encodeURIComponent(definition.id)}`}
-								>
-									{shortDigest(definition.id, 16)}
-								</a>
+								{#if segment}
+									<a
+										class="link link-hover font-mono text-xs"
+										href={`/definitions/${segment}/${encodeURIComponent(definition.id)}`}
+									>
+										{shortDigest(definition.id, 16)}
+									</a>
+								{:else}
+									<span class="font-mono text-xs">{shortDigest(definition.id, 16)}</span>
+								{/if}
 							</td>
 							<td><SourceBadge sourceHome={definition.source_home} /></td>
 						</tr>

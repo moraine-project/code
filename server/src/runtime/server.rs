@@ -17,6 +17,7 @@ pub(super) async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>
 		store,
 		metadata,
 		capability,
+		branding: Arc::new(crate::instance::load(&config)),
 		login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
 		metrics: Arc::new(Metrics::new()),
 		rate_limiter: Arc::new(ratelimit::RateLimiter::new()),

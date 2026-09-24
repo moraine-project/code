@@ -19,6 +19,7 @@ pub async fn run_worker(state: AppState, config: Config) {
 		args,
 		public_key: key.verifying_key().to_bytes().to_vec(),
 		enabled: true,
+		local: true,
 	};
 	if let Err(error) = state.metadata.put_scanner_provider(&provider, now()).await {
 		tracing::error!(%error, "could not register local scanner provider");
@@ -30,7 +31,7 @@ pub async fn run_worker(state: AppState, config: Config) {
 				let _ = state.metadata.enqueue_scan(&provider_id, &digest, "policy", now()).await;
 			}
 		}
-		poll_subscriptions(&state).await;
+		poll_subscriptions(&state, &config).await;
 		if let Ok(Some(job)) = state.metadata.claim_scan_job(now()).await {
 			execute_job(&state, &config, &key, job).await;
 		}
@@ -42,7 +43,7 @@ fn local_command(config: &Config) -> (String, Vec<String>) {
 	(config.scanner_command.clone(), config.scanner_args.clone())
 }
 
-async fn poll_subscriptions(state: &AppState) {
+async fn poll_subscriptions(state: &AppState, config: &Config) {
 	let rows = match sqlx::query(
 		"SELECT id, provider_id, endpoint, interval_seconds, last_polled_at FROM scanner_subscriptions WHERE enabled = 1",
 	)
@@ -65,17 +66,18 @@ async fn poll_subscriptions(state: &AppState) {
 			continue;
 		}
 		let result = async {
-			let body = reqwest::Client::new()
-				.get(&endpoint)
-				.send()
-				.await
-				.map_err(|error| error.to_string())?
-				.error_for_status()
-				.map_err(|error| error.to_string())?
-				.text()
-				.await
-				.map_err(|error| error.to_string())?;
-			let value: serde_json::Value = serde_json::from_str(&body).map_err(|error| error.to_string())?;
+			let (roots, _skipped) = match &config.tls_extra_roots {
+				Some(path) => crate::federation::egress::load_extra_roots(path),
+				None => (Vec::new(), 0),
+			};
+			let body = crate::federation::egress::get_bounded(
+				&endpoint,
+				config.allow_insecure_federation_local,
+				config.max_response_bytes,
+				&roots,
+			)
+			.await?;
+			let value: serde_json::Value = serde_json::from_slice(&body).map_err(|error| error.to_string())?;
 			let records = value
 				.get("records")
 				.and_then(serde_json::Value::as_array)
@@ -156,6 +158,19 @@ async fn execute_job(state: &AppState, config: &Config, key: &SigningKey, job: J
 			.await;
 		return;
 	};
+	if !provider.local {
+		let _ = state
+			.metadata
+			.finish_scan_job(
+				&job.id,
+				"failed",
+				None,
+				Some("only the local scanner provider runs on this instance"),
+				now(),
+			)
+			.await;
+		return;
+	}
 	let Ok(digest): Result<[u8; 32], _> = job.artifact_digest.as_slice().try_into() else {
 		finish_error(state, &job.id, "invalid artifact digest".to_string()).await;
 		return;

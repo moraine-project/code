@@ -1,11 +1,11 @@
-import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
-import { listDefinitions, normalizeBase, searchProjects } from '$lib/api/registry';
+import { listDefinitions } from '$lib/api/definitions';
+import { searchProjects } from '$lib/api/search';
+import { homeFromUrl } from '$lib/home';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ url, fetch }) => {
-	const home = url.searchParams.get('home') ?? PUBLIC_MORAINE_REGISTRY ?? '';
 	try {
-		const base = normalizeBase(home);
+		const base = homeFromUrl(url);
 		const [games, recent, popular] = await Promise.all([
 			listDefinitions(base, 'games', fetch).catch(() => []),
 			searchProjects(base, { sort: 'updated', limit: 6 }, fetch).catch(() => []),
@@ -14,7 +14,7 @@ export const load: PageLoad = async ({ url, fetch }) => {
 		return { home: base, games, recent, popular, error: null };
 	} catch (cause) {
 		return {
-			home,
+			home: url.searchParams.get('home') ?? '',
 			games: [],
 			recent: [],
 			popular: [],

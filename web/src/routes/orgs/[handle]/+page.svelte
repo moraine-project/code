@@ -17,6 +17,7 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SelectField from '$lib/components/SelectField.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 	import type { PageProps } from './$types';
 
 	let { params }: PageProps = $props();
@@ -126,7 +127,7 @@
 </script>
 
 <svelte:head>
-	<title>{detail?.display_name ?? params.handle} · Moraine</title>
+	<title>{pageTitle(detail?.display_name ?? params.handle)}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">

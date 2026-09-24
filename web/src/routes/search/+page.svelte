@@ -7,7 +7,10 @@
 	import ProjectCard from '$lib/components/ProjectCard.svelte';
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import SelectField, { type SelectOption } from '$lib/components/SelectField.svelte';
-	import { shortDigest, type FacetValue } from '$lib/api/registry';
+	import { shortDigest } from '$lib/api/digests';
+	import type { FacetValue } from '$lib/api/search';
+	import { home } from '$lib/home.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -105,17 +108,16 @@
 				params.delete(key);
 			}
 		}
-		params.delete('home');
-		goto(`/search?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(home.url(`/search?${params.toString()}`), { keepFocus: true, noScroll: true });
 	}
 
 	function clearAll() {
-		goto('/search', { keepFocus: true, noScroll: true });
+		goto(home.url('/search'), { keepFocus: true, noScroll: true });
 	}
 </script>
 
 <svelte:head>
-	<title>Mods · Moraine</title>
+	<title>{pageTitle('Mods')}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">

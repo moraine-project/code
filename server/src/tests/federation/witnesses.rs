@@ -74,15 +74,47 @@ async fn a_sync_records_the_head_it_witnessed() {
 
 	let rewritten = crate::registry::witness::WitnessObservationRow {
 		observer_id: "local".to_string(),
-		source_home: elsewhere.source_home.clone(),
+		source_home: "https://elsewhere.example".to_string(),
 		sequence: 1,
 		head_entry: format!("gd:sha256:{}", "aa".repeat(32)),
-		observed_at: elsewhere.observed_at,
+		observed_at: 1_760_000_100,
 	};
 	let split = crate::registry::witness::witness_conflicts(&[elsewhere, rewritten]);
 	assert_eq!(split.len(), 1);
 	assert_eq!(split[0].entries.len(), 2);
-	assert_eq!(split[0].homes, vec!["https://elsewhere.example".to_string()]);
+	assert_eq!(split[0].source_home, "https://elsewhere.example");
+	assert_eq!(split[0].sequence, 1);
+}
+
+#[test]
+fn a_different_home_at_the_same_sequence_is_not_a_conflict() {
+	use crate::registry::witness::{WitnessObservationRow, witness_conflicts};
+
+	let row = |home: &str, entry: &str, observer: &str| WitnessObservationRow {
+		observer_id: observer.to_string(),
+		source_home: home.to_string(),
+		sequence: 7,
+		head_entry: entry.to_string(),
+		observed_at: 1_760_000_000,
+	};
+	let left = row("https://a.example", "gd:sha256:aa", "local");
+	let right = row("https://b.example", "gd:sha256:bb", "local");
+	assert!(
+		witness_conflicts(&[left, right]).is_empty(),
+		"two homes at one sequence are independent, not equivocation"
+	);
+
+	let third_party = row("https://a.example", "gd:sha256:bb", "ed25519:thirdparty");
+	let corroborated = witness_conflicts(&[row("https://a.example", "gd:sha256:aa", "local"), third_party]);
+	assert_eq!(corroborated.len(), 1, "observers disagreeing about one home is a fork");
+	assert_eq!(corroborated[0].source_home, "https://a.example");
+	assert_eq!(corroborated[0].observers, vec!["local", "ed25519:thirdparty"]);
+
+	let agreed = witness_conflicts(&[
+		row("https://a.example", "gd:sha256:aa", "local"),
+		row("https://a.example", "gd:sha256:aa", "ed25519:thirdparty"),
+	]);
+	assert!(agreed.is_empty(), "observers agreeing is not a conflict");
 }
 
 #[tokio::test]

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Bell, CheckCheck, Circle, GitBranch, Package, Tag, UserPen } from '@lucide/svelte';
-	import { shortDigest } from '$lib/api/registry';
+	import { shortDigest } from '$lib/api/digests';
 	import {
 		follows,
 		notifications,
@@ -12,6 +12,7 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import { pageTitle } from '$lib/title.svelte';
 
 	let items = $state<Notification[]>([]);
 	let followed = $state<string[]>([]);
@@ -65,7 +66,7 @@
 </script>
 
 <svelte:head>
-	<title>Notifications · Moraine</title>
+	<title>{pageTitle('Notifications')}</title>
 </svelte:head>
 
 <div class="flex flex-col gap-6">

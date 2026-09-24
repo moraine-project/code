@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { Search } from '@lucide/svelte';
 	import { untrack } from 'svelte';
+	import { home } from '$lib/home.svelte';
 
 	let {
 		value = '',
@@ -14,7 +15,7 @@
 	function submit(event: SubmitEvent) {
 		event.preventDefault();
 		const trimmed = query.trim();
-		goto(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : '/search');
+		goto(home.url(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : '/search'));
 	}
 </script>
 

@@ -1,17 +1,11 @@
-import { PUBLIC_MORAINE_REGISTRY } from '$env/static/public';
-import {
-	fetchChangelog,
-	fetchProfile,
-	fetchProject,
-	fetchRelease,
-	normalizeBase,
-} from '$lib/api/registry';
+import { fetchProfile, fetchProject } from '$lib/api/projects';
+import { fetchChangelog, fetchRelease } from '$lib/api/releases';
+import { homeFromUrl } from '$lib/home';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ params, url, fetch }) => {
-	const home = url.searchParams.get('home') ?? PUBLIC_MORAINE_REGISTRY ?? '';
 	try {
-		const base = normalizeBase(home);
+		const base = homeFromUrl(url);
 		const [summary, release, profile] = await Promise.all([
 			fetchProject(base, params.id, fetch),
 			fetchRelease(base, params.id, params.hex, fetch),
@@ -32,7 +26,7 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
 		};
 	} catch (cause) {
 		return {
-			home,
+			home: url.searchParams.get('home') ?? '',
 			projectId: params.id,
 			hex: params.hex,
 			summary: null,

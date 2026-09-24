@@ -120,6 +120,53 @@ pub fn pinned(builder: reqwest::ClientBuilder, host: &str, port: u16, addresses:
 	builder.resolve_to_addrs(host, &addresses)
 }
 
+pub async fn get_bounded(
+	url: &str,
+	allow_local: bool,
+	max_response_bytes: u64,
+	extra_roots: &[reqwest::Certificate],
+) -> Result<Vec<u8>, String> {
+	use std::time::Duration;
+
+	let parsed = reqwest::Url::parse(url).map_err(|error| error.to_string())?;
+	match parsed.scheme() {
+		"https" => {}
+		"http" => {
+			let host = parsed.host_str().unwrap_or_default();
+			let loopback = host == "localhost" || host.parse::<IpAddr>().is_ok_and(|address| address.is_loopback());
+			if !(allow_local && loopback) {
+				return Err("http is only allowed for loopback when explicitly enabled".to_string());
+			}
+		}
+		scheme => return Err(format!("{scheme} is not an allowed outbound scheme")),
+	}
+	let host = parsed.host_str().ok_or_else(|| "url has no host".to_string())?.to_string();
+	let port = parsed.port_or_known_default().ok_or_else(|| "url has no port".to_string())?;
+	let addresses = resolve_public(&host, port, allow_local).await?;
+	let client = pinned(client_builder(extra_roots), &host, port, &addresses)
+		.timeout(Duration::from_secs(10))
+		.redirect(reqwest::redirect::Policy::none())
+		.build()
+		.map_err(|error| error.to_string())?;
+	let mut response = client.get(parsed).send().await.map_err(|error| error.to_string())?;
+	if !response.status().is_success() {
+		return Err(format!("subscription returned {}", response.status()));
+	}
+	if let Some(length) = response.content_length()
+		&& length > max_response_bytes
+	{
+		return Err("response exceeds the size limit".to_string());
+	}
+	let mut body = Vec::new();
+	while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
+		if body.len() as u64 + chunk.len() as u64 > max_response_bytes {
+			return Err("response exceeds the size limit".to_string());
+		}
+		body.extend_from_slice(&chunk);
+	}
+	Ok(body)
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -182,5 +229,39 @@ mod tests {
 	#[tokio::test]
 	async fn rejects_a_private_literal_host() {
 		assert!(resolve_public("169.254.169.254", 443, false).await.is_err());
+	}
+
+	#[tokio::test]
+	async fn bounded_fetch_rejects_unsafe_destinations() {
+		for url in [
+			"http://169.254.169.254/latest/meta-data/",
+			"http://127.0.0.1:8080/records",
+			"http://10.0.0.5/records",
+			"file:///etc/passwd",
+			"gopher://example.org/",
+		] {
+			assert!(get_bounded(url, false, 1024, &[]).await.is_err(), "{url} should be rejected");
+		}
+	}
+
+	#[tokio::test]
+	async fn bounded_fetch_rejects_a_redirect_to_a_private_host() {
+		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("listener");
+		let port = listener.local_addr().expect("addr").port();
+		tokio::spawn(async move {
+			let (mut stream, _) = listener.accept().await.expect("accept");
+			use tokio::io::{AsyncReadExt, AsyncWriteExt};
+			let mut buffer = [0u8; 1024];
+			let _ = stream.read(&mut buffer).await;
+			let _ = stream
+				.write_all(
+					b"HTTP/1.1 302 Found\r\nLocation: http://169.254.169.254/latest/meta-data/\r\nContent-Length: 0\r\n\r\n",
+				)
+				.await;
+		});
+		let error = get_bounded(&format!("http://127.0.0.1:{port}/records"), true, 1024, &[])
+			.await
+			.expect_err("redirect must not be followed");
+		assert!(error.contains("302") || error.contains("redirect"), "{error}");
 	}
 }

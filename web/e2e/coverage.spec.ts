@@ -252,7 +252,9 @@ test('covers operator account, dashboard, organizations, federation, and permiss
 		.locator('..')
 		.getByRole('link');
 	await definitionLink.click();
-	await expect(page.getByRole('main')).toContainText('Minecraft');
+	await expect(page).toHaveURL(/\/definitions\/games\//);
+	await expect(page.getByRole('main')).not.toContainText('Unknown definition kind');
+	await expect(page.locator('main')).toContainText('Minecraft');
 	await page.goto('/dashboard');
 	await page.getByRole('tab', { name: 'Definitions' }).click();
 	await expect(page.getByText('No definition subscriptions yet.')).toBeVisible();
