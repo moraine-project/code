@@ -122,7 +122,7 @@ async fn federation_follows_a_changelog_referenced_by_a_release() {
 		}],
 		declared_time: 1_760_000_000,
 	};
-	let signed_changelog = sign_payload(Kind::Changelog, &changelog, &[&home_signer]);
+	let signed_changelog = sign_payload(Kind::Changelog, &changelog, &[&home_signer]).expect("valid signed changelog");
 	let changelog_digest = object_id(Kind::Changelog, &signed_changelog.payload_bytes);
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/changelog"))
 		.body(Body::from(signed_changelog.wire_bytes()))

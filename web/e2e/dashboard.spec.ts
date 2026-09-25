@@ -12,20 +12,20 @@ test('an operator sees the dashboard and its accounts', async ({ page }) => {
 	await page.goto('/account');
 	await page.getByLabel('Email').fill('ops@example.org');
 	await page.getByLabel('Password').fill(state.password);
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await page.locator('form').getByRole('button', { name: 'Sign in' }).click();
 	await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
 
 	await page.goto('/dashboard');
 	await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
 	await expect(page.getByText('Projects', { exact: true })).toBeVisible();
 
-	await page.getByRole('tab', { name: 'Accounts' }).click();
+	await page.getByRole('button', { name: 'Accounts' }).click();
 	await expect(page.getByRole('main').getByText('ops@example.org')).toBeVisible();
 
-	await page.getByRole('tab', { name: 'Definitions' }).click();
+	await page.getByRole('button', { name: 'Definitions' }).click();
 	await expect(page.getByRole('cell', { name: 'Minecraft' })).toBeVisible();
 
-	await page.getByRole('tab', { name: 'Records' }).click();
+	await page.getByRole('button', { name: 'Records' }).click();
 	await expect(page.getByRole('heading', { name: 'Signed advisory' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Artifact locations' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'External catalog observation' })).toBeVisible();
@@ -156,7 +156,7 @@ test('an operator sees the dashboard and its accounts', async ({ page }) => {
 			body: JSON.stringify(route.request().method() === 'GET' ? [] : { id: 'subscription-1' }),
 		});
 	});
-	await page.getByRole('tab', { name: 'Scanners' }).click();
+	await page.getByRole('button', { name: 'Scanners' }).click();
 	await expect(page.getByRole('heading', { name: 'Scanner provider' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Manual scan' })).toBeVisible();
 	await page.getByRole('heading', { name: 'Scan jobs' }).scrollIntoViewIfNeeded();

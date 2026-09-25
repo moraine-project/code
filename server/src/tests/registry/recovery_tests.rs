@@ -26,7 +26,7 @@ async fn recovery_replaces_the_root_set_and_revokes_the_old_key() {
 		reason: "test key compromise".to_string(),
 		declared_time: 1_760_000_000,
 	});
-	let signed = sign_payload(Kind::Delegation, &event, &[&compromised]);
+	let signed = sign_payload(Kind::Delegation, &event, &[&compromised]).expect("valid signed recovery");
 	let digest = object_id(Kind::Delegation, &signed.payload_bytes);
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/delegation"))
 		.body(Body::from(signed.wire_bytes()))
@@ -49,7 +49,7 @@ async fn recovery_replaces_the_root_set_and_revokes_the_old_key() {
 		reason: "a second claim at the same sequence".to_string(),
 		declared_time: 1_760_000_000,
 	});
-	let signed_rival = sign_payload(Kind::Delegation, &rival, &[&compromised]);
+	let signed_rival = sign_payload(Kind::Delegation, &rival, &[&compromised]).expect("valid signed recovery");
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/delegation"))
 		.body(Body::from(signed_rival.wire_bytes()))
 		.expect("request");

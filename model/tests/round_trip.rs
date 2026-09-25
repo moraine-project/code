@@ -1,9 +1,13 @@
 use moraine_model::Canonical;
 use moraine_model::artifact::Artifact;
+use moraine_model::attestation::MirrorCommitment;
 use moraine_model::compatibility::{Compatibility, Predicate, Scheme, Side};
+use moraine_model::delegation::{KeyDelegation, Migration, RecoveryEvent, ReleaseWindow};
+use moraine_model::event::{Event, EventKind};
 use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::profile::ProfileRevision;
+use moraine_model::reference::ArtifactRef;
 use moraine_model::release::ReleasePayload;
 
 fn artifact(size: u64) -> Artifact {
@@ -147,4 +151,98 @@ fn a_sequence_or_size_beyond_the_canonical_range_is_refused() {
 	assert!(feed_entry(i64::MAX as u64 + 1).validate().is_err());
 	assert!(release(i64::MAX as u64 + 1).validate().is_err());
 	assert!(release(u64::MAX).validate().is_err());
+}
+
+#[test]
+fn every_canonical_u64_field_refuses_a_wrapping_value() {
+	let too_large = i64::MAX as u64 + 1;
+	let root = RootKey::from_public_key(vec![9u8; 32]).expect("root");
+	assert!(
+		ArtifactRef {
+			digest: vec![1u8; 32],
+			size: too_large,
+			media_type: "application/java-archive".to_string(),
+		}
+		.validate()
+		.is_err()
+	);
+	assert!(
+		MirrorCommitment {
+			protocol: 1,
+			mirror_id: "mirror".to_string(),
+			artifact_digest: vec![1u8; 32],
+			size: too_large,
+			accepted_at: 1_760_000_000,
+			retention_until: None,
+			endpoint: "https://mirror.example".to_string(),
+		}
+		.validate()
+		.is_err()
+	);
+	assert!(
+		ReleaseWindow {
+			from_seq: too_large,
+			to_seq: too_large,
+		}
+		.validate()
+		.is_err()
+	);
+	assert!(
+		KeyDelegation {
+			protocol: 1,
+			project_id: "gd:sha256:aa".to_string(),
+			delegate_key: root.clone(),
+			allowed_kinds: vec!["release".to_string()],
+			channels: None,
+			max_version_scope: None,
+			valid_from_seq: Some(too_large),
+			expires_at: None,
+			issued_at: 1_760_000_000,
+			previous_delegation_digest: None,
+		}
+		.validate()
+		.is_err()
+	);
+	assert!(
+		Migration {
+			protocol: 1,
+			project_id: "gd:sha256:aa".to_string(),
+			old_home: "https://old.example".to_string(),
+			new_home: "https://new.example".to_string(),
+			cutover_seq: too_large,
+			reason: None,
+			declared_time: 1_760_000_000,
+		}
+		.validate()
+		.is_err()
+	);
+	assert!(
+		RecoveryEvent {
+			protocol: 1,
+			project_id: "gd:sha256:aa".to_string(),
+			compromised_key_ids: vec![root.key_id],
+			valid_from_seq: too_large,
+			replacement_roots: vec![root],
+			affected_release_window: ReleaseWindow { from_seq: 1, to_seq: 2 },
+			reason: "compromise".to_string(),
+			declared_time: 1_760_000_000,
+		}
+		.validate()
+		.is_err()
+	);
+	assert!(
+		Event {
+			protocol: 1,
+			event_id: "event".to_string(),
+			event_kind: EventKind::ForkDetected,
+			project_id: "gd:sha256:aa".to_string(),
+			game_id: None,
+			feed_seq: Some(too_large),
+			object_digest: None,
+			advisory_digest: None,
+			issued_at: 1_760_000_000,
+		}
+		.validate()
+		.is_err()
+	);
 }

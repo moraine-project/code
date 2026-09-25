@@ -1,8 +1,9 @@
 use moraine_codec::Value;
 use moraine_crypto::{ObjectKind, object_id};
 
-use crate::canonical::{Canonical, Fields, expect_bytes, expect_i64, expect_text, expect_u64, map_of};
+use crate::canonical::{Canonical, Fields, canonical_i64, expect_bytes, expect_i64, expect_text, expect_u64, map_of};
 use crate::error::{ModelError, RejectReason};
+use crate::event::EventKind;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeedEntry {
@@ -18,6 +19,22 @@ pub struct FeedEntry {
 impl FeedEntry {
 	pub fn id_bytes(&self) -> [u8; 32] {
 		object_id(ObjectKind::FeedEntry, &self.to_canonical_bytes())
+	}
+
+	pub fn object_kind(&self) -> Result<ObjectKind, ModelError> {
+		let event =
+			EventKind::parse(&self.kind).ok_or_else(|| ModelError::field(RejectReason::InvalidFieldValue, "kind"))?;
+		if !event.is_feed_derived() {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "kind"));
+		}
+		Ok(match event {
+			EventKind::ReleasePublished | EventKind::ReleaseWithdrawn => ObjectKind::Release,
+			EventKind::ProfileUpdated => ObjectKind::Profile,
+			EventKind::KeyChanged | EventKind::Migration | EventKind::Recovery | EventKind::OwnershipTransferred => {
+				ObjectKind::Delegation
+			}
+			EventKind::Advisory | EventKind::ForkDetected => unreachable!(),
+		})
 	}
 
 	pub fn validate(&self) -> Result<(), ModelError> {
@@ -50,9 +67,7 @@ impl FeedEntry {
 		if self.object_digest.len() != 32 {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "object_digest"));
 		}
-		if self.kind.is_empty() {
-			return Err(ModelError::field(RejectReason::InvalidFieldValue, "kind"));
-		}
+		self.object_kind()?;
 		Ok(())
 	}
 
@@ -78,7 +93,7 @@ impl Canonical for FeedEntry {
 		let mut pairs = vec![
 			("protocol", Value::int(i64::from(self.protocol))),
 			("project_id", Value::text(self.project_id.clone())),
-			("sequence", Value::int(self.sequence as i64)),
+			("sequence", Value::int(canonical_i64(self.sequence, "sequence"))),
 		];
 		if let Some(previous) = &self.previous {
 			pairs.push(("previous", Value::bytes(previous.clone())));

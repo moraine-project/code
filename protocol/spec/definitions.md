@@ -28,9 +28,12 @@ an input convenience and is never the wire format or the signed artifact:
 duplicate keys, implicit typing, and ordering differences make a text format
 unsuitable for signatures. TOML is used because it has explicit types, rejects
 duplicate keys, and has no anchors, so a file has one unambiguous meaning
-before compilation. A definition is signed by whoever authors it, so no
-pre-signed definitions ship with this implementation; an operator authors its
-own and reuses that key.
+before compilation. The compiler rejects unknown fields, so a typo cannot
+silently change a definition. The repository ships a compiled canonical set under
+`definitions/canonical/`, but it does not ship the private authority key or a
+recovery mechanism for that key. Import those signed objects, or obtain the
+same signed genesis from a home you trust, when shared identities matter;
+compiling the TOML with another key creates new identities.
 
 A loader definition may also declare `game_versions`, the game versions the
 loader family supports as a whole. In TOML that is `game_versions` with an

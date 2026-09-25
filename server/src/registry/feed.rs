@@ -54,16 +54,20 @@ pub(crate) async fn page(State(state): State<AppState>, Path(id): Path<String>, 
 		Ok(None) => return (StatusCode::NOT_FOUND, "no such project").into_response(),
 		Err(error) => return storage_error(error),
 	};
-	let ceiling = (state.capability.max_feed_page_entries as i64).max(1);
-	let limit = query.limit.unwrap_or(ceiling).clamp(1, ceiling);
-	let mut entries = Vec::with_capacity(limit as usize);
+	let ceiling = if state.capability.max_feed_page_entries == 0 {
+		i64::MAX
+	} else {
+		state.capability.max_feed_page_entries as i64
+	};
+	let limit = query.limit.unwrap_or(100).max(1).min(ceiling);
+	let mut entries = Vec::with_capacity(limit.min(100) as usize);
 	let mut catalog: Option<Option<moraine_model::version::VersionCatalog>> = None;
 	let mut loader_scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
 	let mut runtime_scheme: Option<Option<moraine_model::version::OrderingScheme>> = None;
 	let mut scanned = query.after;
 	let mut pages = 0;
 	loop {
-		let rows = match state.metadata.feed_after(&id, scanned, limit).await {
+		let rows = match state.metadata.feed_after(&id, scanned, project.head_seq, limit).await {
 			Ok(rows) => rows,
 			Err(error) => return storage_error(error),
 		};

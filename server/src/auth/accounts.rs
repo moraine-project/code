@@ -329,15 +329,38 @@ impl MetadataStore {
 		Ok(())
 	}
 
-	pub async fn claim_recovery_code(&self, user_id: &str, hash: &[u8], used_at: i64) -> Result<bool, sqlx::Error> {
-		let result =
+	pub async fn recover_password(
+		&self,
+		user_id: &str,
+		code_hash: &[u8],
+		password_hash: &str,
+		changed_at: i64,
+	) -> Result<bool, sqlx::Error> {
+		let mut transaction = self.pool.begin().await?;
+		let claimed =
 			sqlx::query("UPDATE recovery_codes SET used_at = $1 WHERE user_id = $2 AND code_hash = $3 AND used_at IS NULL")
-				.bind(used_at)
+				.bind(changed_at)
 				.bind(user_id)
-				.bind(hash)
-				.execute(&self.pool)
+				.bind(code_hash)
+				.execute(&mut *transaction)
 				.await?;
-		Ok(result.rows_affected() == 1)
+		if claimed.rows_affected() != 1 {
+			transaction.rollback().await?;
+			return Ok(false);
+		}
+		sqlx::query("UPDATE user_credentials SET secret_hash = $1, updated_at = $2 WHERE user_id = $3")
+			.bind(password_hash)
+			.bind(changed_at)
+			.bind(user_id)
+			.execute(&mut *transaction)
+			.await?;
+		sqlx::query("UPDATE user_sessions SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL")
+			.bind(changed_at)
+			.bind(user_id)
+			.execute(&mut *transaction)
+			.await?;
+		transaction.commit().await?;
+		Ok(true)
 	}
 
 	pub async fn create_api_key(&self, key: &ApiKeyRow) -> Result<(), sqlx::Error> {
@@ -426,13 +449,12 @@ impl MetadataStore {
 }
 
 #[cfg(test)]
-mod recovery_claim_tests {
+mod recovery_tests {
 	use crate::db::MetadataStore;
 
-	#[tokio::test]
-	async fn a_recovery_code_can_only_be_spent_once() {
+	async fn store_with_a_code() -> (tempfile::TempDir, MetadataStore) {
 		let directory = tempfile::tempdir().expect("tempdir");
-		let store = MetadataStore::open_url(&crate::db::sqlite_url(&directory.path().join("metadata.sqlite")))
+		let store = MetadataStore::open(&directory.path().join("metadata.sqlite"))
 			.await
 			.expect("store");
 		let hash = crate::auth::password::hash_password("correct horse battery").expect("hash");
@@ -441,12 +463,54 @@ mod recovery_claim_tests {
 			.await
 			.expect("user");
 		store.replace_recovery_codes("u", &[vec![7u8; 32]], 1).await.expect("codes");
+		(directory, store)
+	}
 
-		assert!(store.claim_recovery_code("u", &[7u8; 32], 2).await.expect("claim"));
+	async fn password_hash(store: &MetadataStore) -> String {
+		store.user_by_id("u").await.expect("user").expect("present").password_hash
+	}
+
+	#[tokio::test]
+	async fn a_recovery_code_is_spent_once_and_a_spent_code_leaves_the_password_alone() {
+		let (_directory, store) = store_with_a_code().await;
+		let original = password_hash(&store).await;
+
+		assert!(store.recover_password("u", &[7u8; 32], "first hash", 2).await.expect("claim"));
+		assert_ne!(password_hash(&store).await, original, "the winning claim sets a new password");
+		assert_eq!(password_hash(&store).await, "first hash");
+
 		assert!(
-			!store.claim_recovery_code("u", &[7u8; 32], 3).await.expect("claim"),
+			!store
+				.recover_password("u", &[7u8; 32], "second hash", 3)
+				.await
+				.expect("claim"),
 			"a spent recovery code must not be claimable again"
 		);
-		assert!(!store.claim_recovery_code("u", &[8u8; 32], 4).await.expect("claim"));
+		assert_eq!(
+			password_hash(&store).await,
+			"first hash",
+			"a spent code must not change the password"
+		);
+		assert!(
+			!store.recover_password("u", &[8u8; 32], "third hash", 4).await.expect("claim"),
+			"a code the account never issued must not be claimable"
+		);
+		assert_eq!(password_hash(&store).await, "first hash");
+	}
+
+	#[tokio::test]
+	async fn racing_claims_spend_one_code_once_and_one_password_wins() {
+		let (_directory, store) = store_with_a_code().await;
+		let store = std::sync::Arc::new(store);
+
+		let (first, second) = tokio::join!(
+			store.recover_password("u", &[7u8; 32], "first hash", 2),
+			store.recover_password("u", &[7u8; 32], "second hash", 2)
+		);
+		let first = first.expect("claim");
+		let second = second.expect("claim");
+		assert_ne!(first, second, "exactly one racing claim may spend the code");
+		let winner = if first { "first hash" } else { "second hash" };
+		assert_eq!(password_hash(&store).await, winner, "the password follows the claim that won");
 	}
 }

@@ -100,6 +100,9 @@ impl LoaderDef {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "version_catalog"));
 		}
 		reject_duplicate_ids(self.version_catalog.iter().map(String::as_str), "version_catalog")?;
+		if let Some(bootstrap) = &self.bootstrap {
+			bootstrap.validate()?;
+		}
 		Ok(())
 	}
 }
@@ -202,6 +205,9 @@ impl LoaderRelease {
 		}
 		if self.loader_id.is_empty() || self.version_id.is_empty() {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "version_id"));
+		}
+		if let Some(bootstrap) = &self.bootstrap {
+			bootstrap.validate()?;
 		}
 		Ok(())
 	}
@@ -383,6 +389,16 @@ pub enum LoaderObject {
 	Definition(LoaderDef),
 	Release(LoaderRelease),
 	Acceptance(LoaderAcceptance),
+}
+
+impl LoaderObject {
+	pub fn validate(&self) -> Result<(), ModelError> {
+		match self {
+			Self::Definition(definition) => definition.validate(),
+			Self::Release(release) => release.validate(),
+			Self::Acceptance(acceptance) => acceptance.validate(),
+		}
+	}
 }
 
 impl Canonical for LoaderObject {

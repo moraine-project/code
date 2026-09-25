@@ -65,6 +65,12 @@ async fn serves_a_verification_bundle_for_a_release() {
 		.expect("read");
 	assert!(instructions.contains(&project_id));
 	assert!(instructions.contains("moraine-verify object --kind release"));
+	for line in instructions
+		.lines()
+		.filter(|line| line.trim_start().starts_with("moraine-verify"))
+	{
+		assert!(line.contains("--root"), "`{line}` would refuse to verify without a root");
+	}
 
 	let missing = axum::http::Request::get(format!("/v1/projects/{project_id}/releases/{}/bundle", "00".repeat(32)))
 		.body(Body::empty())

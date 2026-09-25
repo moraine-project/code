@@ -388,24 +388,11 @@ fn decode_key(hex_key: &str) -> Result<TrustedKey, ModelError> {
 }
 
 fn all_kind_strings() -> Vec<String> {
-	[
-		ObjectKind::Genesis,
-		ObjectKind::Delegation,
-		ObjectKind::Release,
-		ObjectKind::FeedEntry,
-		ObjectKind::Profile,
-		ObjectKind::Changelog,
-		ObjectKind::DenyList,
-		ObjectKind::Modpack,
-		ObjectKind::Advisory,
-		ObjectKind::Attestation,
-		ObjectKind::GameDef,
-		ObjectKind::LoaderDef,
-		ObjectKind::RuntimeDef,
-	]
-	.iter()
-	.map(|kind| kind.as_str().to_string())
-	.collect()
+	GenesisKind::Project
+		.authority_kinds()
+		.iter()
+		.map(|kind| kind.as_str().to_string())
+		.collect()
 }
 
 pub fn check(vector: &Vector) -> Result<(), String> {

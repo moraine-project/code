@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { digestHex } from './digests';
-import { registryUrl } from './request';
+import { ApiError, registryUrl } from './request';
 import { authorizedFetch } from './session';
 
 export const uploadReceiptSchema = z.object({
@@ -28,7 +28,7 @@ export async function uploadBlob(file: File): Promise<UploadReceipt> {
 		body: file,
 	});
 	if (!response.ok) {
-		throw new Error(`upload failed (${response.status})`);
+		throw new ApiError(response.status, `upload failed (${response.status})`);
 	}
 	return uploadReceiptSchema.parse(await response.json());
 }

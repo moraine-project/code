@@ -98,7 +98,9 @@ fn genesis_wire(signer: &SigningKey) -> Vec<u8> {
 		contacts: None,
 		created_at: 1_760_000_000,
 	};
-	sign_payload(Kind::Genesis, &genesis, &[signer]).wire_bytes()
+	sign_payload(Kind::Genesis, &genesis, &[signer])
+		.expect("valid signed genesis")
+		.wire_bytes()
 }
 
 fn release_wire(signer: &SigningKey, project_id: &str) -> ([u8; 32], Vec<u8>) {
@@ -138,7 +140,7 @@ fn release_wire(signer: &SigningKey, project_id: &str) -> ([u8; 32], Vec<u8>) {
 		minimum_verifier_version: 1,
 		critical_extensions: Vec::new(),
 	};
-	let signed = sign_payload(Kind::Release, &release, &[signer]);
+	let signed = sign_payload(Kind::Release, &release, &[signer]).expect("valid signed release");
 	(object_id(Kind::Release, &signed.payload_bytes), signed.wire_bytes())
 }
 
@@ -152,7 +154,9 @@ fn feed_wire(signer: &SigningKey, project_id: &str, sequence: u64, previous: Opt
 		object_digest: object.to_vec(),
 		declared_at: 1_760_000_000 + sequence as i64,
 	};
-	sign_payload(Kind::FeedEntry, &entry, &[signer]).wire_bytes()
+	sign_payload(Kind::FeedEntry, &entry, &[signer])
+		.expect("valid signed feed entry")
+		.wire_bytes()
 }
 
 #[tokio::test]

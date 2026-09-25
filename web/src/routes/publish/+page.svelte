@@ -12,6 +12,7 @@
 		type GamePayload,
 	} from '$lib/api/definitions';
 	import { fetchObject, fetchProject } from '$lib/api/projects';
+	import { ApiError } from '$lib/api/request';
 	import { instance } from '$lib/instance.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import MultiSelectField from '$lib/components/MultiSelectField.svelte';
@@ -68,8 +69,55 @@
 	let error = $state<string | null>(null);
 	let log = $state<string[]>([]);
 
-	onMount(async () => {
-		games = await listDefinitions(normalizeHome(apiOrigin()), 'games').catch(() => []);
+	type PublishStage = 'idle' | 'upload' | 'sign' | 'publish';
+	const MAX_OPEN_APPEND_ATTEMPTS = 3;
+	const DRAFT_STORAGE_KEY = 'moraine.publish.draft.v1';
+	const stageLabels: Record<PublishStage, string> = {
+		idle: 'Idle',
+		upload: 'Uploading',
+		sign: 'Signing',
+		publish: 'Publishing',
+	};
+	let stage = $state<PublishStage>('idle');
+	let stageDetail = $state('');
+	let draftReady = $state(false);
+	let browserStorage: Storage | null = null;
+
+	type PublishDraft = {
+		projectMode: 'new' | 'existing';
+		projectId: string;
+		displayName: string;
+		summary: string;
+		description: string;
+		gameId: string;
+		version: string;
+		channel: string;
+		releaseKind: 'mod' | 'modpack';
+		modpackManifest: string;
+		notes: string;
+		withdrawalRelease: string;
+		withdrawalReason: string;
+		withdrawalNote: string;
+	};
+
+	onMount(() => {
+		try {
+			browserStorage = window.localStorage;
+		} catch {
+			browserStorage = null;
+		}
+		loadDraft();
+		draftReady = true;
+		const save = () => saveDraft();
+		document.addEventListener('input', save);
+		document.addEventListener('change', save);
+		void listDefinitions(normalizeHome(apiOrigin()), 'games')
+			.then((loaded) => (games = loaded))
+			.catch(() => {});
+		return () => {
+			document.removeEventListener('input', save);
+			document.removeEventListener('change', save);
+		};
 	});
 
 	const gameInfo = $derived.by(async () => {
@@ -102,6 +150,35 @@
 	const gameOptions = $derived<SelectOption[]>(
 		games.map((game) => ({ value: game.id, label: game.display_name ?? game.id })),
 	);
+	const pendingGame = $derived(
+		gameOptions.find((option) => option.value === gameId)?.label ?? gameId,
+	);
+	const pendingPreview = $derived({
+		project:
+			displayName.trim() ||
+			(projectMode === 'new' ? 'New project' : projectId.trim() || 'Project not selected'),
+		projectId: projectId.trim() || 'Not created yet',
+		game: pendingGame || 'Not selected',
+		version: version.trim() || 'Not set',
+		file: artifact?.name ?? 'No file selected',
+		channel: `${releaseKind} · ${channel.trim() || 'release'}`,
+	});
+	const stageLabel = $derived(stageLabels[stage]);
+	const projectValidation = $derived(
+		projectMode === 'existing' && !projectId.trim() ? 'Enter a project ID.' : '',
+	);
+	const gameValidation = $derived(gameId ? '' : 'Choose a game.');
+	const versionValidation = $derived(version.trim() ? '' : 'Enter a version.');
+	const fileValidation = $derived(artifact ? '' : 'Choose a file to publish.');
+	const gameVersionsValidation = $derived(
+		gameVersions.length > 0 ? '' : 'Choose or enter a game version.',
+	);
+	const manifestValidation = $derived(
+		releaseKind === 'modpack' && !modpackManifest.trim() ? 'Paste a signed modpack manifest.' : '',
+	);
+	const releaseProjectValidation = $derived(
+		projectId.trim() ? '' : 'Create or enter a project first.',
+	);
 
 	function report(line: string) {
 		log = [...log, line];
@@ -111,9 +188,132 @@
 		error = message;
 	}
 
+	function draftSnapshot(): PublishDraft {
+		return {
+			projectMode,
+			projectId,
+			displayName,
+			summary,
+			description,
+			gameId,
+			version,
+			channel,
+			releaseKind: releaseKind === 'modpack' ? 'modpack' : 'mod',
+			modpackManifest,
+			notes,
+			withdrawalRelease,
+			withdrawalReason,
+			withdrawalNote,
+		};
+	}
+
+	function saveDraft() {
+		if (!draftReady) return;
+		try {
+			browserStorage?.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftSnapshot()));
+		} catch {
+			return;
+		}
+	}
+
+	function loadDraft() {
+		try {
+			const raw = browserStorage?.getItem(DRAFT_STORAGE_KEY);
+			if (!raw) return;
+			const draft = JSON.parse(raw) as Partial<PublishDraft> | null;
+			if (!draft || typeof draft !== 'object') return;
+			if (draft.projectMode === 'new' || draft.projectMode === 'existing') {
+				projectMode = draft.projectMode;
+			}
+			if (draft.releaseKind === 'mod' || draft.releaseKind === 'modpack') {
+				releaseKind = draft.releaseKind;
+			}
+			if (typeof draft.projectId === 'string') projectId = draft.projectId;
+			if (typeof draft.displayName === 'string') displayName = draft.displayName;
+			if (typeof draft.summary === 'string') summary = draft.summary;
+			if (typeof draft.description === 'string') description = draft.description;
+			if (typeof draft.gameId === 'string') gameId = draft.gameId;
+			if (typeof draft.version === 'string') version = draft.version;
+			if (typeof draft.channel === 'string') channel = draft.channel;
+			if (typeof draft.modpackManifest === 'string') modpackManifest = draft.modpackManifest;
+			if (typeof draft.notes === 'string') notes = draft.notes;
+			if (typeof draft.withdrawalRelease === 'string') withdrawalRelease = draft.withdrawalRelease;
+			if (typeof draft.withdrawalReason === 'string') withdrawalReason = draft.withdrawalReason;
+			if (typeof draft.withdrawalNote === 'string') withdrawalNote = draft.withdrawalNote;
+		} catch {
+			return;
+		}
+	}
+
+	function forgetDraft() {
+		try {
+			browserStorage?.removeItem(DRAFT_STORAGE_KEY);
+		} catch {
+			return;
+		}
+	}
+
+	function clearDraft() {
+		if (!draftReady) return;
+		forgetDraft();
+		projectMode = 'new';
+		projectId = '';
+		displayName = '';
+		summary = '';
+		description = '';
+		selectedCategories = [];
+		selectedTags = [];
+		gameId = '';
+		gameVersions = [];
+		loaderId = '';
+		artifact = null;
+		receipt = null;
+		version = '';
+		channel = 'release';
+		releaseKind = 'mod';
+		modpackManifest = '';
+		notes = '';
+		withdrawalRelease = '';
+		withdrawalReason = 'author-preference';
+		withdrawalNote = '';
+		error = null;
+		report('Saved draft cleared; signing keys were kept.');
+	}
+
+	function setProjectMode(value: 'new' | 'existing') {
+		projectMode = value;
+		saveDraft();
+	}
+
+	function validateProject(): boolean {
+		const message = projectValidation || gameValidation;
+		if (message) {
+			error = message;
+			return false;
+		}
+		return true;
+	}
+
+	function validateRelease(): boolean {
+		const message =
+			releaseProjectValidation ||
+			gameValidation ||
+			versionValidation ||
+			fileValidation ||
+			gameVersionsValidation ||
+			manifestValidation;
+		if (message) {
+			error = message;
+			return false;
+		}
+		return true;
+	}
+
 	async function createNewProject() {
 		busy = true;
 		error = null;
+		stage = 'sign';
+		stageDetail = '';
 		try {
 			const genesis = await signGenesis(seed, {
 				nonce: randomNonce(),
@@ -124,6 +324,7 @@
 			const created = await createProject(genesis.wire);
 			projectId = created.project_id;
 			projectMode = 'existing';
+			saveDraft();
 			report(`Project created: ${created.project_id}`);
 			if (displayName.trim()) {
 				await publishProfile();
@@ -132,15 +333,14 @@
 			error = cause instanceof Error ? cause.message : 'the project could not be created';
 		} finally {
 			busy = false;
+			stage = 'idle';
+			stageDetail = '';
 		}
 	}
 
 	async function createProjectOrPublishProfile() {
+		if (!validateProject()) return;
 		if (projectMode === 'existing') {
-			if (!projectId.trim()) {
-				error = 'Enter a project ID first.';
-				return;
-			}
 			busy = true;
 			error = null;
 			try {
@@ -149,6 +349,8 @@
 				error = cause instanceof Error ? cause.message : 'the profile could not be published';
 			} finally {
 				busy = false;
+				stage = 'idle';
+				stageDetail = '';
 			}
 			return;
 		}
@@ -156,6 +358,8 @@
 	}
 
 	async function publishProfile() {
+		stage = 'sign';
+		stageDetail = '';
 		const profile = await signProfile(seed, {
 			project_id: projectId,
 			game_id: gameId,
@@ -172,9 +376,9 @@
 		report(`Profile published: ${profile.id}`);
 	}
 
-	async function publishEntry(objectId: string, kind: string) {
+	async function signedFeedEntry(objectId: string, kind: string) {
 		const project = await fetchProject(normalizeHome(apiOrigin()), projectId);
-		const entry = await signFeedEntry(seed, {
+		return signFeedEntry(seed, {
 			project_id: projectId,
 			sequence: project.head_seq + 1,
 			previous: project.head_entry ?? undefined,
@@ -182,30 +386,65 @@
 			object_digest: objectId,
 			declared_at: Math.floor(Date.now() / 1000),
 		});
+	}
+
+	function isFeedConflict(cause: unknown): boolean {
+		return (
+			(cause instanceof ApiError && cause.status === 409) ||
+			(typeof cause === 'object' && cause !== null && 'status' in cause && cause.status === 409)
+		);
+	}
+
+	async function publishEntry(objectId: string, kind: string) {
 		if (mode === 'open') {
-			const appended = await appendFeed(projectId, entry.wire);
-			report(`Feed entry ${appended.seq}: ${appended.entry}`);
-		} else {
-			const submitted = await submitFeed(entry.wire);
-			report(
-				submitted.state === 'auto-accepted'
-					? `Published automatically: ${submitted.id}`
-					: `Submitted for review: ${submitted.id} (${submitted.state})`,
-			);
+			for (let attempt = 0; attempt < MAX_OPEN_APPEND_ATTEMPTS; attempt += 1) {
+				stage = 'sign';
+				const entry = await signedFeedEntry(objectId, kind);
+				stage = 'publish';
+				try {
+					const appended = await appendFeed(projectId, entry.wire);
+					stageDetail = '';
+					report(`Feed entry ${appended.seq}: ${appended.entry}`);
+					return;
+				} catch (cause) {
+					if (!isFeedConflict(cause) || attempt === MAX_OPEN_APPEND_ATTEMPTS - 1) {
+						throw cause;
+					}
+					const retry = attempt + 1;
+					stageDetail = `Feed head changed; retry ${retry} of ${MAX_OPEN_APPEND_ATTEMPTS - 1} after refetching the project head`;
+					report(
+						`Feed head changed (409); retrying append ${retry}/${MAX_OPEN_APPEND_ATTEMPTS - 1} after refetching the project head`,
+					);
+				}
+			}
 		}
+		if (mode === 'open') return;
+
+		stage = 'sign';
+		const entry = await signedFeedEntry(objectId, kind);
+		stage = 'publish';
+		const submitted = await submitFeed(entry.wire);
+		stageDetail = '';
+		report(
+			submitted.state === 'auto-accepted'
+				? `Published automatically: ${submitted.id}`
+				: `Submitted for review: ${submitted.id} (${submitted.state})`,
+		);
 	}
 
 	async function publishRelease() {
-		if (!artifact) {
-			error = 'Choose a file first.';
-			return;
-		}
+		if (!validateRelease()) return;
+		const file = artifact;
+		if (!file) return;
 		busy = true;
 		error = null;
+		stage = 'upload';
+		stageDetail = '';
 		try {
-			const uploaded = await uploadBlob(artifact);
+			const uploaded = await uploadBlob(file);
 			receipt = uploaded;
-			report(`Uploaded ${artifact.name}: ${uploaded.size} bytes`);
+			report(`Uploaded ${file.name}: ${uploaded.size} bytes`);
+			stage = 'sign';
 
 			let changelogId: string | undefined;
 			if (notes.trim()) {
@@ -227,6 +466,7 @@
 				}
 			}
 
+			stage = 'sign';
 			const release = await signRelease(seed, {
 				project_id: projectId,
 				game_id: gameId,
@@ -239,7 +479,7 @@
 				loader_id: loaderId || undefined,
 				digest: uploaded.digest,
 				size: uploaded.size,
-				filename: artifact.name,
+				filename: file.name,
 				changelog_digest: changelogId,
 			});
 			if (releaseKind === 'modpack') {
@@ -251,18 +491,24 @@
 			await storeObject(projectId, 'release', release.wire);
 			report(`Release signed: ${release.id}`);
 			await publishEntry(release.id, 'release-published');
+			forgetDraft();
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'the release could not be published';
 		} finally {
 			busy = false;
+			stage = 'idle';
+			stageDetail = '';
 		}
 	}
 
 	async function withdrawRelease() {
 		busy = true;
 		error = null;
+		stage = 'sign';
+		stageDetail = '';
 		try {
 			const withdrawal = await signWithdrawal(seed, {
+				project_id: projectId,
 				release_id: withdrawalRelease,
 				reason: withdrawalReason,
 				note: withdrawalNote || undefined,
@@ -275,6 +521,8 @@
 			error = cause instanceof Error ? cause.message : 'the withdrawal could not be published';
 		} finally {
 			busy = false;
+			stage = 'idle';
+			stageDetail = '';
 		}
 	}
 </script>
@@ -287,7 +535,12 @@
 	<PageHeader
 		title="Publish a project"
 		subtitle="Sign in, pick a game, upload a file. The console signs with a key that stays on this device and never gets uploaded."
-	/>
+	>
+		<span class="text-xs text-base-content/60"
+			>Scalar fields resume locally; keys/files stay in memory.</span
+		>
+		<button type="button" class="btn btn-ghost btn-sm" onclick={clearDraft}>Clear draft</button>
+	</PageHeader>
 
 	{#if error}
 		<div role="alert" class="alert alert-error"><span>{error}</span></div>
@@ -354,18 +607,20 @@
 		<section class="card card-border bg-base-200">
 			<div class="card-body gap-4">
 				<h2 class="card-title">2. Project</h2>
-				<div role="tablist" class="tabs tabs-box w-fit">
+				<div class="tabs tabs-box w-fit" aria-label="Project mode">
 					<button
-						role="tab"
+						type="button"
 						class="tab"
 						class:tab-active={projectMode === 'new'}
-						onclick={() => (projectMode = 'new')}>New project</button
+						aria-pressed={projectMode === 'new'}
+						onclick={() => setProjectMode('new')}>New project</button
 					>
 					<button
-						role="tab"
+						type="button"
 						class="tab"
 						class:tab-active={projectMode === 'existing'}
-						onclick={() => (projectMode = 'existing')}>Existing project</button
+						aria-pressed={projectMode === 'existing'}
+						onclick={() => setProjectMode('existing')}>Existing project</button
 					>
 				</div>
 
@@ -373,17 +628,28 @@
 					<label class="floating-label max-w-xl">
 						<span>Project ID</span>
 						<input
+							id="project-id"
 							class="input w-full font-mono text-xs"
 							bind:value={projectId}
 							placeholder="gd:sha256:…"
+							aria-invalid={Boolean(projectValidation)}
+							aria-describedby="project-validation"
 						/>
 					</label>
+				{/if}
+				{#if projectValidation}
+					<p id="project-validation" class="text-xs text-error">{projectValidation}</p>
 				{/if}
 
 				<div class="grid gap-3 sm:grid-cols-2">
 					<label class="floating-label">
 						<span>Name</span>
-						<input class="input w-full" bind:value={displayName} placeholder="My Mod" />
+						<input
+							id="project-name"
+							class="input w-full"
+							bind:value={displayName}
+							placeholder="My Mod"
+						/>
 					</label>
 					<label class="floating-label">
 						<span>Summary</span>
@@ -407,9 +673,13 @@
 							selectedTags = [];
 							gameVersions = [];
 							loaderId = '';
+							saveDraft();
 						}}
 					/>
 				</div>
+				{#if gameValidation}
+					<p id="game-validation" class="text-xs text-error">{gameValidation}</p>
+				{/if}
 
 				{#await gameInfo then info}
 					{#if info.payload && ((info.payload.categories?.length ?? 0) > 0 || (info.payload.tags?.length ?? 0) > 0)}
@@ -422,6 +692,7 @@
 									label: category.label,
 								}))}
 								placeholder="None"
+								onchange={() => saveDraft()}
 							/>
 							<MultiSelectField
 								label="Tags"
@@ -431,6 +702,7 @@
 									label: tag.label,
 								}))}
 								placeholder="None"
+								onchange={() => saveDraft()}
 							/>
 						</div>
 					{/if}
@@ -450,9 +722,10 @@
 					{/if}
 				{/await}
 				<button
+					type="button"
 					class="btn btn-sm w-fit"
 					onclick={createProjectOrPublishProfile}
-					disabled={busy || !keyPublic || !gameId}
+					disabled={busy || !keyPublic || !gameId || Boolean(projectValidation)}
 				>
 					{projectMode === 'new' ? 'Create the project' : 'Publish the profile'}
 				</button>
@@ -462,6 +735,9 @@
 		<section class="card card-border bg-base-200">
 			<div class="card-body gap-4">
 				<h2 class="card-title">3. Release</h2>
+				{#if releaseProjectValidation}
+					<p class="text-xs text-error">{releaseProjectValidation}</p>
+				{/if}
 				<label class="floating-label">
 					<span>File</span>
 					<input
@@ -470,8 +746,13 @@
 						onchange={(event) =>
 							(artifact = (event.currentTarget as HTMLInputElement).files?.[0] ?? null)}
 						aria-label="File to publish"
+						aria-invalid={Boolean(fileValidation)}
+						aria-describedby="file-validation"
 					/>
 				</label>
+				{#if fileValidation}
+					<p id="file-validation" class="text-xs text-error">{fileValidation}</p>
+				{/if}
 				{#if receipt}
 					<p class="text-sm text-base-content/70">
 						Uploaded: <span class="font-mono">{receipt.size}</span> bytes
@@ -491,6 +772,7 @@
 							hint={info.payload?.version_catalog?.length
 								? ''
 								: 'Type versions by hand below if the game has no list.'}
+							onchange={() => saveDraft()}
 						/>
 						<SelectField
 							label="Loader"
@@ -500,6 +782,10 @@
 								label: loader.display_name ?? loader.id,
 							}))}
 							placeholder="None"
+							onchange={(value) => {
+								loaderId = value;
+								saveDraft();
+							}}
 						/>
 					</div>
 				{/await}
@@ -518,11 +804,21 @@
 						/>
 					</label>
 				{/if}
+				{#if gameVersionsValidation}
+					<p class="text-xs text-error">{gameVersionsValidation}</p>
+				{/if}
 
 				<div class="grid gap-3 sm:grid-cols-2">
 					<label class="floating-label">
 						<span>Version</span>
-						<input class="input w-full" bind:value={version} placeholder="1.2.3" />
+						<input
+							id="release-version"
+							class="input w-full"
+							bind:value={version}
+							placeholder="1.2.3"
+							aria-invalid={Boolean(versionValidation)}
+							aria-describedby="version-validation"
+						/>
 					</label>
 					<label class="floating-label">
 						<span>Channel</span>
@@ -536,6 +832,9 @@
 						</select>
 					</label>
 				</div>
+				{#if versionValidation}
+					<p id="version-validation" class="text-xs text-error">{versionValidation}</p>
+				{/if}
 				{#if releaseKind === 'modpack'}
 					<label class="floating-label">
 						<span>Signed modpack manifest (JSON)</span>
@@ -544,27 +843,69 @@
 							rows="8"
 							bind:value={modpackManifest}
 							placeholder="Paste the manifest JSON here"
-							aria-label="Signed modpack manifest JSON"></textarea>
+							aria-label="Signed modpack manifest JSON"
+							aria-invalid={Boolean(manifestValidation)}
+							aria-describedby="manifest-validation"></textarea>
 					</label>
 					<p class="text-xs text-base-content/60">
 						The manifest lists the exact signed releases and override files in this pack. Its
 						project and game IDs must match this publication.
 					</p>
+					{#if manifestValidation}
+						<p id="manifest-validation" class="text-xs text-error">{manifestValidation}</p>
+					{/if}
 				{/if}
 				<label class="floating-label">
 					<span>Release notes (optional)</span>
 					<textarea class="textarea w-full" rows="3" bind:value={notes}></textarea>
 				</label>
 
+				<div class="rounded-box border border-base-300 bg-base-100 p-3">
+					<div class="flex flex-wrap items-center justify-between gap-2">
+						<h3 class="font-semibold">Pending publication</h3>
+						<span class="badge badge-outline" aria-live="polite">Stage: {stageLabel}</span>
+					</div>
+					{#if stageDetail}
+						<p class="mt-1 text-xs text-warning">{stageDetail}</p>
+					{/if}
+					<dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
+						<div>
+							<dt class="text-base-content/60">Project</dt>
+							<dd class="font-medium">{pendingPreview.project}</dd>
+						</div>
+						<div>
+							<dt class="text-base-content/60">Project ID</dt>
+							<dd class="truncate font-mono text-xs">{pendingPreview.projectId}</dd>
+						</div>
+						<div>
+							<dt class="text-base-content/60">Game</dt>
+							<dd class="font-medium">{pendingPreview.game}</dd>
+						</div>
+						<div>
+							<dt class="text-base-content/60">Version</dt>
+							<dd class="font-medium">{pendingPreview.version}</dd>
+						</div>
+						<div>
+							<dt class="text-base-content/60">File</dt>
+							<dd class="truncate font-medium">{pendingPreview.file}</dd>
+						</div>
+						<div>
+							<dt class="text-base-content/60">Channel</dt>
+							<dd class="font-medium">{pendingPreview.channel}</dd>
+						</div>
+					</dl>
+				</div>
+
 				<button
+					type="button"
 					class="btn btn-primary w-fit"
 					onclick={publishRelease}
 					disabled={busy ||
 						!keyPublic ||
-						!projectId ||
+						!projectId.trim() ||
 						!artifact ||
 						!gameId ||
-						!version ||
+						!version.trim() ||
 						gameVersions.length === 0 ||
 						(releaseKind === 'modpack' && !modpackManifest.trim())}
 				>

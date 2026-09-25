@@ -26,6 +26,7 @@ pub struct ProjectRow {
 	pub profile_digest: Option<Vec<u8>>,
 	pub owner_kind: Option<String>,
 	pub owner_id: Option<String>,
+	pub owner_key_id: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone)]
@@ -196,7 +197,7 @@ mod tests {
 		let project = store.project("p").await.expect("project").expect("present");
 		assert_eq!(project.head_seq, 1);
 		assert_eq!(project.profile_digest, Some(vec![3u8; 32]));
-		let feed = store.feed_after("p", 0, 10).await.expect("feed");
+		let feed = store.feed_after("p", 0, i64::MAX, 10).await.expect("feed");
 		assert_eq!(feed.len(), 1);
 
 		store.index_artifact(&[1u8; 32], "p", &[2u8; 32]).await.expect("index");
@@ -238,7 +239,8 @@ mod tests {
 		let project = store.project("p").await.expect("project").expect("present");
 		assert_eq!(project.head_seq, 2);
 		assert_eq!(project.head_digest, Some(vec![2u8; 32]));
-		assert_eq!(store.feed_after("p", 0, 10).await.expect("feed").len(), 2);
+		assert_eq!(store.feed_after("p", 0, i64::MAX, 10).await.expect("feed").len(), 2);
+		assert_eq!(store.feed_after("p", 0, 1, 10).await.expect("bounded feed").len(), 1);
 	}
 
 	#[tokio::test]
@@ -347,7 +349,7 @@ mod postgres_tests {
 			})
 			.await
 			.expect("append");
-		assert_eq!(store.feed_after("p", 0, 10).await.expect("feed").len(), 1);
+		assert_eq!(store.feed_after("p", 0, i64::MAX, 10).await.expect("feed").len(), 1);
 
 		store.index_artifact(&[1u8; 32], "p", &[7u8; 32]).await.expect("index");
 		store.record_download(&[1u8; 32], 100).await.expect("download");

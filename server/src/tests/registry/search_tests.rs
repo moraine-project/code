@@ -35,7 +35,7 @@ async fn ranks_a_name_match_above_a_description_match() {
 			rights: None,
 			declared_time: 1_760_000_000,
 		};
-		let signed = sign_payload(Kind::Profile, &profile, &[&signer]);
+		let signed = sign_payload(Kind::Profile, &profile, &[&signer]).expect("valid signed profile");
 		let digest = object_id(Kind::Profile, &signed.payload_bytes);
 		let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/profile"))
 			.body(Body::from(signed.wire_bytes()))
@@ -53,7 +53,9 @@ async fn ranks_a_name_match_above_a_description_match() {
 			object_digest: digest.to_vec(),
 			declared_at: 1_760_000_000,
 		};
-		let feed = sign_payload(Kind::FeedEntry, &entry, &[&signer]).wire_bytes();
+		let feed = sign_payload(Kind::FeedEntry, &entry, &[&signer])
+			.expect("valid signed feed entry")
+			.wire_bytes();
 		let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
 			.body(Body::from(feed))
 			.expect("request");
@@ -103,7 +105,7 @@ async fn finds_a_project_by_a_phrase_from_its_changelog() {
 		rights: None,
 		declared_time: 1_760_000_000,
 	};
-	let signed_profile = sign_payload(Kind::Profile, &profile, &[&signer]);
+	let signed_profile = sign_payload(Kind::Profile, &profile, &[&signer]).expect("valid signed profile");
 	let profile_digest = object_id(Kind::Profile, &signed_profile.payload_bytes);
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/profile"))
 		.body(Body::from(signed_profile.wire_bytes()))
@@ -121,7 +123,9 @@ async fn finds_a_project_by_a_phrase_from_its_changelog() {
 		object_digest: profile_digest.to_vec(),
 		declared_at: 1_760_000_000,
 	};
-	let feed = sign_payload(Kind::FeedEntry, &entry, &[&signer]).wire_bytes();
+	let feed = sign_payload(Kind::FeedEntry, &entry, &[&signer])
+		.expect("valid signed feed entry")
+		.wire_bytes();
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
 		.body(Body::from(feed))
 		.expect("request");
@@ -144,7 +148,7 @@ async fn finds_a_project_by_a_phrase_from_its_changelog() {
 		}],
 		declared_time: 1_760_000_000,
 	};
-	let signed = sign_payload(Kind::Changelog, &changelog, &[&signer]);
+	let signed = sign_payload(Kind::Changelog, &changelog, &[&signer]).expect("valid signed changelog");
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/changelog"))
 		.body(Body::from(signed.wire_bytes()))
 		.expect("request");

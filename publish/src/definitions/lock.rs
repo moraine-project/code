@@ -6,12 +6,14 @@ use moraine_model::signed::SignedObject;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DefinitionLock {
 	#[serde(default)]
 	pub definition: Vec<LockedDefinition>,
 }
 
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct LockedDefinition {
 	pub kind: String,
 	pub id: String,
@@ -88,4 +90,27 @@ pub fn write_lock(directory: &Path, home: Option<&str>, out: &Path) -> Result<us
 	std::fs::write(out, format!("{header}{text}")).map_err(|error| format!("{}: {error}", out.display()))?;
 	println!("wrote {} definition(s) to {}", lock.definition.len(), out.display());
 	Ok(lock.definition.len())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn rejects_unknown_lock_fields() {
+		let top_level = r#"
+unexpected = true
+[[definition]]
+kind = "game"
+id = "gd:sha256:aa"
+"#;
+		let entry = r#"
+[[definition]]
+kind = "game"
+id = "gd:sha256:aa"
+unexpected = true
+"#;
+		assert!(toml::from_str::<DefinitionLock>(top_level).is_err());
+		assert!(toml::from_str::<DefinitionLock>(entry).is_err());
+	}
 }

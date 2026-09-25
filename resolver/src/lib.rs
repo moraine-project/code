@@ -1,15 +1,16 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use moraine_model::compatibility::{Predicate, PredicateResult, Scheme, Side};
 use moraine_model::dependency::{Dependency, DependencyKind, TargetKind};
 use moraine_model::release::ReleasePayload;
-use moraine_model::version::{OrderingScheme, VersionCatalog};
+use moraine_model::version::VersionCatalog;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct Request {
 	pub game_id: String,
 	pub game_version: String,
+	pub channel: Option<String>,
 	pub loader_id: Option<String>,
 	pub loader_version: Option<String>,
 	pub runtime_id: Option<String>,
@@ -68,22 +69,148 @@ pub struct LockedDependency {
 	pub game_id: String,
 	pub predicate_scheme: String,
 	pub predicate_values: Vec<String>,
+	pub applies_to: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "LockfileWire")]
 pub struct Lockfile {
 	pub lockfile_version: u32,
 	pub trust_policy_version: u32,
 	pub game_id: String,
 	pub game_version: String,
+	#[serde(default)]
+	pub channel: Option<String>,
 	pub loader_id: Option<String>,
 	pub loader_version: Option<String>,
 	pub runtime_id: Option<String>,
 	pub runtime_version: Option<String>,
 	pub side: String,
+	#[serde(default)]
+	pub os: Option<String>,
+	#[serde(default)]
+	pub arch: Option<String>,
 	pub releases: Vec<LockedRelease>,
 	#[serde(default)]
 	pub feeds: Vec<LockedFeed>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LockfileWire {
+	lockfile_version: u32,
+	trust_policy_version: u32,
+	game_id: String,
+	game_version: String,
+	#[serde(default)]
+	channel: Option<String>,
+	loader_id: Option<String>,
+	loader_version: Option<String>,
+	runtime_id: Option<String>,
+	runtime_version: Option<String>,
+	side: String,
+	#[serde(default)]
+	os: Option<String>,
+	#[serde(default)]
+	arch: Option<String>,
+	releases: Vec<LockedRelease>,
+	#[serde(default)]
+	feeds: Vec<LockedFeed>,
+}
+
+impl TryFrom<LockfileWire> for Lockfile {
+	type Error = String;
+
+	fn try_from(value: LockfileWire) -> Result<Self, Self::Error> {
+		let lockfile = Self {
+			lockfile_version: value.lockfile_version,
+			trust_policy_version: value.trust_policy_version,
+			game_id: value.game_id,
+			game_version: value.game_version,
+			channel: value.channel,
+			loader_id: value.loader_id,
+			loader_version: value.loader_version,
+			runtime_id: value.runtime_id,
+			runtime_version: value.runtime_version,
+			side: value.side,
+			os: value.os,
+			arch: value.arch,
+			releases: value.releases,
+			feeds: value.feeds,
+		};
+		lockfile.validate()?;
+		Ok(lockfile)
+	}
+}
+
+impl Lockfile {
+	pub fn validate(&self) -> Result<(), String> {
+		if self.lockfile_version != 1 || self.trust_policy_version != 1 {
+			return Err("unsupported lockfile or trust policy version".to_string());
+		}
+		if self.game_id.is_empty() || self.game_version.is_empty() || Side::parse(&self.side).is_none() {
+			return Err("lockfile request context is incomplete".to_string());
+		}
+		let projects = self
+			.releases
+			.iter()
+			.map(|release| release.project_id.as_str())
+			.collect::<BTreeSet<_>>();
+		if projects.len() != self.releases.len() || projects.contains("") {
+			return Err("lockfile contains a duplicate or empty project".to_string());
+		}
+		for release in &self.releases {
+			if release.project_id.is_empty() || release.release_id.is_empty() || release.human_version.is_empty() {
+				return Err("lockfile contains an incomplete release".to_string());
+			}
+			if release.artifact.filename.is_empty() {
+				return Err("lockfile contains an empty artifact filename".to_string());
+			}
+			let digest = release
+				.artifact
+				.digest
+				.strip_prefix("sha256:")
+				.ok_or_else(|| "lockfile artifact digest must use sha256".to_string())?;
+			if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+				return Err("lockfile artifact digest is malformed".to_string());
+			}
+			for dependency in &release.dependencies {
+				if !matches!(dependency.target_kind.as_str(), "project" | "loader" | "runtime")
+					|| dependency.target_id.is_empty()
+					|| dependency.game_id.is_empty()
+					|| !matches!(dependency.kind.as_str(), "required")
+					|| !matches!(dependency.applies_to.as_str(), "both" | "client" | "server")
+					|| Scheme::parse(&dependency.predicate_scheme).is_none()
+				{
+					return Err("lockfile contains an invalid dependency".to_string());
+				}
+				if dependency.game_id != self.game_id {
+					return Err("lockfile dependency names a different game".to_string());
+				}
+				if dependency.target_kind == "project" && !projects.contains(dependency.target_id.as_str()) {
+					return Err("lockfile dependency names a missing project".to_string());
+				}
+			}
+		}
+		let mut remaining = projects.clone();
+		while !remaining.is_empty() {
+			let ready = self
+				.releases
+				.iter()
+				.find(|release| {
+					remaining.contains(release.project_id.as_str())
+						&& release.dependencies.iter().all(|dependency| {
+							dependency.target_kind != "project" || !remaining.contains(dependency.target_id.as_str())
+						})
+				})
+				.map(|release| release.project_id.as_str());
+			let Some(ready) = ready else {
+				return Err("lockfile dependency graph contains a cycle".to_string());
+			};
+			remaining.remove(ready);
+		}
+		Ok(())
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +242,10 @@ pub enum ResolveError {
 		game_version: String,
 	},
 	TooDeep,
+	InvalidLockfile(String),
+	Cycle {
+		project_id: String,
+	},
 }
 
 impl std::fmt::Display for ResolveError {
@@ -135,6 +266,8 @@ impl std::fmt::Display for ResolveError {
 				"loader `{loader_id}` version `{loader_version}` does not support game version `{game_version}`"
 			),
 			Self::TooDeep => f.write_str("dependency graph is too deep to resolve"),
+			Self::InvalidLockfile(detail) => write!(f, "invalid lockfile: {detail}"),
+			Self::Cycle { project_id } => write!(f, "dependency cycle reaches `{project_id}`"),
 		}
 	}
 }
@@ -164,7 +297,7 @@ pub fn resolve<'a>(request: &Request, context: &Context, candidates: &'a [Candid
 
 	let mut releases = Vec::new();
 	for (project_id, candidate) in &selected {
-		let artifact = primary_artifact(candidate).ok_or_else(|| ResolveError::MissingArtifact {
+		let artifact = primary_artifact(candidate, request).ok_or_else(|| ResolveError::MissingArtifact {
 			project_id: project_id.clone(),
 		})?;
 		releases.push(LockedRelease {
@@ -180,6 +313,9 @@ pub fn resolve<'a>(request: &Request, context: &Context, candidates: &'a [Candid
 				.payload
 				.dependencies
 				.iter()
+				.filter(|dependency| {
+					applies_to_side(dependency, request.side) && matches!(dependency.kind, DependencyKind::Required)
+				})
 				.map(|dependency| LockedDependency {
 					target_kind: dependency.target_kind.as_str().to_string(),
 					target_id: dependency.target_id.clone(),
@@ -187,25 +323,32 @@ pub fn resolve<'a>(request: &Request, context: &Context, candidates: &'a [Candid
 					game_id: dependency.game_id.clone(),
 					predicate_scheme: dependency.predicate.scheme.clone(),
 					predicate_values: dependency.predicate.values.clone(),
+					applies_to: dependency.applies_to.as_str().to_string(),
 				})
 				.collect(),
 		});
 	}
 	releases.sort_by(|a, b| a.project_id.cmp(&b.project_id));
+	sort_install_order(&mut releases);
 
-	Ok(Lockfile {
+	let lockfile = Lockfile {
 		lockfile_version: 1,
 		trust_policy_version: 1,
 		game_id: request.game_id.clone(),
 		game_version: request.game_version.clone(),
+		channel: request.channel.clone(),
 		loader_id: request.loader_id.clone(),
 		loader_version: request.loader_version.clone(),
 		runtime_id: request.runtime_id.clone(),
 		runtime_version: request.runtime_version.clone(),
 		side: request.side.as_str().to_string(),
+		os: request.os.clone(),
+		arch: request.arch.clone(),
 		releases,
 		feeds: Vec::new(),
-	})
+	};
+	lockfile.validate().map_err(ResolveError::InvalidLockfile)?;
+	Ok(lockfile)
 }
 
 fn check_loader_support(request: &Request, context: &Context) -> Result<(), ResolveError> {
@@ -251,20 +394,52 @@ fn solve<'a>(
 	mut queue: Vec<(String, Predicate)>,
 	selected: &mut BTreeMap<String, &'a Candidate>,
 ) -> Result<(), ResolveError> {
-	if queue.is_empty() {
-		return Ok(());
+	let mut trail = Vec::new();
+	while let Some((project_id, predicate)) = queue.first().cloned() {
+		queue.remove(0);
+		let checkpoint = trail.len();
+		if let Err(error) = ensure_project(
+			request,
+			context,
+			by_project,
+			&project_id,
+			&predicate,
+			BTreeSet::new(),
+			selected,
+			&mut trail,
+		) {
+			rollback(&mut trail, checkpoint, selected);
+			return Err(error);
+		}
 	}
-	if selected.len() > MAX_DEPTH {
+	Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ensure_project<'a>(
+	request: &Request,
+	context: &Context,
+	by_project: &BTreeMap<&'a str, Vec<&'a Candidate>>,
+	project_id: &str,
+	predicate: &Predicate,
+	ancestors: BTreeSet<String>,
+	selected: &mut BTreeMap<String, &'a Candidate>,
+	trail: &mut Vec<String>,
+) -> Result<(), ResolveError> {
+	if ancestors.len() > MAX_DEPTH || selected.len() > MAX_DEPTH {
 		return Err(ResolveError::TooDeep);
 	}
-	let (project_id, predicate) = queue.remove(0);
-
-	if let Some(existing) = selected.get(&project_id) {
-		if satisfies(&predicate, &existing.human_version) {
-			return solve(request, context, by_project, queue, selected);
+	if ancestors.contains(project_id) {
+		return Err(ResolveError::Cycle {
+			project_id: project_id.to_string(),
+		});
+	}
+	if let Some(existing) = selected.get(project_id) {
+		if satisfies_catalog(predicate, &existing.human_version, Some(&context.game)) {
+			return Ok(());
 		}
 		return Err(ResolveError::Conflict {
-			project_id,
+			project_id: project_id.to_string(),
 			detail: format!(
 				"selected {} does not satisfy an additional constraint",
 				existing.human_version
@@ -272,35 +447,66 @@ fn solve<'a>(
 		});
 	}
 
-	let candidates = by_project.get(project_id.as_str()).cloned().unwrap_or_default();
+	let candidates = by_project.get(project_id).cloned().unwrap_or_default();
+	let mut last_error = None;
 	for candidate in candidates {
 		if !compatible(request, context, candidate) {
 			continue;
 		}
-		if !satisfies(&predicate, &candidate.human_version) {
+		if !satisfies_catalog(predicate, &candidate.human_version, Some(&context.game)) {
 			continue;
 		}
 		let mut dependencies = Vec::new();
-		if collect_dependencies(request, context, candidate, &mut dependencies).is_err() {
+		if let Err(error) = collect_dependencies(request, context, candidate, &mut dependencies) {
+			last_error = Some(error);
 			continue;
 		}
+		let checkpoint = trail.len();
+		let inserted = !selected.contains_key(project_id);
+		if inserted {
+			trail.push(project_id.to_string());
+		}
+		selected.insert(project_id.to_string(), candidate);
+		let mut next_ancestors = ancestors.clone();
+		next_ancestors.insert(project_id.to_string());
+		let result = dependencies.iter().try_for_each(|(target, constraint)| {
+			ensure_project(
+				request,
+				context,
+				by_project,
+				target,
+				constraint,
+				next_ancestors.clone(),
+				selected,
+				trail,
+			)
+		});
+		if result.is_ok() {
+			return Ok(());
+		}
+		let error = result.unwrap_err();
+		rollback(trail, checkpoint, selected);
+		if inserted {
+			selected.remove(project_id);
+		}
+		last_error = Some(error);
+	}
+	if let Some(error) = last_error {
+		Err(error)
+	} else {
+		Err(ResolveError::NoCandidate {
+			project_id: project_id.to_string(),
+			detail: "no release matches the request, the predicate, and its dependencies".to_string(),
+		})
+	}
+}
 
-		selected.insert(project_id.clone(), candidate);
-		let mut next = dependencies;
-		next.extend(queue.clone());
-		match solve(request, context, by_project, next, selected) {
-			Ok(()) => return Ok(()),
-			Err(ResolveError::Conflict { .. } | ResolveError::NoCandidate { .. }) => {
-				selected.remove(&project_id);
-			}
-			Err(error) => return Err(error),
+fn rollback(trail: &mut Vec<String>, checkpoint: usize, selected: &mut BTreeMap<String, &Candidate>) {
+	while trail.len() > checkpoint {
+		if let Some(project_id) = trail.pop() {
+			selected.remove(&project_id);
 		}
 	}
-
-	Err(ResolveError::NoCandidate {
-		project_id,
-		detail: "no release matches the request, the predicate, and its dependencies".to_string(),
-	})
 }
 
 fn collect_dependencies(
@@ -323,14 +529,14 @@ fn collect_dependencies(
 			}
 			DependencyKind::Optional | DependencyKind::Embedded | DependencyKind::Recommended => continue,
 		}
+		if dependency.game_id != request.game_id {
+			return Err(ResolveError::CrossGame {
+				project_id: dependency.target_id.clone(),
+				game_id: dependency.game_id.clone(),
+			});
+		}
 		match dependency.target_kind {
 			TargetKind::Project => {
-				if dependency.game_id != request.game_id {
-					return Err(ResolveError::CrossGame {
-						project_id: dependency.target_id.clone(),
-						game_id: dependency.game_id.clone(),
-					});
-				}
 				out.push((dependency.target_id.clone(), dependency.predicate.clone()));
 			}
 			TargetKind::Loader | TargetKind::Runtime => {
@@ -371,6 +577,10 @@ fn context_dependency_satisfied(request: &Request, context: &Context, dependency
 
 fn compatible(request: &Request, context: &Context, candidate: &Candidate) -> bool {
 	candidate.payload.game_id == request.game_id
+		&& request
+			.channel
+			.as_ref()
+			.is_none_or(|channel| &candidate.payload.channel == channel)
 		&& candidate.payload.compatibility.iter().any(|entry| {
 			let game_ok = satisfies_catalog(&entry.game_version_predicate, &request.game_version, Some(&context.game));
 			let side_ok = entry.side == Side::Both || entry.side == request.side;
@@ -396,13 +606,14 @@ fn compatible(request: &Request, context: &Context, candidate: &Candidate) -> bo
 				&& platform_matches(entry.arch_predicate.as_deref(), request.arch.as_deref());
 			game_ok && side_ok && loader_ok && runtime_ok && platform_ok
 		}) && entry_side_supported(candidate, request.side)
+		&& primary_artifact(candidate, request).is_some()
 }
 
 fn platform_matches(predicate: Option<&[String]>, wanted: Option<&str>) -> bool {
-	let (Some(predicate), Some(wanted)) = (predicate, wanted) else {
+	let Some(predicate) = predicate else {
 		return true;
 	};
-	predicate.iter().any(|value| value == "any" || value == wanted)
+	predicate.iter().any(|value| value == "any" || wanted == Some(value.as_str()))
 }
 
 fn entry_side_supported(candidate: &Candidate, side: Side) -> bool {
@@ -417,17 +628,12 @@ fn applies_to_side(dependency: &Dependency, side: Side) -> bool {
 	dependency.applies_to == Side::Both || dependency.applies_to == side
 }
 
-fn satisfies(predicate: &Predicate, version: &str) -> bool {
-	satisfies_catalog(predicate, version, None)
-}
-
 fn satisfies_catalog(predicate: &Predicate, version: &str, catalog: Option<&VersionCatalog>) -> bool {
 	match predicate.scheme() {
 		Some(Scheme::Any) => true,
 		Some(Scheme::Exact) | Some(Scheme::Set) => predicate.values.iter().any(|candidate| candidate == version),
 		Some(Scheme::Semver) => {
-			let catalog = VersionCatalog::new(OrderingScheme::Semver, Vec::new());
-			catalog.evaluate(predicate, version) == PredicateResult::Satisfied
+			catalog.is_some_and(|catalog| catalog.evaluate(predicate, version) == PredicateResult::Satisfied)
 		}
 		Some(Scheme::OrderedList) | Some(Scheme::Calendar) => {
 			catalog.is_some_and(|catalog| catalog.evaluate(predicate, version) == PredicateResult::Satisfied)
@@ -436,17 +642,36 @@ fn satisfies_catalog(predicate: &Predicate, version: &str, catalog: Option<&Vers
 	}
 }
 
-fn primary_artifact(candidate: &Candidate) -> Option<&moraine_model::artifact::Artifact> {
-	candidate
-		.payload
-		.artifacts
-		.iter()
-		.find(|artifact| artifact.is_primary)
-		.or_else(|| candidate.payload.artifacts.first())
+fn sort_install_order(releases: &mut Vec<LockedRelease>) {
+	let mut ordered: Vec<LockedRelease> = Vec::with_capacity(releases.len());
+	while !releases.is_empty() {
+		let position = releases.iter().position(|release| {
+			release.dependencies.iter().all(|dependency| {
+				dependency.target_kind != "project"
+					|| ordered.iter().any(|installed| installed.project_id == dependency.target_id)
+			})
+		});
+		let position = position.unwrap_or(0);
+		ordered.push(releases.remove(position));
+	}
+	*releases = ordered;
+}
+
+fn primary_artifact<'a>(candidate: &'a Candidate, request: &Request) -> Option<&'a moraine_model::artifact::Artifact> {
+	let mut matches = candidate.payload.artifacts.iter().filter(|artifact| {
+		artifact.is_primary
+			&& platform_matches(artifact.os_predicate.as_deref(), request.os.as_deref())
+			&& platform_matches(artifact.arch_predicate.as_deref(), request.arch.as_deref())
+	});
+	let artifact = matches.next()?;
+	if matches.next().is_some() {
+		return None;
+	}
+	Some(artifact)
 }
 
 fn compare_versions(catalog: &VersionCatalog, a: &str, b: &str) -> std::cmp::Ordering {
-	catalog.compare(a, b).unwrap_or_else(|| a.cmp(b))
+	catalog.compare(a, b).unwrap_or(std::cmp::Ordering::Equal)
 }
 
 #[cfg(test)]
@@ -455,6 +680,7 @@ mod tests {
 	use moraine_model::compatibility::Compatibility;
 	use moraine_model::dependency::{Dependency, DependencyKind, TargetKind};
 	use moraine_model::release::ReleasePayload;
+	use moraine_model::version::OrderingScheme;
 
 	use super::*;
 
@@ -517,6 +743,7 @@ mod tests {
 		Request {
 			game_id: "gd:sha256:game".to_string(),
 			game_version: "1.20.1".to_string(),
+			channel: None,
 			loader_id: None,
 			loader_version: None,
 			runtime_id: None,
@@ -620,6 +847,44 @@ mod tests {
 	}
 
 	#[test]
+	fn filters_by_requested_channel() {
+		let mut release = candidate("root", "1.0.0", Vec::new());
+		release.payload.channel = "beta".to_string();
+		let mut request = request();
+		request.channel = Some("release".to_string());
+		assert!(resolve(&request, &context(), &[release]).is_err());
+	}
+
+	#[test]
+	fn selects_a_primary_artifact_for_the_requested_platform() {
+		let mut release = candidate("root", "1.0.0", Vec::new());
+		release.payload.artifacts = vec![
+			Artifact {
+				digest: vec![0x11; 32],
+				size: 10,
+				media_type: "application/java-archive".to_string(),
+				filename: "windows.jar".to_string(),
+				is_primary: true,
+				os_predicate: Some(vec!["windows".to_string()]),
+				arch_predicate: None,
+			},
+			Artifact {
+				digest: vec![0x22; 32],
+				size: 10,
+				media_type: "application/java-archive".to_string(),
+				filename: "linux.jar".to_string(),
+				is_primary: true,
+				os_predicate: Some(vec!["linux".to_string()]),
+				arch_predicate: None,
+			},
+		];
+		let mut request = request();
+		request.os = Some("linux".to_string());
+		let lock = resolve(&request, &context(), &[release]).expect("resolves");
+		assert_eq!(lock.releases[0].artifact.digest, format!("sha256:{}", "22".repeat(32)));
+	}
+
+	#[test]
 	fn resolves_a_required_dependency_chain() {
 		let candidates = vec![
 			candidate(
@@ -632,6 +897,7 @@ mod tests {
 		];
 		let lock = resolve(&request(), &context(), &candidates).expect("resolves");
 		assert_eq!(lock.releases.len(), 2);
+		assert_eq!(lock.releases[0].project_id, "lib");
 		let lib = lock.releases.iter().find(|release| release.project_id == "lib").expect("lib");
 		assert_eq!(lib.human_version, "2.0.0");
 	}
@@ -651,13 +917,13 @@ mod tests {
 	}
 
 	#[test]
-	fn resolves_a_mutual_dependency() {
+	fn refuses_a_mutual_dependency_cycle() {
 		let candidates = vec![
 			candidate("root", "1.0.0", vec![require("a", Predicate::new(Scheme::Any, Vec::new()))]),
 			candidate("a", "1.0.0", vec![require("root", Predicate::new(Scheme::Any, Vec::new()))]),
 		];
-		let lock = resolve(&request(), &context(), &candidates).expect("a shared dependency is not a cycle");
-		assert_eq!(lock.releases.len(), 2);
+		let error = resolve(&request(), &context(), &candidates).expect_err("a dependency cycle is invalid");
+		assert!(matches!(error, ResolveError::Cycle { .. }), "{error}");
 	}
 
 	#[test]
@@ -693,18 +959,37 @@ mod tests {
 	}
 
 	#[test]
+	fn refuses_a_platform_specific_compatibility_when_the_request_omits_the_platform() {
+		let mut release = candidate("root", "1.0.0", Vec::new());
+		release.payload.compatibility[0].os_predicate = Some(vec!["windows".to_string()]);
+		assert!(resolve(&request(), &context(), &[release]).is_err());
+	}
+
+	#[test]
+	fn refuses_a_platform_specific_artifact_when_the_request_omits_the_platform() {
+		let mut release = candidate("root", "1.0.0", Vec::new());
+		release.payload.artifacts[0].os_predicate = Some(vec!["windows".to_string()]);
+		assert!(resolve(&request(), &context(), &[release]).is_err());
+	}
+
+	#[test]
 	fn orders_candidates_with_the_games_declared_scheme() {
 		let mut context = context();
 		context.game = VersionCatalog::new(
 			OrderingScheme::OrderedList,
 			vec!["1.0".to_string(), "1.2".to_string(), "1.10".to_string()],
 		);
-		let candidates = vec![
+		let mut candidates = vec![
 			candidate("root", "1.0", Vec::new()),
 			candidate("root", "1.10", Vec::new()),
 			candidate("root", "1.2", Vec::new()),
 		];
-		let lock = resolve(&request(), &context, &candidates).expect("resolves");
+		for candidate in &mut candidates {
+			candidate.payload.compatibility[0].game_version_predicate = Predicate::new(Scheme::Any, Vec::new());
+		}
+		let mut request = request();
+		request.game_version = "1.10".to_string();
+		let lock = resolve(&request, &context, &candidates).expect("resolves");
 		assert_eq!(
 			lock.releases[0].human_version, "1.10",
 			"an ordered-list game must not be sorted as semver"
@@ -724,6 +1009,23 @@ mod tests {
 		let mut ids: Vec<&str> = lock.releases.iter().map(|release| release.project_id.as_str()).collect();
 		ids.sort_unstable();
 		assert_eq!(ids, vec!["left", "right", "root", "shared"]);
+	}
+
+	#[test]
+	fn deserializing_a_lockfile_runs_validation() {
+		let value = serde_json::json!({
+			"lockfile_version": 1,
+			"trust_policy_version": 1,
+			"game_id": "gd:sha256:game",
+			"game_version": "1.0.0",
+			"loader_id": null,
+			"loader_version": null,
+			"runtime_id": null,
+			"runtime_version": null,
+			"side": "sideways",
+			"releases": []
+		});
+		assert!(serde_json::from_value::<Lockfile>(value).is_err());
 	}
 
 	#[test]

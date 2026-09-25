@@ -400,6 +400,7 @@ pub fn request_for(
 	Ok(Request {
 		game_id: game_id.to_string(),
 		game_version: game_version.to_string(),
+		channel: None,
 		loader_id: loader.as_ref().map(|(id, _)| id.clone()),
 		loader_version: loader.as_ref().and_then(|(_, version)| version.clone()),
 		runtime_id: runtime.as_ref().map(|(id, _)| id.clone()),
@@ -454,13 +455,12 @@ mod tests {
 				"feed-entry".to_string(),
 				"delegation".to_string(),
 				"profile".to_string(),
-				"advisory".to_string(),
 			],
 			home_hint: None,
 			contacts: None,
 			created_at: 1_760_000_000,
 		};
-		let genesis_signed = sign_payload(ObjectKind::Genesis, &genesis, &[&signer]);
+		let genesis_signed = sign_payload(ObjectKind::Genesis, &genesis, &[&signer]).expect("valid signed genesis");
 		let genesis_id = genesis_signed.id(ObjectKind::Genesis);
 
 		let release = ReleasePayload {
@@ -501,7 +501,7 @@ mod tests {
 		};
 		let intruder = SigningKey::from_seed(&[8u8; 32]);
 		let release_signer = if forged { &intruder } else { &signer };
-		let release_signed = sign_payload(ObjectKind::Release, &release, &[release_signer]);
+		let release_signed = sign_payload(ObjectKind::Release, &release, &[release_signer]).expect("valid signed release");
 		let release_id = release_signed.id(ObjectKind::Release);
 
 		let entry = FeedEntry {
@@ -513,7 +513,7 @@ mod tests {
 			object_digest: object_id(ObjectKind::Release, &release_signed.payload_bytes).to_vec(),
 			declared_at: 1_760_000_000,
 		};
-		let entry_signed = sign_payload(ObjectKind::FeedEntry, &entry, &[&signer]);
+		let entry_signed = sign_payload(ObjectKind::FeedEntry, &entry, &[&signer]).expect("valid signed feed entry");
 		let entry_id = entry_signed.id(ObjectKind::FeedEntry);
 
 		let mut home = MemoryHome {
@@ -600,7 +600,7 @@ mod tests {
 			contacts: None,
 			created_at: 1_760_000_000,
 		};
-		let genesis_signed = sign_payload(ObjectKind::Genesis, &genesis, &[&signer]);
+		let genesis_signed = sign_payload(ObjectKind::Genesis, &genesis, &[&signer]).expect("valid signed genesis");
 		let game_id = genesis_signed.id(ObjectKind::Genesis);
 
 		let definition = GameDef {
@@ -628,7 +628,7 @@ mod tests {
 			install_adapter: Some("minecraft/default".to_string()),
 			declared_time: 1_760_000_000,
 		};
-		let definition_signed = sign_payload(ObjectKind::GameDef, &definition, &[&signer]);
+		let definition_signed = sign_payload(ObjectKind::GameDef, &definition, &[&signer]).expect("valid signed definition");
 		let definition_id = definition_signed.id(ObjectKind::GameDef);
 
 		let mut home = MemoryHome {

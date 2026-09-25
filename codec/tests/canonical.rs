@@ -133,6 +133,30 @@ fn round_trips_the_whole_signed_integer_range() {
 }
 
 #[test]
+fn round_trips_i64_min() {
+	let value = Value::Integer(i64::MIN);
+	let bytes = encode(&value).unwrap();
+	assert_eq!(hex(&bytes), "3b7fffffffffffffff");
+	assert_eq!(decode(&bytes), Ok(value));
+}
+
+#[test]
+fn decodes_the_i64_min_magnitude_boundary() {
+	assert_eq!(
+		decode(&[0x3b, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+		Ok(Value::Integer(i64::MIN))
+	);
+}
+
+#[test]
+fn rejects_an_integer_above_the_i64_boundary() {
+	assert_eq!(
+		decode(&[0x3b, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]),
+		Err(CodecError::IntegerOutOfRange)
+	);
+}
+
+#[test]
 fn rejects_a_non_canonical_integer_width() {
 	assert_eq!(decode(&[0x18, 0x01]), Err(CodecError::NonMinimalInteger));
 	assert_eq!(decode(&[0x38, 0x01]), Err(CodecError::NonMinimalInteger));

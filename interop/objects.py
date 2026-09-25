@@ -37,6 +37,20 @@ GENESIS_KINDS = {
     "loader": ["delegation", "loader-def"],
     "runtime": ["delegation", "runtime-def"],
 }
+GENESIS_AUTHORITY = {
+    "project": {
+        "delegation",
+        "release",
+        "profile",
+        "feed-entry",
+        "changelog",
+        "modpack",
+        "attestation",
+    },
+    "game": {"delegation", "game-def"},
+    "loader": {"delegation", "loader-def"},
+    "runtime": {"delegation", "runtime-def"},
+}
 DELEGATION_PURPOSES = {"key", "ownership-transfer", "migration", "recovery"}
 SEVERITIES = {"info", "low", "moderate", "high", "critical"}
 CATEGORIES = {
@@ -98,15 +112,16 @@ def parse_genesis(value):
         if fields.optional("contacts") is not None
         else None
     )
+    authorized_kinds = text_array(
+        fields.required("authorized_kinds"), "authorized_kinds"
+    )
     genesis = {
         "protocol": u32(fields.required("protocol"), "protocol"),
         "kind": kind,
         "nonce": blob(fields.required("nonce"), "nonce"),
         "roots": roots,
         "threshold": u32(fields.required("threshold"), "threshold"),
-        "authorized_kinds": text_array(
-            fields.required("authorized_kinds"), "authorized_kinds"
-        ),
+        "authorized_kinds": authorized_kinds,
         "home_hint": text(fields.optional("home_hint"), "home_hint")
         if fields.optional("home_hint") is not None
         else None,
@@ -138,6 +153,13 @@ def validate_genesis(genesis):
         raise Reject(
             "invalid-field-value", "threshold must be between 1 and the number of roots"
         )
+    authorized = genesis["authorized_kinds"]
+    if len(set(authorized)) != len(authorized):
+        raise Reject("invalid-field-value", "authorized_kinds")
+    allowed = GENESIS_AUTHORITY[genesis["kind"]]
+    for item in authorized:
+        if item not in allowed:
+            raise Reject("unauthorized-kind", f"{genesis['kind']} genesis cannot authorize {item}")
     for required in GENESIS_KINDS[genesis["kind"]]:
         if required not in genesis["authorized_kinds"]:
             raise Reject("genesis-kind-requirement", f"missing {required}")
@@ -154,8 +176,7 @@ def parse_delegation(value):
     if purpose == "key":
         return ("key", key_delegation(value))
     if purpose == "ownership-transfer":
-        ownership_transfer(value)
-        return ("ownership-transfer", {})
+        return ("ownership-transfer", ownership_transfer(value))
     if purpose == "migration":
         migration(value)
         return ("migration", {})
@@ -210,12 +231,13 @@ def key_delegation(value):
 
 
 def owner_ref(value):
-    fields = Fields("OwnerRef", value).known(["kind", "id"])
+    fields = Fields("OwnerRef", value).known(["kind", "id", "key_id"])
     kind = one_of(fields.required("kind"), "kind", {"user", "org"})
     owner = text(fields.required("id"), "id")
+    key_id = key_id32(fields.required("key_id"), "key_id")
     if owner == "":
         raise Reject("invalid-field-value", "id")
-    return (kind, owner)
+    return (kind, owner, key_id)
 
 
 def ownership_transfer(value):
@@ -233,7 +255,7 @@ def ownership_transfer(value):
     if text(fields.required("purpose"), "purpose") != "ownership-transfer":
         raise Reject("invalid-field-value", "purpose")
     protocol = u32(fields.required("protocol"), "protocol")
-    text(fields.required("project_id"), "project_id")
+    project_id = text(fields.required("project_id"), "project_id")
     from_owner = owner_ref(fields.required("from_owner"))
     to_owner = owner_ref(fields.required("to_owner"))
     i64(fields.required("issued_at"), "issued_at")
@@ -243,8 +265,13 @@ def ownership_transfer(value):
         )
     if protocol != 1:
         raise Reject("invalid-field-value", "protocol")
+    if project_id == "":
+        raise Reject("invalid-field-value", "project_id")
     if from_owner == to_owner:
         raise Reject("invalid-field-value", "to_owner")
+    if from_owner[2] == to_owner[2]:
+        raise Reject("invalid-field-value", "to_owner")
+    return {"from_key_id": from_owner[2], "to_key_id": to_owner[2]}
 
 
 def migration(value):
@@ -438,12 +465,14 @@ def location_record(value):
 
 def withdrawal(value):
     fields = Fields("Withdrawal", value).known(
-        ["protocol", "type", "release_id", "reason", "note", "declared_time"]
+        ["protocol", "type", "project_id", "release_id", "reason", "note", "declared_time"]
     )
     expect_type(fields, "withdrawal")
     protocol = u32(fields.required("protocol"), "protocol")
     if text(fields.required("release_id"), "release_id") == "":
         raise Reject("invalid-field-value", "release_id")
+    if text(fields.required("project_id"), "project_id") == "":
+        raise Reject("invalid-field-value", "project_id")
     one_of(fields.required("reason"), "reason", WITHDRAWAL_REASONS)
     if fields.optional("note") is not None:
         text(fields.optional("note"), "note")

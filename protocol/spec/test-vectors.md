@@ -31,8 +31,9 @@ Fields beyond the minimum, all optional:
 - `trust` — the keys and threshold used to check signatures.
   - `roots` — trusted Ed25519 public keys, hex.
   - `threshold` — how many must sign.
-  - `authorized_kinds` — the closed kind set a delegation may grant. Empty
-    means every kind.
+  - `authorized_kinds` — the closed capability set for the project root. When
+    omitted, the project authority matrix is used; an empty list does not grant
+    every kind.
   - `profile_roots` — keys holding an explicit profile delegation. A profile
     signed by a root key that is not here is rejected as `profile-authority`.
   - `delegated_keys` — keys with some delegation but no profile delegation,

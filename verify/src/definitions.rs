@@ -1,5 +1,6 @@
 use moraine_codec::Value;
 use moraine_crypto::ObjectKind;
+use moraine_model::Canonical;
 use moraine_model::compatibility::{Predicate, Scheme};
 use moraine_model::definition::{
 	Category, DeclaredBy, GameDef, LoaderAcceptance, LoaderDef, LoaderObject, LoaderRelease, Qualification, RuntimeDef, Tag,
@@ -142,7 +143,7 @@ fn acceptance_value(qualification: &str) -> Value {
 	])
 }
 
-pub(crate) fn vectors() -> Vec<Vector> {
+pub(crate) fn vectors() -> Result<Vec<Vector>, String> {
 	let k1 = signer(1);
 	let k2 = signer(2);
 	let mut vectors = Vec::with_capacity(64);
@@ -298,7 +299,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	));
 
 	let game = build_game_def("semver", vec![category("utility"), category("qol")]);
-	let signed_game = sign_payload(ObjectKind::GameDef, &game, &[&k1]);
+	let signed_game = sign_payload(ObjectKind::GameDef, &game, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"game-def-valid",
 		"definitions",
@@ -310,31 +311,35 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	));
 
 	let bad_ordering = build_game_def("lexicographic", vec![category("utility")]);
-	let signed_bad_ordering = sign_payload(ObjectKind::GameDef, &bad_ordering, &[&k1]);
-	vectors.push(object_vector(
+	vectors.push(raw_vector(
 		"game-def-unknown-ordering",
 		"definitions",
 		ObjectKind::GameDef,
-		&signed_bad_ordering,
-		"reject",
-		Some("invalid-field-value"),
+		bad_ordering.to_value(),
+		&[&k1],
+		Outcome {
+			verdict: "reject",
+			reason: Some("invalid-field-value"),
+		},
 		Some(trust(&[&k1], 1)),
 	));
 
 	let duplicate = build_game_def("semver", vec![category("utility"), category("utility")]);
-	let signed_duplicate = sign_payload(ObjectKind::GameDef, &duplicate, &[&k1]);
-	vectors.push(object_vector(
+	vectors.push(raw_vector(
 		"game-def-duplicate-category",
 		"definitions",
 		ObjectKind::GameDef,
-		&signed_duplicate,
-		"reject",
-		Some("invalid-field-value"),
+		duplicate.to_value(),
+		&[&k1],
+		Outcome {
+			verdict: "reject",
+			reason: Some("invalid-field-value"),
+		},
 		Some(trust(&[&k1], 1)),
 	));
 
 	let runtime = build_runtime_def();
-	let signed_runtime = sign_payload(ObjectKind::RuntimeDef, &runtime, &[&k1]);
+	let signed_runtime = sign_payload(ObjectKind::RuntimeDef, &runtime, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"runtime-def-valid",
 		"definitions",
@@ -347,7 +352,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 
 	let mut catalog_game = build_game_def("ordered-list", vec![category("utility")]);
 	catalog_game.version_catalog = vec!["1.0".to_string(), "1.1".to_string(), "1.2".to_string()];
-	let signed_catalog_game = sign_payload(ObjectKind::GameDef, &catalog_game, &[&k1]);
+	let signed_catalog_game = sign_payload(ObjectKind::GameDef, &catalog_game, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"game-def-version-catalog",
 		"definitions",
@@ -360,33 +365,38 @@ pub(crate) fn vectors() -> Vec<Vector> {
 
 	let mut duplicate_catalog = build_game_def("ordered-list", vec![category("utility")]);
 	duplicate_catalog.version_catalog = vec!["1.0".to_string(), "1.0".to_string()];
-	let signed_duplicate_catalog = sign_payload(ObjectKind::GameDef, &duplicate_catalog, &[&k1]);
-	vectors.push(object_vector(
+	vectors.push(raw_vector(
 		"game-def-duplicate-version-catalog",
 		"definitions",
 		ObjectKind::GameDef,
-		&signed_duplicate_catalog,
-		"reject",
-		Some("invalid-field-value"),
+		duplicate_catalog.to_value(),
+		&[&k1],
+		Outcome {
+			verdict: "reject",
+			reason: Some("invalid-field-value"),
+		},
 		Some(trust(&[&k1], 1)),
 	));
 
 	let mut empty_catalog = build_game_def("ordered-list", vec![category("utility")]);
 	empty_catalog.version_catalog = vec![String::new()];
-	let signed_empty_catalog = sign_payload(ObjectKind::GameDef, &empty_catalog, &[&k1]);
-	vectors.push(object_vector(
+	vectors.push(raw_vector(
 		"game-def-empty-version-catalog-entry",
 		"definitions",
 		ObjectKind::GameDef,
-		&signed_empty_catalog,
-		"reject",
-		Some("invalid-field-value"),
+		empty_catalog.to_value(),
+		&[&k1],
+		Outcome {
+			verdict: "reject",
+			reason: Some("invalid-field-value"),
+		},
 		Some(trust(&[&k1], 1)),
 	));
 
 	let mut catalog_runtime = build_runtime_def();
 	catalog_runtime.version_catalog = vec!["17".to_string(), "21".to_string()];
-	let signed_catalog_runtime = sign_payload(ObjectKind::RuntimeDef, &catalog_runtime, &[&k1]);
+	let signed_catalog_runtime =
+		sign_payload(ObjectKind::RuntimeDef, &catalog_runtime, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"runtime-def-version-catalog",
 		"definitions",
@@ -398,7 +408,8 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	));
 
 	let loader = build_loader_def();
-	let signed_loader = sign_payload(ObjectKind::LoaderDef, &LoaderObject::Definition(loader), &[&k1]);
+	let signed_loader =
+		sign_payload(ObjectKind::LoaderDef, &LoaderObject::Definition(loader), &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"loader-def-valid",
 		"definitions",
@@ -412,7 +423,8 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	let mut catalog_loader = build_loader_def();
 	catalog_loader.version_catalog = vec!["0.15.0".to_string(), "0.16.0".to_string()];
 	catalog_loader.game_versions = Some(Predicate::new(Scheme::Semver, vec![">=1.20.1".to_string()]));
-	let signed_catalog_loader = sign_payload(ObjectKind::LoaderDef, &LoaderObject::Definition(catalog_loader), &[&k1]);
+	let signed_catalog_loader = sign_payload(ObjectKind::LoaderDef, &LoaderObject::Definition(catalog_loader), &[&k1])
+		.map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"loader-def-version-catalog-and-game-versions",
 		"definitions",
@@ -425,23 +437,22 @@ pub(crate) fn vectors() -> Vec<Vector> {
 
 	let mut duplicate_loader_catalog = build_loader_def();
 	duplicate_loader_catalog.version_catalog = vec!["0.15.0".to_string(), "0.15.0".to_string()];
-	let signed_duplicate_loader_catalog = sign_payload(
-		ObjectKind::LoaderDef,
-		&LoaderObject::Definition(duplicate_loader_catalog),
-		&[&k1],
-	);
-	vectors.push(object_vector(
+	vectors.push(raw_vector(
 		"loader-def-duplicate-version-catalog",
 		"definitions",
 		ObjectKind::LoaderDef,
-		&signed_duplicate_loader_catalog,
-		"reject",
-		Some("invalid-field-value"),
+		LoaderObject::Definition(duplicate_loader_catalog).to_value(),
+		&[&k1],
+		Outcome {
+			verdict: "reject",
+			reason: Some("invalid-field-value"),
+		},
 		Some(trust(&[&k1], 1)),
 	));
 
 	let release = build_loader_release();
-	let signed_release = sign_payload(ObjectKind::LoaderDef, &LoaderObject::Release(release), &[&k1]);
+	let signed_release =
+		sign_payload(ObjectKind::LoaderDef, &LoaderObject::Release(release), &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"loader-release-valid",
 		"definitions",
@@ -453,7 +464,8 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	));
 
 	let acceptance = build_loader_acceptance();
-	let signed_acceptance = sign_payload(ObjectKind::LoaderDef, &LoaderObject::Acceptance(acceptance), &[&k1]);
+	let signed_acceptance = sign_payload(ObjectKind::LoaderDef, &LoaderObject::Acceptance(acceptance), &[&k1])
+		.map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"loader-acceptance-directional",
 		"loader-acceptance",
@@ -521,7 +533,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 		Some(trust(&[&k1], 1)),
 	));
 
-	let signed_by_delegated = sign_payload(ObjectKind::GameDef, &game, &[&k2]);
+	let signed_by_delegated = sign_payload(ObjectKind::GameDef, &game, &[&k2]).map_err(|error| error.to_string())?;
 	let mut delegated_trust = trust(&[&k1], 1);
 	delegated_trust.delegated_keys = vec![public_hex(&k2)];
 	vectors.push(object_vector(
@@ -534,5 +546,5 @@ pub(crate) fn vectors() -> Vec<Vector> {
 		Some(delegated_trust),
 	));
 
-	vectors
+	Ok(vectors)
 }

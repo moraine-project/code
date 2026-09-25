@@ -459,10 +459,12 @@ names an adapter does not execute it. One adapter ships,
 name from the definition and refuses an adapter this build does not implement
 rather than placing files somewhere plausible-looking.
 
-A definition is signed by the operator who authors it, so this repository ships
-no pre-signed seed. A shipped definition would need a shipped private key, and
-a game definition's `loader_authorities` would then name an identity nobody
-else can extend. Author your own once and reuse the key.
+The repository ships a compiled canonical definition set under
+`definitions/canonical/`; the private authority key is intentionally not
+shipped. Import those signed objects or obtain the same signed genesis from a
+home you trust when instances must share IDs. Recompiling the TOML with a
+different key creates a different identity, and there is no recovery path for
+the missing authority key.
 
 Because identity is the genesis digest, two instances that each compile this
 directory get *different* game IDs, and releases published against one will not
@@ -502,15 +504,14 @@ cargo run -p moraine-publish -- define-loader-acceptance --key cleanroom.key \
   --qualification most --out data/definitions
 ```
 
-`publish` and `submit` take `--kind` and default to `release-published`. The
-key is your project's root. Keep it safe: losing it means losing the project
-identity. `init` signs a fresh project and authorizes the object kinds it may
-publish, `upload` stores the artifact bytes at the home, `release` signs and
-stores a release object, `profile` signs and stores display metadata,
-`changelog` signs release notes, and `publish` appends the feed entry that
-makes an object visible. A kind the genesis does not authorize is refused even
-when the signature is valid, so `init` grants `delegation`, `release`,
-`profile`, `changelog`, and `modpack`.
+`check` validates a release and its signature locally without uploading; then
+`upload` stores the artifact bytes, `release` signs and stores a release object,
+`profile` signs and stores display metadata, `changelog` signs release notes,
+and `publish` appends the feed entry that makes an object visible. The steps
+are deliberately separate, so a failed step can be retried without rebuilding
+the earlier steps. A kind the genesis does not authorize is refused even when
+the signature is valid, so `init` grants `delegation`, `release`, `profile`,
+`changelog`, and `modpack`.
 
 To go through admission review instead of publishing directly, use `submit`
 with an API key that carries `submissions:write`:

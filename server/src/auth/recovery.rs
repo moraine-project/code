@@ -77,18 +77,16 @@ pub(super) async fn recover(State(state): State<AppState>, Json(request): Json<R
 	let Ok(password_hash) = password::hash_password(&request.new) else {
 		return (StatusCode::INTERNAL_SERVER_ERROR, "password hashing failed").into_response();
 	};
-	let claimed = match state.metadata.claim_recovery_code(&record.id, &hash, now()).await {
+	let claimed = match state
+		.metadata
+		.recover_password(&record.id, &hash, &password_hash, now())
+		.await
+	{
 		Ok(claimed) => claimed,
 		Err(error) => return storage_error(error),
 	};
 	if !claimed {
 		return (StatusCode::UNAUTHORIZED, "invalid recovery code").into_response();
-	}
-	if let Err(error) = state.metadata.update_password(&record.id, &password_hash, now()).await {
-		return storage_error(error);
-	}
-	if let Err(error) = state.metadata.revoke_sessions(&record.id, now()).await {
-		return storage_error(error);
 	}
 	StatusCode::NO_CONTENT.into_response()
 }

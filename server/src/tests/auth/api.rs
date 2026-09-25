@@ -463,6 +463,113 @@ async fn an_operator_resets_a_members_password() {
 	let _ = sign_in(&application, "forgetful@example.org", &password).await;
 }
 
+async fn issue_a_recovery_code(application: &Router, email: &str, password: &str) -> String {
+	let register = json_request(
+		"POST",
+		"/v1/auth/register",
+		serde_json::json!({ "email": email, "password": password }),
+	);
+	application.clone().oneshot(register).await.expect("register");
+	let (session, csrf) = sign_in(application, email, password).await;
+	let issue = session_request("POST", "/v1/auth/recovery-codes", &session, &csrf, serde_json::json!({}));
+	let response = application.clone().oneshot(issue).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+	let body = json_body(response).await;
+	body["codes"][0].as_str().expect("code").to_string()
+}
+
+fn recover_request(email: &str, code: &str, new: &str) -> axum::http::Request<Body> {
+	json_request(
+		"POST",
+		"/v1/auth/recover",
+		serde_json::json!({ "email": email, "code": code, "new": new }),
+	)
+}
+
+async fn sign_in_status(application: &Router, email: &str, password: &str) -> StatusCode {
+	let login = json_request(
+		"POST",
+		"/v1/auth/session",
+		serde_json::json!({ "email": email, "password": password }),
+	);
+	application.clone().oneshot(login).await.expect("response").status()
+}
+
+#[tokio::test]
+async fn a_refused_recovery_leaves_the_password_and_the_live_code_alone() {
+	let (application, _directory) = app().await;
+	let code = issue_a_recovery_code(&application, "refused@example.org", "correct horse battery").await;
+
+	let refused = application
+		.clone()
+		.oneshot(recover_request(
+			"refused@example.org",
+			"a code the account never issued",
+			"a brand new long password",
+		))
+		.await
+		.expect("response");
+	assert_eq!(refused.status(), StatusCode::UNAUTHORIZED);
+	assert_eq!(
+		sign_in_status(&application, "refused@example.org", "correct horse battery").await,
+		StatusCode::OK,
+		"a refused recovery must leave the password alone"
+	);
+	assert_eq!(
+		sign_in_status(&application, "refused@example.org", "a brand new long password").await,
+		StatusCode::UNAUTHORIZED,
+		"a refused recovery must not set the password it was asked for"
+	);
+
+	let live = application
+		.clone()
+		.oneshot(recover_request("refused@example.org", &code, "a brand new long password"))
+		.await
+		.expect("response");
+	assert_eq!(
+		live.status(),
+		StatusCode::NO_CONTENT,
+		"a refused recovery must not burn a live code"
+	);
+	assert_eq!(
+		sign_in_status(&application, "refused@example.org", "a brand new long password").await,
+		StatusCode::OK
+	);
+}
+
+#[tokio::test]
+async fn racing_recoveries_with_one_code_change_the_password_once() {
+	let (application, _directory) = app().await;
+	let code = issue_a_recovery_code(&application, "raced@example.org", "correct horse battery").await;
+
+	let (first, second) = tokio::join!(
+		application
+			.clone()
+			.oneshot(recover_request("raced@example.org", &code, "the first long password")),
+		application
+			.clone()
+			.oneshot(recover_request("raced@example.org", &code, "the second long password"))
+	);
+	let statuses = [first.expect("response").status(), second.expect("response").status()];
+	assert!(
+		statuses.contains(&StatusCode::NO_CONTENT) && statuses.contains(&StatusCode::UNAUTHORIZED),
+		"one racing recovery wins the code and the other is refused: {statuses:?}"
+	);
+
+	let mut winners = 0;
+	for password in ["the first long password", "the second long password"] {
+		if sign_in_status(&application, "raced@example.org", password).await == StatusCode::OK {
+			winners += 1;
+		}
+	}
+	assert_eq!(winners, 1, "exactly one racing recovery set the password");
+	assert_eq!(
+		sign_in_status(&application, "raced@example.org", "correct horse battery").await,
+		StatusCode::UNAUTHORIZED,
+		"the recovered password replaced the old one"
+	);
+}
+
 #[tokio::test]
 async fn an_operator_creates_and_deletes_an_account() {
 	let (application, _directory) = app().await;

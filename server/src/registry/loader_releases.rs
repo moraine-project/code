@@ -172,7 +172,9 @@ mod tests {
 			contacts: None,
 			created_at: 1_760_000_000,
 		};
-		sign_payload(ObjectKind::Genesis, &genesis, &[key]).wire_bytes()
+		sign_payload(ObjectKind::Genesis, &genesis, &[key])
+			.expect("valid signed genesis")
+			.wire_bytes()
 	}
 
 	async fn publish_loader_definition(application: &axum::Router, loader_id: &str, body: Vec<u8>) -> String {
@@ -218,6 +220,7 @@ mod tests {
 				}),
 				&[&key],
 			)
+			.expect("valid signed loader release")
 		};
 		let put = axum::http::Request::post(format!("/v1/loaders/{loader_id}/definitions"))
 			.body(Body::from(release("0.15.0").wire_bytes()))
@@ -261,7 +264,8 @@ mod tests {
 				declared_time: 1_760_000_100,
 			}),
 			&[&key],
-		);
+		)
+		.expect("valid signed loader release");
 		let put = axum::http::Request::post(format!("/v1/loaders/{loader_id}/definitions"))
 			.body(Body::from(rewritten.wire_bytes()))
 			.expect("request");

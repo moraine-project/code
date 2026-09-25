@@ -15,7 +15,7 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
 impl MetadataStore {
 	pub async fn project(&self, id: &str) -> Result<Option<ProjectRow>, sqlx::Error> {
 		let row = sqlx::query(
-			"SELECT id, genesis_digest, head_seq, head_digest, profile_digest, owner_kind, owner_id FROM projects WHERE id = $1",
+			"SELECT id, genesis_digest, head_seq, head_digest, profile_digest, owner_kind, owner_id, owner_key_id FROM projects WHERE id = $1",
 		)
 		.bind(id)
 		.fetch_optional(&self.pool)
@@ -28,13 +28,21 @@ impl MetadataStore {
 			profile_digest: row.get("profile_digest"),
 			owner_kind: row.get("owner_kind"),
 			owner_id: row.get("owner_id"),
+			owner_key_id: row.get("owner_key_id"),
 		}))
 	}
 
-	pub async fn set_project_owner(&self, id: &str, owner_kind: &str, owner_id: &str) -> Result<bool, sqlx::Error> {
-		let result = sqlx::query("UPDATE projects SET owner_kind = $1, owner_id = $2 WHERE id = $3")
+	pub async fn set_project_owner(
+		&self,
+		id: &str,
+		owner_kind: &str,
+		owner_id: &str,
+		owner_key_id: &[u8],
+	) -> Result<bool, sqlx::Error> {
+		let result = sqlx::query("UPDATE projects SET owner_kind = $1, owner_id = $2, owner_key_id = $3 WHERE id = $4")
 			.bind(owner_kind)
 			.bind(owner_id)
+			.bind(owner_key_id)
 			.bind(id)
 			.execute(&self.pool)
 			.await?;
@@ -113,13 +121,20 @@ impl MetadataStore {
 		}))
 	}
 
-	pub async fn feed_after(&self, project_id: &str, after: i64, limit: i64) -> Result<Vec<FeedRow>, sqlx::Error> {
+	pub async fn feed_after(
+		&self,
+		project_id: &str,
+		after: i64,
+		through: i64,
+		limit: i64,
+	) -> Result<Vec<FeedRow>, sqlx::Error> {
 		let rows = sqlx::query(
 			"SELECT project_id, seq, previous, entry_digest, kind, object_digest, payload, wire
-			 FROM feed_entries WHERE project_id = $1 AND seq > $2 ORDER BY seq ASC LIMIT $3",
+			 FROM feed_entries WHERE project_id = $1 AND seq > $2 AND seq <= $3 ORDER BY seq ASC LIMIT $4",
 		)
 		.bind(project_id)
 		.bind(after)
+		.bind(through)
 		.bind(limit)
 		.fetch_all(&self.pool)
 		.await?;

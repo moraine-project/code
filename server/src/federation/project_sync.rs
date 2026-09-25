@@ -1,3 +1,5 @@
+use moraine_model::event::EventKind;
+
 use super::*;
 
 #[derive(Serialize)]
@@ -203,16 +205,36 @@ pub(crate) async fn sync(state: &AppState, home_url: &str, project_id: &str) -> 
 				"the home's feed went backwards from {cursor} to {head_seq}"
 			)));
 		}
-		if page.entries.len() > state.capability.max_feed_page_entries as usize {
+		if state.capability.max_feed_page_entries != 0
+			&& page.entries.len() > state.capability.max_feed_page_entries as usize
+		{
 			return Err(FederationError::Verify(
 				"the home returned more entries in a page than the requested limit".to_string(),
 			));
 		}
 		let Some(last) = page.entries.last() else {
+			if head_seq > cursor {
+				return Err(FederationError::Verify(
+					"the home returned an empty page before its advertised head".to_string(),
+				));
+			}
 			break;
 		};
+		if last.seq > head_seq {
+			return Err(FederationError::Verify(
+				"the home returned an entry beyond its advertised head".to_string(),
+			));
+		}
 		let page_start = cursor;
 		for entry in &page.entries {
+			let expected = cursor
+				.checked_add(1)
+				.ok_or_else(|| FederationError::Verify("the home feed sequence is exhausted".to_string()))?;
+			if entry.seq != expected {
+				return Err(FederationError::Verify(
+					"the home returned a non-contiguous feed page".to_string(),
+				));
+			}
 			if let Some(kind) = object_kind_for_event(&entry.kind) {
 				let wire = client.get_bytes(&format!("/v1/objects/{}", hex_of(&entry.object)?)).await?;
 				let delegations = load_delegations(state, project_id, &root)
@@ -247,7 +269,9 @@ pub(crate) async fn sync(state: &AppState, home_url: &str, project_id: &str) -> 
 			observed_head = Some((head_seq, last.entry.clone()));
 		}
 		if last.seq <= page_start {
-			break;
+			return Err(FederationError::Verify(
+				"the home returned a feed page that did not advance".to_string(),
+			));
 		}
 		if last.seq >= head_seq {
 			break;
@@ -285,13 +309,19 @@ fn release_changelog_digest(payload: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn object_kind_for_event(event: &str) -> Option<ObjectKind> {
-	Some(match event {
-		"release-published" | "release-withdrawn" => ObjectKind::Release,
-		"profile-updated" => ObjectKind::Profile,
-		"key-changed" | "migration" | "recovery" | "ownership-transferred" => ObjectKind::Delegation,
-		"advisory" => ObjectKind::Advisory,
-		_ => return None,
-	})
+	let event = EventKind::parse(event)?;
+	if !event.is_feed_derived() {
+		return None;
+	}
+	let kind = match event {
+		EventKind::ReleasePublished | EventKind::ReleaseWithdrawn => ObjectKind::Release,
+		EventKind::ProfileUpdated => ObjectKind::Profile,
+		EventKind::KeyChanged | EventKind::Migration | EventKind::Recovery | EventKind::OwnershipTransferred => {
+			ObjectKind::Delegation
+		}
+		EventKind::Advisory | EventKind::ForkDetected => return None,
+	};
+	Some(kind)
 }
 
 pub(super) async fn sync_loader_releases(

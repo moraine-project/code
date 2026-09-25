@@ -60,7 +60,7 @@ async fn records_a_subscribed_deny_list_and_annotates_search() {
 		],
 		issued_at: 1_760_000_000,
 	};
-	let signed = sign_payload(Kind::DenyList, &list, &[&issuer]);
+	let signed = sign_payload(Kind::DenyList, &list, &[&issuer]).expect("valid signed deny list");
 	let request = axum::http::Request::post("/v1/deny-lists")
 		.body(Body::from(signed.wire_bytes()))
 		.expect("request");
@@ -98,7 +98,7 @@ async fn records_a_subscribed_deny_list_and_annotates_search() {
 	);
 
 	let wrong_key = SigningKey::from_seed(&[0xE2; 32]);
-	let signed = sign_payload(Kind::DenyList, &list, &[&wrong_key]);
+	let signed = sign_payload(Kind::DenyList, &list, &[&wrong_key]).expect("valid signed deny list");
 	let request = axum::http::Request::post("/v1/deny-lists")
 		.body(Body::from(signed.wire_bytes()))
 		.expect("request");
@@ -109,7 +109,7 @@ async fn records_a_subscribed_deny_list_and_annotates_search() {
 		issuer_id: "nobody.example".to_string(),
 		..list
 	};
-	let signed = sign_payload(Kind::DenyList, &unpinned, &[&issuer]);
+	let signed = sign_payload(Kind::DenyList, &unpinned, &[&issuer]).expect("valid signed deny list");
 	let request = axum::http::Request::post("/v1/deny-lists")
 		.body(Body::from(signed.wire_bytes()))
 		.expect("request");

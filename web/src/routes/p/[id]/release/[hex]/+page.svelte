@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Download } from '@lucide/svelte';
 	import { blobUrl, fileSha256 } from '$lib/api/blobs';
-	import { digestHex } from '$lib/api/digests';
+	import { digestHex, shortDigest } from '$lib/api/digests';
 	import { safeExternalUrl } from '$lib/api/external-url';
 	import { mirrorLocations, type ArtifactLocations } from '$lib/api/releases';
 	import Digest from '$lib/components/Digest.svelte';
@@ -31,6 +31,22 @@
 
 	function formatTime(seconds: number): string {
 		return new Date(seconds * 1000).toLocaleString();
+	}
+
+	function commitmentExpired(expiresAt: number | null | undefined, now: number): boolean {
+		return typeof expiresAt === 'number' && expiresAt * 1000 <= now;
+	}
+
+	function verifiedCommitments(
+		locations: NonNullable<ArtifactLocations>['locations'],
+		now: number,
+	): number {
+		return locations.filter(
+			(location) =>
+				location.provenance === 'mirror-committed' &&
+				typeof location.last_success_at === 'number' &&
+				!commitmentExpired(location.expires_at, now),
+		).length;
 	}
 
 	function formatBytes(bytes: number): string {
@@ -86,14 +102,24 @@
 		<div role="alert" class="alert alert-error"><span>{data.error}</span></div>
 	{:else if data.release}
 		{#each data.release.advisories ?? [] as advisory (advisory.advisory)}
-			<div role="alert" class="alert alert-warning alert-soft">
-				<span>
-					<strong>{advisory.provider_id}</strong>
-					reports {advisory.severity}
-					{advisory.category}{advisory.block_promotion ? ' and blocks promotion' : ''}. Evidence,
-					not a verdict.
-				</span>
-			</div>
+			{#if advisory.retracted_at !== null && advisory.retracted_at !== undefined}
+				<div role="alert" class="alert alert-info alert-soft">
+					<span>
+						<strong>Retracted advisory</strong> — {advisory.provider_id} retracted this
+						{advisory.severity}
+						{advisory.category} finding on {formatTime(advisory.retracted_at)}. The signed record
+						remains for audit; it is no longer an active finding.
+					</span>
+				</div>
+			{:else}
+				<div role="alert" class="alert alert-warning alert-soft">
+					<span>
+						<strong>Live advisory</strong> — {advisory.provider_id} reports {advisory.severity}
+						{advisory.category}{advisory.block_promotion ? ' and blocks promotion' : ''}. Evidence,
+						not a verdict.
+					</span>
+				</div>
+			{/if}
 		{/each}
 
 		{#if data.release.withdrawal}
@@ -201,16 +227,17 @@
 											>
 										</div>
 										{#if mirrors[artifact.digest]}
+											{@const locations = mirrors[artifact.digest]?.locations ?? []}
+											{@const now = Date.now()}
 											<p class="mt-2 text-xs text-base-content/60">
-												{mirrors[artifact.digest]?.locations.length ?? 0} location(s), {mirrors[
-													artifact.digest
-												]?.locations.filter(
-													(location) => location.provenance === 'mirror-committed',
-												).length ?? 0} verified mirror commitment(s).
+												{locations.length} location(s) · {verifiedCommitments(locations, now)} of
+												{locations.filter((location) => location.provenance === 'mirror-committed')
+													.length} mirror commitment(s) verified
 											</p>
 											<ul class="mt-1 flex flex-col gap-1 text-xs">
-												{#each mirrors[artifact.digest]?.locations ?? [] as location (location.url)}
+												{#each locations as location (location.url)}
 													{@const href = safeExternalUrl(location.url)}
+													{@const committed = location.provenance === 'mirror-committed'}
 													<li>
 														{#if href}
 															<a class="link" {href} target="_blank" rel="noopener noreferrer"
@@ -219,6 +246,29 @@
 														{:else}
 															<span class="text-base-content/60"
 																>Unavailable {location.kind} location</span
+															>
+														{/if}
+														{#if committed}
+															<span>
+																Mirror {location.operator_id
+																	? shortDigest(location.operator_id)
+																	: 'unnamed'}
+															</span>
+														{/if}
+														{#if typeof location.last_success_at === 'number'}
+															<span
+																>Last successful check (last_success_at): {formatTime(
+																	location.last_success_at,
+																)}</span
+															>
+														{:else if committed}
+															<span>No successful check recorded for this commitment</span>
+														{/if}
+														{#if typeof location.expires_at === 'number'}
+															<span
+																>{commitmentExpired(location.expires_at, now)
+																	? 'Commitment window ended'
+																	: 'Expires'} (expires_at): {formatTime(location.expires_at)}</span
 															>
 														{/if}
 													</li>

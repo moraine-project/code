@@ -85,29 +85,74 @@ export type Branding = {
 	nav: NavLink[];
 };
 
-export type Instance = {
+export type Capabilities = {
+	protocolVersions: number[];
 	publishing: string;
 	registration: string;
 	emailVerification: boolean;
-	protocolVersions: number[];
+	maxArtifactBytes: number | null;
+	maxUploadBytesPerAccount: number | null;
+	maxFeedPageEntries: number | null;
+	maxFeedScanPages: number | null;
+	maxResponseBytes: number | null;
+	maxSyncPages: number | null;
+	requestsPerMinute: number | null;
+	maxConcurrentSyncs: number | null;
+	maintenanceIntervalSeconds: number | null;
+	artifactSources: string[];
+	uploadModes: string[];
+	serverRole: string[];
+	webhookPublicKey: string | null;
+};
+
+export type Instance = Capabilities & {
 	branding: Branding;
 };
 
 export const defaultInstance: Instance = {
+	protocolVersions: [1],
 	publishing: 'review',
 	registration: 'closed',
 	emailVerification: false,
-	protocolVersions: [1],
+	maxArtifactBytes: null,
+	maxUploadBytesPerAccount: null,
+	maxFeedPageEntries: null,
+	maxFeedScanPages: null,
+	maxResponseBytes: null,
+	maxSyncPages: null,
+	requestsPerMinute: null,
+	maxConcurrentSyncs: null,
+	maintenanceIntervalSeconds: null,
+	artifactSources: [],
+	uploadModes: [],
+	serverRole: [],
+	webhookPublicKey: null,
 	branding: { name: null, logo: null, theme: {}, nav: [] },
 };
+
+const optionalNumber = z.number().int().nonnegative().nullish();
+const optionalStrings = z.array(z.string()).nullish();
 
 const rawInstanceSchema = z.object({
 	capabilities: z
 		.object({
-			protocol_versions: z.array(z.number()).optional(),
-			publishing: z.string().optional(),
-			registration: z.string().optional(),
-			email_verification: z.boolean().optional(),
+			protocol_versions: z.array(z.number().int().nonnegative()).nullish(),
+			publishing: z.string().nullish(),
+			registration: z.string().nullish(),
+			email_verification: z.boolean().nullish(),
+			max_artifact_bytes: optionalNumber,
+			max_upload_bytes_per_account: optionalNumber,
+			max_feed_page_entries: optionalNumber,
+			max_feed_scan_pages: optionalNumber,
+			max_response_bytes: optionalNumber,
+			max_sync_pages: optionalNumber,
+			requests_per_minute: optionalNumber,
+			max_concurrent_syncs: optionalNumber,
+			maintenance_interval_seconds: optionalNumber,
+			artifact_sources: optionalStrings,
+			upload_modes: optionalStrings,
+			server_role: optionalStrings,
+			webhook_public_key: z.string().nullish(),
 		})
 		.optional(),
 	branding: z
@@ -155,10 +200,25 @@ export function parseInstance(payload: unknown): Instance {
 	}
 	const capabilities = parsed.data.capabilities;
 	return {
+		protocolVersions: capabilities?.protocol_versions ?? defaultInstance.protocolVersions,
 		publishing: capabilities?.publishing ?? defaultInstance.publishing,
 		registration: capabilities?.registration ?? defaultInstance.registration,
-		emailVerification: capabilities?.email_verification ?? false,
-		protocolVersions: capabilities?.protocol_versions ?? [1],
+		emailVerification: capabilities?.email_verification ?? defaultInstance.emailVerification,
+		maxArtifactBytes: capabilities?.max_artifact_bytes ?? defaultInstance.maxArtifactBytes,
+		maxUploadBytesPerAccount:
+			capabilities?.max_upload_bytes_per_account ?? defaultInstance.maxUploadBytesPerAccount,
+		maxFeedPageEntries: capabilities?.max_feed_page_entries ?? defaultInstance.maxFeedPageEntries,
+		maxFeedScanPages: capabilities?.max_feed_scan_pages ?? defaultInstance.maxFeedScanPages,
+		maxResponseBytes: capabilities?.max_response_bytes ?? defaultInstance.maxResponseBytes,
+		maxSyncPages: capabilities?.max_sync_pages ?? defaultInstance.maxSyncPages,
+		requestsPerMinute: capabilities?.requests_per_minute ?? defaultInstance.requestsPerMinute,
+		maxConcurrentSyncs: capabilities?.max_concurrent_syncs ?? defaultInstance.maxConcurrentSyncs,
+		maintenanceIntervalSeconds:
+			capabilities?.maintenance_interval_seconds ?? defaultInstance.maintenanceIntervalSeconds,
+		artifactSources: capabilities?.artifact_sources ?? defaultInstance.artifactSources,
+		uploadModes: capabilities?.upload_modes ?? defaultInstance.uploadModes,
+		serverRole: capabilities?.server_role ?? defaultInstance.serverRole,
+		webhookPublicKey: capabilities?.webhook_public_key ?? defaultInstance.webhookPublicKey,
 		branding: parseBranding(parsed.data.branding),
 	};
 }

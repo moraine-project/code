@@ -51,7 +51,7 @@ impl MetadataStore {
 
 	pub async fn insert_notification(&self, notification: &NotificationRow, user_id: &str) -> Result<(), sqlx::Error> {
 		sqlx::query(
-			"INSERT INTO notifications (id, user_id, project_id, event_kind, object_digest, feed_seq, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+			"INSERT INTO notifications (id, user_id, project_id, event_kind, object_digest, feed_seq, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
 		)
 		.bind(&notification.id)
 		.bind(user_id)

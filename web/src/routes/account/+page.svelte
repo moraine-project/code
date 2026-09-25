@@ -510,20 +510,22 @@
 					</form>
 				{:else}
 					{#if registrationOpen}
-						<div role="tablist" class="tabs tabs-box w-fit">
+						<div class="tabs tabs-box w-fit" aria-label="Account access">
 							<button
-								role="tab"
+								type="button"
 								class="tab"
 								class:tab-active={!creating}
+								aria-pressed={!creating}
 								onclick={() => {
 									creating = false;
 									clear();
 								}}>Sign in</button
 							>
 							<button
-								role="tab"
+								type="button"
 								class="tab"
 								class:tab-active={creating}
+								aria-pressed={creating}
 								onclick={() => {
 									creating = true;
 									clear();

@@ -429,6 +429,21 @@ game_versions = ["1.14..=26.3"]
 }
 
 #[test]
+fn rejects_unknown_definition_fields() {
+	let directory = tempfile::tempdir().expect("tempdir");
+	let key_path = directory.path().join("key");
+	keyfile::create(&key_path).expect("key");
+	let source = directory.path().join("bad.toml");
+	std::fs::write(
+		&source,
+		"kind = \"game\"\ndisplay_name = \"Example\"\nversion_ordering = \"semver\"\ninstall_adaptor = \"typo\"\n",
+	)
+	.expect("write");
+	let error = from_file(&key_path, &source, &directory.path().join("out")).expect_err("error");
+	assert!(error.contains("unknown field"), "{error}");
+}
+
+#[test]
 fn rejects_a_file_with_an_unknown_kind() {
 	let directory = tempfile::tempdir().expect("tempdir");
 	let key_path = directory.path().join("key");

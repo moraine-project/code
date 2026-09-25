@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('$env/static/public', () => ({ PUBLIC_MORAINE_REGISTRY: 'http://127.0.0.1:8080' }));
 
 import { sameOrigin, sessionBase } from './session';
+import { ApiError, responseError } from './request';
 
 describe('sameOrigin', () => {
 	it('treats the exact origin as same', () => {
@@ -17,6 +18,17 @@ describe('sameOrigin', () => {
 	it('keeps a different port or host cross-origin', () => {
 		expect(sameOrigin('http://127.0.0.1:8080', 'http://127.0.0.1:4173')).toBe(false);
 		expect(sameOrigin('https://api.example', 'https://site.example')).toBe(false);
+	});
+});
+
+describe('responseError', () => {
+	it('retains the HTTP status and response message', async () => {
+		const error = await responseError(new Response('conflict', { status: 409 }));
+
+		expect(error).toBeInstanceOf(Error);
+		expect(error).toBeInstanceOf(ApiError);
+		expect(error.status).toBe(409);
+		expect(error.message).toBe('conflict');
 	});
 });
 

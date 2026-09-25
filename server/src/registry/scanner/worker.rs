@@ -260,7 +260,8 @@ async fn publish_result(
 		issued_at: now(),
 	};
 	let object = AttestationObject::Evidence(attestation.clone());
-	let signed = sign_payload(ObjectKind::Attestation, &object, &[key]);
+	let signed = sign_payload(ObjectKind::Attestation, &object, &[key])
+		.map_err(|error| format!("scanner attestation cannot be signed: {error}"))?;
 	let object_digest = object_id(ObjectKind::Attestation, &signed.payload_bytes);
 	let wire = signed.wire_bytes();
 	state

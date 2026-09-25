@@ -144,7 +144,7 @@ fn run_vectors(file: &PathBuf) -> Result<(), String> {
 }
 
 fn regenerate(file: &PathBuf) -> Result<(), String> {
-	let corpus = generate::generate();
+	let corpus = generate::generate()?;
 	let text = serde_json::to_string_pretty(&corpus).map_err(|error| error.to_string())?;
 	std::fs::write(file, format!("{text}\n")).map_err(|error| format!("{}: {error}", file.display()))?;
 	println!("wrote {} vectors to {}", corpus.vectors.len(), file.display());
@@ -261,7 +261,9 @@ mod tests {
 		let changelog_path = directory.path().join("changelog");
 		std::fs::write(
 			&changelog_path,
-			sign_payload(ObjectKind::Changelog, &changelog, &[&key]).wire_bytes(),
+			sign_payload(ObjectKind::Changelog, &changelog, &[&key])
+				.expect("valid signed changelog")
+				.wire_bytes(),
 		)
 		.expect("write");
 		super::verify_object("changelog", &changelog_path, std::slice::from_ref(&root), 1, false)
@@ -287,7 +289,9 @@ mod tests {
 		let modpack_path = directory.path().join("modpack");
 		std::fs::write(
 			&modpack_path,
-			sign_payload(ObjectKind::Modpack, &modpack, &[&key]).wire_bytes(),
+			sign_payload(ObjectKind::Modpack, &modpack, &[&key])
+				.expect("valid signed modpack")
+				.wire_bytes(),
 		)
 		.expect("write");
 		super::verify_object("modpack", &modpack_path, &[root], 1, false).expect("modpack verifies");

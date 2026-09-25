@@ -1,5 +1,5 @@
 use moraine_codec::{Value, encode};
-use moraine_crypto::{ObjectKind, SigningKey, object_id_string};
+use moraine_crypto::{ObjectKind, SigningKey, domain_tag, object_id_string};
 use moraine_model::advisory::{Advisory, Affected, Category, Severity};
 use moraine_model::artifact::Artifact;
 use moraine_model::canonical::Canonical;
@@ -9,7 +9,7 @@ use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::profile::ProfileRevision;
 use moraine_model::release::ReleasePayload;
-use moraine_model::signed::{SignatureEnvelope, SignedObject, sign_payload};
+use moraine_model::signed::{ALG_ED25519, Signature, SignatureEnvelope, SignedObject, sign_payload};
 use moraine_model::version::VersionCatalog;
 use sha2::{Digest, Sha256};
 
@@ -127,6 +127,24 @@ pub(crate) struct Outcome<'a> {
 	pub reason: Option<&'a str>,
 }
 
+fn raw_envelope(kind: ObjectKind, payload: &[u8], signers: &[&SigningKey]) -> SignatureEnvelope {
+	let mut message = domain_tag(kind);
+	message.extend_from_slice(payload);
+	let signatures = signers
+		.iter()
+		.map(|signer| Signature {
+			alg: ALG_ED25519,
+			key_id: signer.key_id(),
+			sig: signer.sign(&message),
+		})
+		.collect();
+	SignatureEnvelope {
+		alg: ALG_ED25519,
+		signatures,
+		key_ids: signers.iter().map(|signer| signer.key_id()).collect(),
+	}
+}
+
 pub(crate) fn raw_vector(
 	name: &str,
 	category: &str,
@@ -137,7 +155,7 @@ pub(crate) fn raw_vector(
 	trust: Option<TrustJson>,
 ) -> Vector {
 	let payload_bytes = encode(&value).expect("value is encodable");
-	let envelope = moraine_model::signed::sign_raw(kind, &payload_bytes, keys);
+	let envelope = raw_envelope(kind, &payload_bytes, keys);
 	Vector {
 		name: name.to_string(),
 		category: category.to_string(),
@@ -295,17 +313,19 @@ fn build_key_delegation(project_id: &str, delegate: &SigningKey, allowed_kinds: 
 	})
 }
 
-fn build_transfer(project_id: &str) -> Delegation {
+fn build_transfer(project_id: &str, from: &SigningKey, to: &SigningKey) -> Delegation {
 	Delegation::OwnershipTransfer(OwnershipTransfer {
 		protocol: 1,
 		project_id: project_id.to_string(),
 		from_owner: OwnerRef {
 			kind: "user".to_string(),
 			id: "user-a".to_string(),
+			key_id: from.key_id(),
 		},
 		to_owner: OwnerRef {
 			kind: "org".to_string(),
 			id: "org-b".to_string(),
+			key_id: to.key_id(),
 		},
 		issued_at: DECLARED_AT,
 		previous_delegation_digest: None,
@@ -324,9 +344,10 @@ fn build_feed(project_id: &str, sequence: u64, previous: Option<Vec<u8>>) -> Fee
 	}
 }
 
-pub fn generate() -> VectorFile {
+pub fn generate() -> Result<VectorFile, String> {
 	let k1 = signer(1);
 	let k2 = signer(2);
+	let k3 = signer(3);
 	let project_id = sample_id("example-project");
 
 	let mut vectors = Vec::new();
@@ -365,7 +386,7 @@ pub fn generate() -> VectorFile {
 	));
 
 	let genesis = build_genesis(GenesisKind::Project, &[&k1], 1, &["delegation", "release", "profile"], 0x11);
-	let signed = sign_payload(ObjectKind::Genesis, &genesis, &[&k1]);
+	let signed = sign_payload(ObjectKind::Genesis, &genesis, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"genesis-project-root-signed",
 		"genesis",
@@ -377,7 +398,7 @@ pub fn generate() -> VectorFile {
 	));
 
 	let game = build_genesis(GenesisKind::Game, &[&k1], 1, &["delegation", "game-def"], 0x12);
-	let signed_game = sign_payload(ObjectKind::Genesis, &game, &[&k1]);
+	let signed_game = sign_payload(ObjectKind::Genesis, &game, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"genesis-game-kind-requirement",
 		"genesis",
@@ -395,7 +416,7 @@ pub fn generate() -> VectorFile {
 		&["delegation", "release", "profile"],
 		0x13,
 	);
-	let signed_multi = sign_payload(ObjectKind::Genesis, &multi, &[&k1]);
+	let signed_multi = sign_payload(ObjectKind::Genesis, &multi, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"genesis-threshold-not-met",
 		"genesis",
@@ -407,14 +428,16 @@ pub fn generate() -> VectorFile {
 	));
 
 	let missing_profile = build_genesis(GenesisKind::Project, &[&k1], 1, &["delegation", "release"], 0x14);
-	let signed_missing = sign_payload(ObjectKind::Genesis, &missing_profile, &[&k1]);
-	vectors.push(object_vector(
+	vectors.push(raw_vector(
 		"genesis-missing-required-kind",
 		"genesis",
 		ObjectKind::Genesis,
-		&signed_missing,
-		"reject",
-		Some("genesis-kind-requirement"),
+		missing_profile.to_value(),
+		&[&k1],
+		Outcome {
+			verdict: "reject",
+			reason: Some("genesis-kind-requirement"),
+		},
 		Some(trust(&[&k1], 1)),
 	));
 
@@ -443,7 +466,7 @@ pub fn generate() -> VectorFile {
 	vectors.push(wrong_id);
 
 	let delegation = build_key_delegation(&project_id, &k2, &["release"]);
-	let signed_delegation = sign_payload(ObjectKind::Delegation, &delegation, &[&k1]);
+	let signed_delegation = sign_payload(ObjectKind::Delegation, &delegation, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"delegation-key-release-scope",
 		"delegation",
@@ -455,7 +478,8 @@ pub fn generate() -> VectorFile {
 	));
 
 	let unauthorized = build_key_delegation(&project_id, &k2, &["advisory"]);
-	let signed_unauthorized = sign_payload(ObjectKind::Delegation, &unauthorized, &[&k1]);
+	let signed_unauthorized =
+		sign_payload(ObjectKind::Delegation, &unauthorized, &[&k1]).map_err(|error| error.to_string())?;
 	let mut restricted = trust(&[&k1], 1);
 	restricted.authorized_kinds = vec!["delegation".to_string(), "release".to_string(), "profile".to_string()];
 	vectors.push(object_vector(
@@ -468,8 +492,9 @@ pub fn generate() -> VectorFile {
 		Some(restricted),
 	));
 
-	let transfer = build_transfer(&project_id);
-	let signed_transfer_two = sign_payload(ObjectKind::Delegation, &transfer, &[&k1, &k2]);
+	let transfer = build_transfer(&project_id, &k1, &k2);
+	let signed_transfer_two =
+		sign_payload(ObjectKind::Delegation, &transfer, &[&k1, &k2]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"transfer-two-signatures",
 		"delegation",
@@ -480,7 +505,24 @@ pub fn generate() -> VectorFile {
 		Some(trust(&[&k1, &k2], 1)),
 	));
 
-	let signed_transfer_one = sign_payload(ObjectKind::Delegation, &transfer, &[&k1]);
+	let mut mismatched_transfer = transfer.clone();
+	let Delegation::OwnershipTransfer(transfer_record) = &mut mismatched_transfer else {
+		unreachable!()
+	};
+	transfer_record.from_owner.key_id = k3.key_id();
+	let signed_mismatched_transfer =
+		sign_payload(ObjectKind::Delegation, &mismatched_transfer, &[&k1, &k2]).map_err(|error| error.to_string())?;
+	vectors.push(object_vector(
+		"transfer-key-id-mismatch",
+		"delegation",
+		ObjectKind::Delegation,
+		&signed_mismatched_transfer,
+		"reject",
+		Some("transfer-needs-two-signatures"),
+		Some(trust(&[&k1, &k2], 1)),
+	));
+
+	let signed_transfer_one = sign_payload(ObjectKind::Delegation, &transfer, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"transfer-one-signature",
 		"delegation",
@@ -492,7 +534,7 @@ pub fn generate() -> VectorFile {
 	));
 
 	let release = build_release(&project_id, vec![build_artifact(0x01, true)], Vec::new());
-	let signed_release = sign_payload(ObjectKind::Release, &release, &[&k1]);
+	let signed_release = sign_payload(ObjectKind::Release, &release, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"release-valid-primary",
 		"release",
@@ -508,14 +550,16 @@ pub fn generate() -> VectorFile {
 		vec![build_artifact(0x01, true), build_artifact(0x02, true)],
 		Vec::new(),
 	);
-	let signed_ambiguous = sign_payload(ObjectKind::Release, &ambiguous, &[&k1]);
-	vectors.push(object_vector(
+	vectors.push(raw_vector(
 		"release-ambiguous-primary",
 		"release",
 		ObjectKind::Release,
-		&signed_ambiguous,
-		"reject",
-		Some("primary-artifact-ambiguous"),
+		ambiguous.to_value(),
+		&[&k1],
+		Outcome {
+			verdict: "reject",
+			reason: Some("primary-artifact-ambiguous"),
+		},
 		Some(trust(&[&k1], 1)),
 	));
 
@@ -524,14 +568,16 @@ pub fn generate() -> VectorFile {
 		vec![build_artifact(0x01, true)],
 		vec!["moraine.future".to_string()],
 	);
-	let signed_critical = sign_payload(ObjectKind::Release, &critical, &[&k1]);
-	vectors.push(object_vector(
+	vectors.push(raw_vector(
 		"release-unknown-critical-extension",
 		"release",
 		ObjectKind::Release,
-		&signed_critical,
-		"reject",
-		Some("unknown-critical-extension"),
+		critical.to_value(),
+		&[&k1],
+		Outcome {
+			verdict: "reject",
+			reason: Some("unknown-critical-extension"),
+		},
 		Some(trust(&[&k1], 1)),
 	));
 
@@ -558,7 +604,7 @@ pub fn generate() -> VectorFile {
 		},
 		1,
 	);
-	let signed_malware = sign_payload(ObjectKind::Advisory, &malware, &[&k1]);
+	let signed_malware = sign_payload(ObjectKind::Advisory, &malware, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"advisory-malware-critical-blocks",
 		"advisory",
@@ -580,14 +626,16 @@ pub fn generate() -> VectorFile {
 		},
 		1,
 	);
-	let signed_bad_block = sign_payload(ObjectKind::Advisory, &bad_block, &[&k1]);
-	vectors.push(object_vector(
+	vectors.push(raw_vector(
 		"advisory-block-outside-malware-high",
 		"advisory",
 		ObjectKind::Advisory,
-		&signed_bad_block,
-		"reject",
-		Some("invalid-field-value"),
+		bad_block.to_value(),
+		&[&k1],
+		Outcome {
+			verdict: "reject",
+			reason: Some("invalid-field-value"),
+		},
 		Some(trust(&[&k1], 1)),
 	));
 
@@ -602,7 +650,8 @@ pub fn generate() -> VectorFile {
 		},
 		2,
 	);
-	let signed_unrecognized = sign_payload(ObjectKind::Advisory, &unrecognized_taxonomy, &[&k1]);
+	let signed_unrecognized =
+		sign_payload(ObjectKind::Advisory, &unrecognized_taxonomy, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"advisory-unrecognized-taxonomy",
 		"advisory",
@@ -614,7 +663,7 @@ pub fn generate() -> VectorFile {
 	));
 
 	let profile = build_profile(&project_id);
-	let signed_profile = sign_payload(ObjectKind::Profile, &profile, &[&k1]);
+	let signed_profile = sign_payload(ObjectKind::Profile, &profile, &[&k1]).map_err(|error| error.to_string())?;
 	let mut profile_trust = trust(&[&k1], 1);
 	profile_trust.profile_roots = vec![public_hex(&k1)];
 	vectors.push(object_vector(
@@ -627,7 +676,7 @@ pub fn generate() -> VectorFile {
 		Some(profile_trust.clone()),
 	));
 
-	let signed_profile_delegated = sign_payload(ObjectKind::Profile, &profile, &[&k2]);
+	let signed_profile_delegated = sign_payload(ObjectKind::Profile, &profile, &[&k2]).map_err(|error| error.to_string())?;
 	let mut delegated_trust = trust(&[&k1], 1);
 	delegated_trust.profile_roots = vec![public_hex(&k1)];
 	delegated_trust.delegated_keys = vec![public_hex(&k2)];
@@ -654,7 +703,7 @@ pub fn generate() -> VectorFile {
 	vectors.push(cross);
 
 	let feed1 = build_feed(&project_id, 1, None);
-	let signed_feed1 = sign_payload(ObjectKind::FeedEntry, &feed1, &[&k1]);
+	let signed_feed1 = sign_payload(ObjectKind::FeedEntry, &feed1, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"feed-first-entry",
 		"feed",
@@ -666,19 +715,21 @@ pub fn generate() -> VectorFile {
 	));
 
 	let feed_bad_first = build_feed(&project_id, 1, Some(vec![0x00; 32]));
-	let signed_bad_first = sign_payload(ObjectKind::FeedEntry, &feed_bad_first, &[&k1]);
-	vectors.push(object_vector(
+	vectors.push(raw_vector(
 		"feed-first-entry-with-previous",
 		"feed",
 		ObjectKind::FeedEntry,
-		&signed_bad_first,
-		"reject",
-		Some("previous-mismatch"),
+		feed_bad_first.to_value(),
+		&[&k1],
+		Outcome {
+			verdict: "reject",
+			reason: Some("previous-mismatch"),
+		},
 		Some(trust(&[&k1], 1)),
 	));
 
 	let feed2 = build_feed(&project_id, 2, Some(feed1.id_bytes().to_vec()));
-	let signed_feed2 = sign_payload(ObjectKind::FeedEntry, &feed2, &[&k1]);
+	let signed_feed2 = sign_payload(ObjectKind::FeedEntry, &feed2, &[&k1]).map_err(|error| error.to_string())?;
 	let mut feed2_vector = object_vector(
 		"feed-second-entry-linked",
 		"feed",
@@ -692,7 +743,8 @@ pub fn generate() -> VectorFile {
 	vectors.push(feed2_vector);
 
 	let feed_wrong_previous = build_feed(&project_id, 2, Some(vec![0xEE; 32]));
-	let signed_wrong_previous = sign_payload(ObjectKind::FeedEntry, &feed_wrong_previous, &[&k1]);
+	let signed_wrong_previous =
+		sign_payload(ObjectKind::FeedEntry, &feed_wrong_previous, &[&k1]).map_err(|error| error.to_string())?;
 	let mut wrong_previous_vector = object_vector(
 		"feed-wrong-previous",
 		"feed",
@@ -706,7 +758,7 @@ pub fn generate() -> VectorFile {
 	vectors.push(wrong_previous_vector);
 
 	let feed_gap = build_feed(&project_id, 5, Some(feed1.id_bytes().to_vec()));
-	let signed_gap = sign_payload(ObjectKind::FeedEntry, &feed_gap, &[&k1]);
+	let signed_gap = sign_payload(ObjectKind::FeedEntry, &feed_gap, &[&k1]).map_err(|error| error.to_string())?;
 	let mut gap_vector = object_vector(
 		"feed-sequence-gap",
 		"feed",
@@ -719,14 +771,14 @@ pub fn generate() -> VectorFile {
 	gap_vector.prior_feed_hex = vec![hex::encode(signed_feed1.payload_bytes.clone())];
 	vectors.push(gap_vector);
 
-	vectors.extend(crate::definitions::vectors());
-	vectors.extend(crate::records::vectors());
+	vectors.extend(crate::definitions::vectors()?);
+	vectors.extend(crate::records::vectors()?);
 
-	VectorFile {
+	Ok(VectorFile {
 		protocol: 1,
 		description:
 			"Moraine protocol test vectors covering canonical encoding, signed objects, definitions, records, and predicates"
 				.to_string(),
 		vectors,
-	}
+	})
 }

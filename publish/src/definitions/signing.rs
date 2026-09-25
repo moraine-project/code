@@ -7,7 +7,7 @@ use moraine_model::definition::{
 	DeclaredBy, GameDef, LoaderAcceptance, LoaderDef, LoaderObject, LoaderRelease, Qualification, RuntimeDef, VersionSyntax,
 };
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
-use moraine_model::signed::sign_payload;
+use moraine_model::signed::{ObjectPayload, sign_payload};
 
 use super::trimmed;
 use crate::keyfile;
@@ -152,7 +152,8 @@ pub fn loader_release(
 		bootstrap: None,
 		declared_time: now(),
 	});
-	let signed = sign_payload(ObjectKind::LoaderDef, &release, &[&key]);
+	let signed = sign_payload(ObjectKind::LoaderDef, &release, &[&key])
+		.map_err(|error| format!("loader release cannot be signed: {error}"))?;
 	write_object(out, &signed.id(ObjectKind::LoaderDef), &signed.wire_bytes())?;
 	println!("loader_release: {}", signed.id(ObjectKind::LoaderDef));
 	Ok(())
@@ -191,13 +192,14 @@ pub fn loader_acceptance(
 		evidence_digest: None,
 		declared_time: now(),
 	});
-	let signed = sign_payload(ObjectKind::LoaderDef, &acceptance, &[&key]);
+	let signed = sign_payload(ObjectKind::LoaderDef, &acceptance, &[&key])
+		.map_err(|error| format!("loader acceptance cannot be signed: {error}"))?;
 	write_object(out, &signed.id(ObjectKind::LoaderDef), &signed.wire_bytes())?;
 	println!("loader_acceptance: {}", signed.id(ObjectKind::LoaderDef));
 	Ok(())
 }
 
-pub(super) fn emit<T: Canonical + Clone>(
+pub(super) fn emit<T: Canonical + Clone + ObjectPayload>(
 	key: &SigningKey,
 	genesis_kind: GenesisKind,
 	authorized: &[&str],
@@ -206,9 +208,11 @@ pub(super) fn emit<T: Canonical + Clone>(
 	out: &Path,
 	label: &str,
 ) -> Result<String, String> {
-	let signed_genesis = sign_payload(ObjectKind::Genesis, &genesis(key, genesis_kind, authorized)?, &[key]);
+	let signed_genesis = sign_payload(ObjectKind::Genesis, &genesis(key, genesis_kind, authorized)?, &[key])
+		.map_err(|error| format!("genesis cannot be signed: {error}"))?;
 	let id = signed_genesis.id(ObjectKind::Genesis);
-	let signed_definition = sign_payload(definition_kind, &definition(&id), &[key]);
+	let signed_definition = sign_payload(definition_kind, &definition(&id), &[key])
+		.map_err(|error| format!("definition cannot be signed: {error}"))?;
 	write_pair(out, &id, &signed_genesis.wire_bytes(), &signed_definition.wire_bytes())?;
 	println!("{label}: {id}");
 	println!("definition: {}", signed_definition.id(definition_kind));
@@ -242,7 +246,7 @@ pub(super) fn revision_id(value: &str) -> Result<String, String> {
 	Ok(trimmed.to_string())
 }
 
-pub(super) fn revision<T: Canonical + Clone>(
+pub(super) fn revision<T: Canonical + Clone + ObjectPayload>(
 	key: &SigningKey,
 	definition_kind: ObjectKind,
 	id: &str,
@@ -250,7 +254,8 @@ pub(super) fn revision<T: Canonical + Clone>(
 	out: &Path,
 	label: &str,
 ) -> Result<String, String> {
-	let signed = sign_payload(definition_kind, &definition(id), &[key]);
+	let signed = sign_payload(definition_kind, &definition(id), &[key])
+		.map_err(|error| format!("definition cannot be signed: {error}"))?;
 	std::fs::create_dir_all(out).map_err(|error| format!("{}: {error}", out.display()))?;
 	let stem = id.strip_prefix("gd:sha256:").unwrap_or(id);
 	let path = out.join(format!("{stem}.definition"));

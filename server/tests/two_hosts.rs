@@ -78,7 +78,9 @@ fn genesis_wire(signer: &SigningKey) -> Vec<u8> {
 		contacts: None,
 		created_at: 1_760_000_000,
 	};
-	sign_payload(Kind::Genesis, &genesis, &[signer]).wire_bytes()
+	sign_payload(Kind::Genesis, &genesis, &[signer])
+		.expect("valid signed genesis")
+		.wire_bytes()
 }
 
 fn release_wire(signer: &SigningKey, project_id: &str) -> (Vec<u8>, [u8; 32]) {
@@ -118,7 +120,7 @@ fn release_wire(signer: &SigningKey, project_id: &str) -> (Vec<u8>, [u8; 32]) {
 		minimum_verifier_version: 1,
 		critical_extensions: Vec::new(),
 	};
-	let signed = sign_payload(Kind::Release, &release, &[signer]);
+	let signed = sign_payload(Kind::Release, &release, &[signer]).expect("valid signed release");
 	let digest = object_id(Kind::Release, &signed.payload_bytes);
 	(signed.wire_bytes(), digest)
 }
@@ -133,7 +135,9 @@ fn feed_wire(signer: &SigningKey, project_id: &str, object_digest: [u8; 32]) -> 
 		object_digest: object_digest.to_vec(),
 		declared_at: 1_760_000_001,
 	};
-	sign_payload(Kind::FeedEntry, &entry, &[signer]).wire_bytes()
+	sign_payload(Kind::FeedEntry, &entry, &[signer])
+		.expect("valid signed feed entry")
+		.wire_bytes()
 }
 
 fn cookie(response: &reqwest::Response, name: &str) -> String {

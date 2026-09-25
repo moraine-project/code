@@ -72,6 +72,12 @@ impl ProfileRevision {
 		if self.display_name.is_empty() {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "display_name"));
 		}
+		if let Some(icon) = &self.icon {
+			icon.validate()?;
+		}
+		for artifact in &self.gallery {
+			artifact.validate()?;
+		}
 		Ok(())
 	}
 }

@@ -43,7 +43,7 @@ test('a sort-only search is treated as a search, not as an empty form', async ({
 		await page.goto(`/search?sort=${sort}`);
 		await expect(page.getByText('Start with a search or a filter')).toHaveCount(0);
 		await expect(page.locator('#content')).toContainText(
-			/No mods match|Showing \d+|^\d+ results?$/,
+			/No mods match|\d+ on this page · about \d+ in total|^\d+ results?$/,
 		);
 	}
 });

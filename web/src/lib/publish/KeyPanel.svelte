@@ -17,8 +17,10 @@
 	let keyGenerated = $state(false);
 	let keyMessage = $state<string | null>(null);
 	let keyOpen = $state(false);
+	let applyToken = 0;
 
 	async function applySeed(value: string) {
+		const token = ++applyToken;
 		keyMessage = null;
 		if (!isSeed(value)) {
 			seed = '';
@@ -26,9 +28,14 @@
 			keyPublic = '';
 			return;
 		}
-		seed = value.trim();
-		keyFingerprint = await keyId(seed);
-		keyPublic = await publicKey(seed);
+		const normalized = value.trim();
+		seed = normalized;
+		const fingerprint = await keyId(normalized);
+		if (token !== applyToken) return;
+		const key = await publicKey(normalized);
+		if (token !== applyToken) return;
+		keyFingerprint = fingerprint;
+		keyPublic = key;
 	}
 
 	async function generate() {
@@ -54,7 +61,7 @@
 		anchor.download = 'publisher.key';
 		anchor.click();
 		URL.revokeObjectURL(url);
-		keyMessage = 'Saved. Keep this file safe; anyone with it can publish as you.';
+		keyMessage = 'Saved. Keep this file safe; this key authorizes publishing for this project.';
 	}
 </script>
 
@@ -69,8 +76,8 @@
 			{/if}
 		</div>
 		<p class="text-sm text-base-content/70">
-			Your key proves a release is yours. Generate one and save the file somewhere safe, or open a
-			key you already have.
+			Your key authorizes releases for this project. Generate one and save the file somewhere safe,
+			or open a key you already have. A signature does not prove that software is safe.
 		</p>
 		<div class="flex flex-wrap items-center gap-2">
 			<button class="btn btn-sm" onclick={generate} disabled={busy}>Generate a key</button>

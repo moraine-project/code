@@ -1,6 +1,8 @@
 use moraine_codec::Value;
 
-use crate::canonical::{Canonical, Fields, expect_bytes, expect_i64, expect_text, expect_u32, expect_u64, map_of};
+use crate::canonical::{
+	Canonical, Fields, canonical_i64, expect_bytes, expect_i64, expect_text, expect_u32, expect_u64, map_of,
+};
 use crate::error::{ModelError, RejectReason};
 
 pub const WEBHOOK_DOMAIN: &[u8] = b"GAMEDIST/v1/webhook\0";
@@ -91,6 +93,9 @@ impl Event {
 		if self.event_kind.is_feed_derived() && self.feed_seq.is_none() {
 			return Err(ModelError::field(RejectReason::MissingField, "feed_seq"));
 		}
+		if self.feed_seq.is_some_and(|sequence| sequence > i64::MAX as u64) {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "feed_seq"));
+		}
 		if self.event_kind == EventKind::Advisory && self.advisory_digest.is_none() {
 			return Err(ModelError::field(RejectReason::MissingField, "advisory_digest"));
 		}
@@ -120,7 +125,7 @@ impl Canonical for Event {
 			pairs.push(("game_id", Value::text(game_id.clone())));
 		}
 		if let Some(feed_seq) = self.feed_seq {
-			pairs.push(("feed_seq", Value::int(feed_seq as i64)));
+			pairs.push(("feed_seq", Value::int(canonical_i64(feed_seq, "feed_seq"))));
 		}
 		if let Some(digest) = &self.object_digest {
 			pairs.push(("object_digest", Value::bytes(digest.clone())));

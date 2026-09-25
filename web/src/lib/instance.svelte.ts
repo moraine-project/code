@@ -1,5 +1,11 @@
 import { safeExternalUrl } from '$lib/api/external-url';
-import { defaultInstance, fetchInstance, type Instance, type NavLink } from '$lib/api/instance';
+import {
+	defaultInstance,
+	fetchInstance,
+	type Capabilities,
+	type Instance,
+	type NavLink,
+} from '$lib/api/instance';
 import type { Fetcher } from '$lib/api/request';
 import { homeLink } from '$lib/home';
 
@@ -40,6 +46,9 @@ export const instance = {
 	},
 	get nav(): NavLink[] {
 		return data.branding.nav;
+	},
+	get capabilities(): Capabilities {
+		return data;
 	},
 	get publishing(): string {
 		return data.publishing;

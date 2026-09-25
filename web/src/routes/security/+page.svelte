@@ -43,8 +43,9 @@
 	<p class="text-base-content/80">
 		A registry may review submissions before listing them, or list them immediately. A review is
 		that registry's own decision and is not a certification by the project or by any other registry.
-		An unlisted or blocked project is not deleted: its records remain, and its direct home URL still
-		resolves.
+		An unlisted or blocked project is not deleted: its signed records may remain available to
+		holders of their IDs, but this instance does not serve a blocked project and its project URL
+		returns 404.
 	</p>
 
 	<h2 class="text-xl font-semibold">Withdrawal is a statement, not erasure</h2>

@@ -6,12 +6,15 @@ use axum::response::{IntoResponse, Response};
 use moraine_crypto::ObjectKind;
 use moraine_model::Canonical;
 use moraine_model::delegation::Delegation;
+use moraine_model::event::EventKind;
 use moraine_model::feed::FeedEntry;
+use moraine_model::profile::ProfileRevision;
+use moraine_model::release::ReleaseObject;
 use moraine_model::signed::SignedObject;
 use moraine_model::trust::{RootSet, verify_key_delegation};
 use serde::Serialize;
 
-use super::projects::{apply_ownership_transfer, apply_withdrawal};
+use super::projects::{apply_ownership_transfer, apply_withdrawal, validate_ownership_transfer};
 use crate::db::{AppendFeed, FeedRow, ProjectRow, StoredObject};
 use crate::registry::{migration, recovery};
 use crate::routes::AppState;
@@ -59,16 +62,75 @@ pub(crate) async fn prepare_feed(state: &AppState, project_id: &str, body: &[u8]
 		Ok(entry) => entry,
 		Err(error) => return Err(Box::new(bad_request(state, VerifyError::Decode(error)))),
 	};
-	match state.metadata.object(&entry.object_digest).await {
-		Ok(Some(_)) => {}
+	let target = match state.metadata.object(&entry.object_digest).await {
+		Ok(Some(object)) => object,
 		Ok(None) => {
 			return Err(Box::new(
 				(StatusCode::CONFLICT, "referenced object is not stored").into_response(),
 			));
 		}
 		Err(error) => return Err(Box::new(storage_error(error))),
+	};
+	validate_feed_target(state, &entry, &target, &root, &delegations)?;
+	if entry.kind == "ownership-transferred" {
+		validate_ownership_transfer(state, project_id, &entry.object_digest).await?;
 	}
 	Ok(PreparedFeed { project, entry, object })
+}
+
+fn validate_feed_target(
+	state: &AppState,
+	entry: &FeedEntry,
+	stored: &crate::db::StoredObject,
+	root: &RootSet,
+	delegations: &[SignedObject<Delegation>],
+) -> Result<verify::VerifiedObject, Box<Response>> {
+	let kind = entry
+		.object_kind()
+		.map_err(|error| Box::new(bad_request(state, VerifyError::Decode(error))))?;
+	let object = verify::verify_object_authorized(kind, &stored.wire, root, delegations, unix_now())
+		.map_err(|error| Box::new(bad_request(state, error)))?;
+	if object.digest.as_slice() != entry.object_digest.as_slice() {
+		return Err(Box::new(
+			(StatusCode::BAD_REQUEST, "referenced object digest does not match").into_response(),
+		));
+	}
+	let event = EventKind::parse(&entry.kind)
+		.ok_or_else(|| Box::new((StatusCode::BAD_REQUEST, "unknown feed event kind").into_response()))?;
+	let matches = match event {
+		EventKind::ReleasePublished => matches!(
+			ReleaseObject::from_canonical_bytes(&object.payload_bytes),
+			Ok(ReleaseObject::Release(_))
+		),
+		EventKind::ReleaseWithdrawn => matches!(
+			ReleaseObject::from_canonical_bytes(&object.payload_bytes),
+			Ok(ReleaseObject::Withdrawal(_))
+		),
+		EventKind::ProfileUpdated => ProfileRevision::from_canonical_bytes(&object.payload_bytes).is_ok(),
+		EventKind::KeyChanged => matches!(
+			Delegation::from_canonical_bytes(&object.payload_bytes),
+			Ok(Delegation::Key(_))
+		),
+		EventKind::Migration => matches!(
+			Delegation::from_canonical_bytes(&object.payload_bytes),
+			Ok(Delegation::Migration(_))
+		),
+		EventKind::Recovery => matches!(
+			Delegation::from_canonical_bytes(&object.payload_bytes),
+			Ok(Delegation::Recovery(_))
+		),
+		EventKind::OwnershipTransferred => matches!(
+			Delegation::from_canonical_bytes(&object.payload_bytes),
+			Ok(Delegation::OwnershipTransfer(_))
+		),
+		EventKind::Advisory | EventKind::ForkDetected => false,
+	};
+	if !matches {
+		return Err(Box::new(
+			(StatusCode::BAD_REQUEST, "feed event does not match its object variant").into_response(),
+		));
+	}
+	Ok(object)
 }
 
 pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8]) -> Result<(i64, String), Box<Response>> {
@@ -89,7 +151,26 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 		Err(error) => return Err(Box::new(storage_error(error))),
 	};
 	if let Some(stored_entry) = replayed {
+		apply_feed_effects(state, &stored_entry, true).await?;
 		return Ok((stored_entry.seq, id_for(&stored_entry.entry_digest)));
+	}
+
+	let published = match state
+		.metadata
+		.feed_entry_for_object(&prepared.project.id, &entry.object_digest)
+		.await
+	{
+		Ok(published) => published,
+		Err(error) => return Err(Box::new(storage_error(error))),
+	};
+	if let Some(published) = published {
+		if published.kind != entry.kind {
+			return Err(Box::new(
+				(StatusCode::CONFLICT, "the object already has a different feed event").into_response(),
+			));
+		}
+		apply_feed_effects(state, &published, true).await?;
+		return Ok((published.seq, id_for(&published.entry_digest)));
 	}
 
 	let expected_seq = prepared.project.head_seq + 1;
@@ -125,12 +206,27 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	match state.metadata.append_feed(&row).await {
 		Ok(AppendFeed::Appended) => {}
 		Ok(AppendFeed::HeadMoved) => {
+			let stored_entry = match state.metadata.feed_at(&row.project_id, row.seq).await {
+				Ok(entry) => entry,
+				Err(error) => return Err(Box::new(storage_error(error))),
+			};
+			if let Some(stored_entry) = stored_entry
+				&& stored_entry.entry_digest == row.entry_digest
+			{
+				apply_feed_effects(state, &stored_entry, true).await?;
+				return Ok((row.seq, entry_id));
+			}
 			return Err(Box::new(
 				(StatusCode::CONFLICT, "the feed head moved while this entry was being stored").into_response(),
 			));
 		}
 		Err(error) => return Err(Box::new(storage_error(error))),
 	}
+	apply_feed_effects(state, &row, false).await?;
+	Ok((row.seq, entry_id))
+}
+
+async fn apply_feed_effects(state: &AppState, row: &crate::db::FeedRow, replay: bool) -> Result<(), Box<Response>> {
 	if row.kind == "profile-updated"
 		&& let Err(error) = crate::registry::search_index::refresh_search_document(state, &row.object_digest).await
 	{
@@ -142,11 +238,13 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	if row.kind == "release-withdrawn" {
 		apply_withdrawal(state, &row.project_id, &row.object_digest).await?;
 	}
-	if row.kind == "key-changed" {
+	if !replay && row.kind == "key-changed" {
 		state.metrics.record_key_change();
 	}
 	if row.kind == "recovery" {
-		state.metrics.record_key_change();
+		if !replay {
+			state.metrics.record_key_change();
+		}
 		recovery::apply(state, &row.project_id, &row.object_digest).await?;
 	}
 	if row.kind == "migration" {
@@ -172,7 +270,7 @@ pub(crate) async fn ingest_feed(state: &AppState, project_id: &str, body: &[u8])
 	{
 		return Err(Box::new(storage_error(error)));
 	}
-	Ok((row.seq, entry_id))
+	Ok(())
 }
 
 pub(crate) async fn load_root(state: &AppState, project_id: &str) -> Result<RootSet, Box<Response>> {

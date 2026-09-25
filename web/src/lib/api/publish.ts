@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { authorizedFetch } from './session';
+import { responseError } from './request';
 
 export const projectReceiptSchema = z.object({
 	project_id: z.string(),
@@ -29,8 +30,7 @@ export type FeedReceipt = z.infer<typeof feedReceiptSchema>;
 export type SubmissionReceipt = z.infer<typeof submissionReceiptSchema>;
 
 async function failure(response: Response): Promise<Error> {
-	const text = await response.text();
-	return new Error(text || `request failed (${response.status})`);
+	return responseError(response);
 }
 
 async function postWire(path: string, wire: Uint8Array): Promise<Response> {

@@ -37,7 +37,8 @@ async fn records_a_cross_signed_migration_and_refuses_an_under_signed_one() {
 		.expect("project id")
 		.to_string();
 
-	let signed = sign_payload(Kind::Delegation, &migration(&project_id), &[&publisher, &old_home, &new_home]);
+	let signed = sign_payload(Kind::Delegation, &migration(&project_id), &[&publisher, &old_home, &new_home])
+		.expect("valid signed migration");
 	let digest = object_id(Kind::Delegation, &signed.payload_bytes);
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/delegation"))
 		.body(Body::from(signed.wire_bytes()))
@@ -45,7 +46,8 @@ async fn records_a_cross_signed_migration_and_refuses_an_under_signed_one() {
 	let response = application.clone().oneshot(request).await.expect("response");
 	assert_eq!(response.status(), StatusCode::CREATED);
 
-	let under_signed = sign_payload(Kind::Delegation, &migration(&project_id), &[&publisher]);
+	let under_signed =
+		sign_payload(Kind::Delegation, &migration(&project_id), &[&publisher]).expect("valid signed migration");
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/delegation"))
 		.body(Body::from(under_signed.wire_bytes()))
 		.expect("request");

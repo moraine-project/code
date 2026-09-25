@@ -27,4 +27,4 @@ pub mod witness;
 
 pub use canonical::Canonical;
 pub use error::{ModelError, RejectReason};
-pub use signed::{SignatureEnvelope, SignedObject, TrustedKey, sign_payload};
+pub use signed::{ObjectPayload, SignatureEnvelope, SignedObject, TrustedKey, sign_payload, try_sign_payload};

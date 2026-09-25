@@ -323,7 +323,8 @@ fn compile(
 				bootstrap: None,
 				declared_time: now(),
 			});
-			let signed = sign_payload(ObjectKind::LoaderDef, &release, &[&key]);
+			let signed = sign_payload(ObjectKind::LoaderDef, &release, &[&key])
+				.map_err(|error| format!("loader release cannot be signed: {error}"))?;
 			let id = signed.id(ObjectKind::LoaderDef);
 			write_object(out, &id, &signed.wire_bytes())?;
 			println!("loader_release: {id}");
@@ -360,7 +361,8 @@ fn compile(
 				evidence_digest: None,
 				declared_time: now(),
 			});
-			let signed = sign_payload(ObjectKind::LoaderDef, &acceptance, &[&key]);
+			let signed = sign_payload(ObjectKind::LoaderDef, &acceptance, &[&key])
+				.map_err(|error| format!("loader acceptance cannot be signed: {error}"))?;
 			let id = signed.id(ObjectKind::LoaderDef);
 			write_object(out, &id, &signed.wire_bytes())?;
 			println!("loader_acceptance: {id}");

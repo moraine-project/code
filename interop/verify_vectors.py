@@ -9,21 +9,20 @@ from cbor import decode
 from reject import Reject
 
 DOMAIN_PREFIX = b"GAMEDIST/v1/"
-ALL_KINDS = [
-    "genesis",
+PROJECT_AUTHORITY = [
     "delegation",
     "release",
-    "feed-entry",
     "profile",
+    "feed-entry",
     "changelog",
-    "deny-list",
     "modpack",
-    "advisory",
     "attestation",
-    "game-def",
-    "loader-def",
-    "runtime-def",
 ]
+AUTHORITY_BY_KIND = {
+    "game-def": ["delegation", "game-def"],
+    "loader-def": ["delegation", "loader-def"],
+    "runtime-def": ["delegation", "runtime-def"],
+}
 OBJECT_KINDS = {
     "genesis",
     "delegation",
@@ -103,7 +102,7 @@ def verify_object(vector, kind, parsed, payload, envelope, verify_kind):
         purpose = parsed[0]
         message = signed_message("delegation", payload)
         if purpose == "key":
-            root = root_set(trust)
+            root = root_set(trust, "delegation")
             if "delegation" not in root["authorized_kinds"]:
                 raise Reject(
                     "unauthorized-kind", "genesis does not authorize delegations"
@@ -114,8 +113,15 @@ def verify_object(vector, kind, parsed, payload, envelope, verify_kind):
             root_verify(root, message, envelope)
             return
         if purpose == "ownership-transfer":
-            valid = root_verify(root_set(trust), message, envelope)
-            if valid < 2:
+            root = root_set(trust, "delegation")
+            valid = root_verify(root, message, envelope)
+            transfer = parsed[1]
+            key_ids = {key_id for _, key_id, _ in envelope["signatures"]}
+            if (
+                valid < 2
+                or transfer["from_key_id"] not in key_ids
+                or transfer["to_key_id"] not in key_ids
+            ):
                 raise Reject(
                     "transfer-needs-two-signatures",
                     "ownership transfer needs two signatures",
@@ -167,7 +173,15 @@ def verify_object(vector, kind, parsed, payload, envelope, verify_kind):
         root_verify(root_set(require_trust(vector)), message, envelope)
         return
     trust = require_trust(vector)
-    root_verify(root_set(trust), signed_message(verify_kind, payload), envelope)
+    if kind in {"advisory", "deny-list"}:
+        root = {
+            "keys": trusted_keys(trust["roots"]),
+            "threshold": trust["threshold"],
+            "authorized_kinds": trust.get("authorized_kinds", []),
+        }
+    else:
+        root = root_set(trust, kind)
+    root_verify(root, signed_message(verify_kind, payload), envelope)
 
 
 def evaluate_predicate(vector):
@@ -222,11 +236,15 @@ def root_set_from_genesis(genesis):
     }
 
 
-def root_set(trust):
+def root_set(trust, kind=None):
+    if trust.get("authorized_kinds"):
+        authorized = trust["authorized_kinds"]
+    else:
+        authorized = AUTHORITY_BY_KIND.get(kind, PROJECT_AUTHORITY)
     return {
         "keys": trusted_keys(trust["roots"]),
         "threshold": trust["threshold"],
-        "authorized_kinds": trust.get("authorized_kinds") or ALL_KINDS,
+        "authorized_kinds": authorized,
     }
 
 

@@ -50,6 +50,11 @@ impl Home {
 		if url.scheme() != "https" && url.scheme() != "http" {
 			return Err(format!("home url must use http or https, not `{}`", url.scheme()));
 		}
+		if url.scheme() == "http" && !is_loopback(url.host_str()) {
+			return Err(format!(
+				"{base} would send your API key and artifact bytes in the clear; use https, or a loopback address for a local instance"
+			));
+		}
 		let mut builder = reqwest::Client::builder()
 			.timeout(Duration::from_secs(30))
 			.redirect(reqwest::redirect::Policy::none());
@@ -71,6 +76,29 @@ impl Home {
 
 	pub async fn post_wire(&self, path: &str, body: Vec<u8>) -> Result<serde_json::Value, String> {
 		self.post_wire_with_token(path, body, None).await
+	}
+
+	pub async fn post_wire_status(
+		&self,
+		path: &str,
+		body: Vec<u8>,
+	) -> Result<(reqwest::StatusCode, serde_json::Value), String> {
+		let response = self
+			.client
+			.post(format!("{}{path}", self.base))
+			.header(reqwest::header::CONTENT_TYPE, "application/vnd.moraine.object+cbor")
+			.body(body)
+			.send()
+			.await
+			.map_err(|error| error.to_string())?;
+		let status = response.status();
+		let text = response.text().await.map_err(|error| error.to_string())?;
+		let value = if status.is_success() {
+			serde_json::from_str(&text).map_err(|error| format!("home returned non-JSON: {error}"))?
+		} else {
+			serde_json::from_str(&text).unwrap_or(serde_json::Value::Null)
+		};
+		Ok((status, value))
 	}
 
 	pub async fn post_wire_with_token(
@@ -150,6 +178,18 @@ async fn read_json(response: reqwest::Response) -> Result<serde_json::Value, Str
 	serde_json::from_str(&text).map_err(|error| format!("home returned non-JSON: {error}"))
 }
 
+fn is_loopback(host: Option<&str>) -> bool {
+	let Some(host) = host else { return false };
+	if host.eq_ignore_ascii_case("localhost") {
+		return true;
+	}
+	host.strip_prefix('[')
+		.and_then(|rest| rest.strip_suffix(']'))
+		.unwrap_or(host)
+		.parse::<std::net::IpAddr>()
+		.is_ok_and(|address| address.is_loopback())
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -166,5 +206,12 @@ mod tests {
 		let path = directory.path().join("roots.pem");
 		std::fs::write(&path, "not a certificate").expect("write");
 		assert!(extra_roots(&path).is_err());
+	}
+
+	#[test]
+	fn refuses_plaintext_for_a_remote_home() {
+		assert!(Home::new("http://example.com").is_err());
+		assert!(Home::new("http://127.0.0.1:8080").is_ok());
+		assert!(Home::new("https://example.com").is_ok());
 	}
 }

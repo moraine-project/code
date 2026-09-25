@@ -12,7 +12,7 @@ async function signIn(page: Page, password: string) {
 	await page.goto('/account');
 	await page.getByLabel('Email').fill('ops@example.org');
 	await page.getByLabel('Password').fill(password);
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await page.locator('form').getByRole('button', { name: 'Sign in' }).click();
 	await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
 }
 
@@ -30,7 +30,7 @@ test('changes a password and recovers with a one-time code', async ({ page }) =>
 	await expect(page.getByText(/Password changed/)).toBeVisible();
 
 	await page.getByRole('button', { name: 'Sign out' }).click();
-	await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+	await expect(page.locator('form').getByRole('button', { name: 'Sign in' })).toBeVisible();
 
 	await page.getByRole('button', { name: 'Forgot your password?' }).click();
 	await page.getByLabel('Email').fill('ops@example.org');

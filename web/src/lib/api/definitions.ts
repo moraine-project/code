@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { Fetcher } from './request';
-import { registryUrl } from './request';
+import { ApiError, registryUrl } from './request';
 
 export const definitionSummarySchema = z.object({
 	id: z.string(),
@@ -61,7 +61,7 @@ export async function fetchDefinition(
 		return null;
 	}
 	if (!response.ok) {
-		throw new Error(`home returned ${response.status} for the definition`);
+		throw new ApiError(response.status, `home returned ${response.status} for the definition`);
 	}
 	return definitionDetailSchema.parse(await response.json());
 }
@@ -73,7 +73,7 @@ export async function listDefinitions(
 ): Promise<DefinitionSummary[]> {
 	const response = await fetchFn(registryUrl(base, `/v1/${kind}`));
 	if (!response.ok) {
-		throw new Error(`home returned ${response.status} for the ${kind}`);
+		throw new ApiError(response.status, `home returned ${response.status} for the ${kind}`);
 	}
 	return z.array(definitionSummarySchema).parse(await response.json());
 }
@@ -90,7 +90,7 @@ export async function listLoaders(
 	const suffix = params.toString() ? `?${params.toString()}` : '';
 	const response = await fetchFn(registryUrl(base, `/v1/loaders${suffix}`));
 	if (!response.ok) {
-		throw new Error(`home returned ${response.status} for the loaders`);
+		throw new ApiError(response.status, `home returned ${response.status} for the loaders`);
 	}
 	return z.array(definitionSummarySchema).parse(await response.json());
 }

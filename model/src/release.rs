@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use moraine_codec::Value;
 
 use crate::artifact::Artifact;
-use crate::canonical::{
-	Canonical, Fields, expect_array, expect_bytes, expect_canonical_u64, expect_i64, expect_text, expect_u32, map_of,
-};
+use crate::canonical::{Canonical, Fields, expect_array, expect_bytes, expect_i64, expect_text, expect_u32, map_of};
 use crate::compatibility::{Compatibility, Rights};
 use crate::dependency::Dependency;
 use crate::error::{ModelError, RejectReason};
@@ -57,7 +55,7 @@ impl ReleasePayload {
 			));
 		}
 		for artifact in &self.artifacts {
-			expect_canonical_u64(artifact.size, "artifact size")?;
+			artifact.validate()?;
 		}
 		if !self.critical_extensions.is_empty() {
 			return Err(ModelError::new(
@@ -222,6 +220,7 @@ impl Canonical for ReleasePayload {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Withdrawal {
 	pub protocol: u32,
+	pub project_id: String,
 	pub release_id: String,
 	pub reason: String,
 	pub note: Option<String>,
@@ -238,6 +237,9 @@ impl Withdrawal {
 		if self.release_id.is_empty() {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "release_id"));
 		}
+		if self.project_id.is_empty() {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "project_id"));
+		}
 		if !Self::REASONS.contains(&self.reason.as_str()) {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "reason"));
 		}
@@ -250,6 +252,7 @@ impl Canonical for Withdrawal {
 		let mut pairs = vec![
 			("protocol", Value::int(i64::from(self.protocol))),
 			("type", Value::text("withdrawal")),
+			("project_id", Value::text(self.project_id.clone())),
 			("release_id", Value::text(self.release_id.clone())),
 			("reason", Value::text(self.reason.clone())),
 		];
@@ -264,6 +267,7 @@ impl Canonical for Withdrawal {
 		let fields = Fields::new("Withdrawal", value)?.reject_unknown(&[
 			"protocol",
 			"type",
+			"project_id",
 			"release_id",
 			"reason",
 			"note",
@@ -272,6 +276,7 @@ impl Canonical for Withdrawal {
 		expect_type(&fields, "withdrawal")?;
 		let withdrawal = Self {
 			protocol: expect_u32(fields.required("protocol")?, "protocol")?,
+			project_id: expect_text(fields.required("project_id")?, "project_id")?,
 			release_id: expect_text(fields.required("release_id")?, "release_id")?,
 			reason: expect_text(fields.required("reason")?, "reason")?,
 			note: fields.optional("note").map(|v| expect_text(v, "note")).transpose()?,
@@ -288,6 +293,16 @@ pub enum ReleaseObject {
 	Release(ReleasePayload),
 	Location(LocationRecord),
 	Withdrawal(Withdrawal),
+}
+
+impl ReleaseObject {
+	pub fn validate(&self) -> Result<(), ModelError> {
+		match self {
+			Self::Release(payload) => payload.validate(),
+			Self::Location(location) => location.validate(),
+			Self::Withdrawal(withdrawal) => withdrawal.validate(),
+		}
+	}
 }
 
 impl Canonical for ReleaseObject {

@@ -1,6 +1,8 @@
 use moraine_codec::Value;
 
-use crate::canonical::{Canonical, Fields, expect_array, expect_i64, expect_text, expect_u32, expect_u64, map_of};
+use crate::canonical::{
+	Canonical, Fields, canonical_i64, expect_array, expect_i64, expect_text, expect_u32, expect_u64, map_of,
+};
 use crate::error::{ModelError, RejectReason};
 
 pub const WITNESS_DOMAIN: &[u8] = b"GAMEDIST/v1/witness\0";
@@ -21,7 +23,7 @@ impl Canonical for WitnessObservation {
 			[
 				("project_id", Value::text(self.project_id.clone())),
 				("source_home", Value::text(self.source_home.clone())),
-				("sequence", Value::int(self.sequence as i64)),
+				("sequence", Value::int(canonical_i64(self.sequence, "sequence"))),
 				("head_entry", Value::text(self.head_entry.clone())),
 				("observed_at", Value::int(self.observed_at)),
 			],

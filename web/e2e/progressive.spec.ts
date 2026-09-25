@@ -14,7 +14,7 @@ test('reviews a first release, auto-publishes the next, and revokes its grant', 
 	await page.goto(`${state.progressiveBaseURL}/account`);
 	await page.getByLabel('Email').fill('ops@example.org');
 	await page.getByLabel('Password').fill(state.progressivePassword);
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await page.locator('form').getByRole('button', { name: 'Sign in' }).click();
 	await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
 
 	await page.goto(`${state.progressiveBaseURL}/publish`);
@@ -54,7 +54,7 @@ test('reviews a first release, auto-publishes the next, and revokes its grant', 
 	await expect(page.getByRole('alert')).toContainText('accept recorded');
 
 	await page.goto(`${state.progressiveBaseURL}/dashboard`);
-	await page.getByRole('tab', { name: 'Policy' }).click();
+	await page.getByRole('button', { name: 'Policy' }).click();
 	await page.getByLabel('Grant project id').fill(projectId);
 	await page.getByRole('button', { name: 'Load grants' }).click();
 	await expect(page.getByText(/user:.*·.*active/)).toBeVisible();
@@ -65,7 +65,7 @@ test('reviews a first release, auto-publishes the next, and revokes its grant', 
 	await expect(page.getByText('Key ready')).toBeVisible();
 	await page.getByRole('button', { name: 'Game', exact: true }).click();
 	await page.getByRole('option', { name: 'Minecraft' }).click();
-	await page.getByRole('tab', { name: 'Existing project' }).click();
+	await page.getByRole('button', { name: 'Existing project' }).click();
 	await page.getByLabel('Project ID').fill(projectId);
 	await page.setInputFiles('input[aria-label="File to publish"]', {
 		name: 'progressive-2.jar',
@@ -80,7 +80,7 @@ test('reviews a first release, auto-publishes the next, and revokes its grant', 
 	await expect(page.getByText(/Published automatically:/)).toBeVisible({ timeout: 30_000 });
 
 	await page.goto(`${state.progressiveBaseURL}/dashboard`);
-	await page.getByRole('tab', { name: 'Policy' }).click();
+	await page.getByRole('button', { name: 'Policy' }).click();
 	await page.getByLabel('Grant project id').fill(projectId);
 	await page.getByRole('button', { name: 'Load grants' }).click();
 	await expect(page.getByText(/user:.*·.*active/)).toBeVisible();

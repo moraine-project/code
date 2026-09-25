@@ -10,7 +10,7 @@ use moraine_model::feed::FeedEntry;
 use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::profile::ProfileRevision;
 use moraine_model::release::{ReleasePayload, Withdrawal};
-use moraine_model::signed::sign_payload;
+use moraine_model::signed::{TrustedKey, sign_payload, try_sign_payload};
 
 use crate::definitions::lock::DefinitionLock;
 use crate::home::Home;
@@ -43,7 +43,8 @@ pub async fn init(key_path: &Path, home_url: &str, home_hint: Option<String>) ->
 		contacts: None,
 		created_at: now(),
 	};
-	let signed = sign_payload(ObjectKind::Genesis, &genesis, &[&key]);
+	let signed = sign_payload(ObjectKind::Genesis, &genesis, &[&key])
+		.map_err(|error| format!("genesis cannot be signed: {error}"))?;
 	let home = Home::new(home_url)?;
 	let receipt = home.post_wire("/v1/projects", signed.wire_bytes()).await?;
 	println!("project_id: {}", receipt["project_id"].as_str().unwrap_or("?"));
@@ -52,7 +53,7 @@ pub async fn init(key_path: &Path, home_url: &str, home_hint: Option<String>) ->
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn release(
+pub async fn check(
 	key_path: &Path,
 	home_url: &str,
 	project_id: &str,
@@ -64,10 +65,45 @@ pub async fn release(
 	loader_id: Option<String>,
 	changelog: Option<String>,
 ) -> Result<(), String> {
+	let key = keyfile::load(key_path)?;
+	let release = release_payload(
+		project_id,
+		game_id,
+		game_versions,
+		human_version,
+		channel,
+		file,
+		loader_id,
+		changelog,
+	)?;
+	let signed = try_sign_payload(ObjectKind::Release, &release, &[&key])
+		.map_err(|error| format!("release cannot be signed: {error}"))?;
+	let trusted = TrustedKey::new(&key.verifying_key().to_bytes()).map_err(|error| format!("key is invalid: {error}"))?;
+	signed
+		.verify_threshold(ObjectKind::Release, std::slice::from_ref(&trusted), 1)
+		.map_err(|error| format!("release signature did not verify: {error}"))?;
+	let _ = Home::new(home_url)?;
+	println!("release: valid");
+	println!("project: {project_id}");
+	println!("artifact: sha256:{}", hex::encode(&release.artifacts[0].digest));
+	println!("nothing was uploaded; run `release` to store a newly signed object");
+	Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn release_payload(
+	project_id: &str,
+	game_id: &str,
+	game_versions: &[String],
+	human_version: &str,
+	channel: &str,
+	file: &Path,
+	loader_id: Option<String>,
+	changelog: Option<String>,
+) -> Result<ReleasePayload, String> {
 	if game_versions.is_empty() {
 		return Err("at least one --game-version is required".to_string());
 	}
-	let key = keyfile::load(key_path)?;
 	let artifact_file = artifacts::describe(file)?;
 	let changelog_digest = changelog
 		.map(|digest| parse_sha256(&digest).map(|bytes| bytes.to_vec()))
@@ -108,13 +144,44 @@ pub async fn release(
 		minimum_verifier_version: 1,
 		critical_extensions: Vec::new(),
 	};
-	let signed = sign_payload(ObjectKind::Release, &release, &[&key]);
+	release
+		.validate()
+		.map_err(|error| format!("this release would be rejected: {error}"))?;
+	Ok(release)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn release(
+	key_path: &Path,
+	home_url: &str,
+	project_id: &str,
+	game_id: &str,
+	game_versions: &[String],
+	human_version: &str,
+	channel: &str,
+	file: &Path,
+	loader_id: Option<String>,
+	changelog: Option<String>,
+) -> Result<(), String> {
+	let key = keyfile::load(key_path)?;
+	let release = release_payload(
+		project_id,
+		game_id,
+		game_versions,
+		human_version,
+		channel,
+		file,
+		loader_id,
+		changelog,
+	)?;
+	let signed = try_sign_payload(ObjectKind::Release, &release, &[&key])
+		.map_err(|error| format!("release cannot be signed: {error}"))?;
 	let home = Home::new(home_url)?;
 	let receipt = home
 		.post_wire(&format!("/v1/projects/{project_id}/objects/release"), signed.wire_bytes())
 		.await?;
 	println!("release: {}", receipt["id"].as_str().unwrap_or("?"));
-	println!("artifact: sha256:{}", hex::encode(artifact_file.digest));
+	println!("artifact: sha256:{}", hex::encode(&release.artifacts[0].digest));
 	Ok(())
 }
 
@@ -148,7 +215,8 @@ pub async fn profile(
 		rights: None,
 		declared_time: now(),
 	};
-	let signed = sign_payload(ObjectKind::Profile, &profile, &[&key]);
+	let signed = sign_payload(ObjectKind::Profile, &profile, &[&key])
+		.map_err(|error| format!("profile cannot be signed: {error}"))?;
 	let home = Home::new(home_url)?;
 	let receipt = home
 		.post_wire(&format!("/v1/projects/{project_id}/objects/profile"), signed.wire_bytes())
@@ -178,7 +246,8 @@ pub async fn changelog(
 		}],
 		declared_time: now(),
 	};
-	let signed = sign_payload(ObjectKind::Changelog, &changelog, &[&key]);
+	let signed = sign_payload(ObjectKind::Changelog, &changelog, &[&key])
+		.map_err(|error| format!("changelog cannot be signed: {error}"))?;
 	let home = Home::new(home_url)?;
 	let receipt = home
 		.post_wire(&format!("/v1/projects/{project_id}/objects/changelog"), signed.wire_bytes())
@@ -335,7 +404,8 @@ pub async fn advisory(
 		expires_at: None,
 		retracted_at: None,
 	};
-	let signed = sign_payload(ObjectKind::Advisory, &advisory, &[&key]);
+	let signed = sign_payload(ObjectKind::Advisory, &advisory, &[&key])
+		.map_err(|error| format!("advisory cannot be signed: {error}"))?;
 	let home = Home::new(home_url)?;
 	let receipt = home.post_wire("/v1/advisories", signed.wire_bytes()).await?;
 	println!("advisory: {}", receipt["advisory"].as_str().unwrap_or("?"));
@@ -376,7 +446,8 @@ pub async fn attestation(
 		signer_id: signer_id.to_string(),
 		issued_at: now(),
 	};
-	let signed = sign_payload(ObjectKind::Attestation, &attestation, &[&key]);
+	let signed = sign_payload(ObjectKind::Attestation, &attestation, &[&key])
+		.map_err(|error| format!("attestation cannot be signed: {error}"))?;
 	let home = Home::new(home_url)?;
 	let receipt = home.post_wire("/v1/attestations", signed.wire_bytes()).await?;
 	println!("attestation: {}", receipt["attestation"].as_str().unwrap_or("?"));
@@ -405,12 +476,14 @@ pub async fn withdraw(
 	let key = keyfile::load(key_path)?;
 	let withdrawal = Withdrawal {
 		protocol: 1,
+		project_id: project_id.to_string(),
 		release_id: release_id.to_string(),
 		reason: reason.to_string(),
 		note,
 		declared_time: now(),
 	};
-	let signed = sign_payload(ObjectKind::Release, &withdrawal, &[&key]);
+	let signed = sign_payload(ObjectKind::Release, &withdrawal, &[&key])
+		.map_err(|error| format!("withdrawal cannot be signed: {error}"))?;
 	let home = Home::new(home_url)?;
 	let receipt = home
 		.post_wire(&format!("/v1/projects/{project_id}/objects/release"), signed.wire_bytes())
@@ -433,12 +506,13 @@ pub async fn transfer(
 	let transfer = Delegation::OwnershipTransfer(OwnershipTransfer {
 		protocol: 1,
 		project_id: project_id.to_string(),
-		from_owner: parse_owner(from)?,
-		to_owner: parse_owner(to)?,
+		from_owner: parse_owner(from, old_key.key_id())?,
+		to_owner: parse_owner(to, new_key.key_id())?,
 		issued_at: now(),
 		previous_delegation_digest: None,
 	});
-	let signed = sign_payload(ObjectKind::Delegation, &transfer, &[&old_key, &new_key]);
+	let signed = sign_payload(ObjectKind::Delegation, &transfer, &[&old_key, &new_key])
+		.map_err(|error| format!("transfer cannot be signed: {error}"))?;
 	let home = Home::new(home_url)?;
 	let receipt = home
 		.post_wire(&format!("/v1/projects/{project_id}/transfer"), signed.wire_bytes())
@@ -448,7 +522,7 @@ pub async fn transfer(
 	Ok(())
 }
 
-fn parse_owner(value: &str) -> Result<OwnerRef, String> {
+fn parse_owner(value: &str, key_id: moraine_crypto::KeyId) -> Result<OwnerRef, String> {
 	let (kind, id) = value
 		.split_once(':')
 		.ok_or_else(|| format!("`{value}` must be user:<id> or org:<id>"))?;
@@ -461,6 +535,7 @@ fn parse_owner(value: &str) -> Result<OwnerRef, String> {
 	Ok(OwnerRef {
 		kind: kind.to_string(),
 		id: id.to_string(),
+		key_id,
 	})
 }
 
@@ -481,21 +556,27 @@ pub async fn upload(home_url: &str, file: &Path, api_key: Option<String>) -> Res
 pub async fn publish(key_path: &Path, home_url: &str, project_id: &str, object_id: &str, kind: &str) -> Result<(), String> {
 	let key = keyfile::load(key_path)?;
 	let home = Home::new(home_url)?;
-	let capability = home
-		.get_json("/.well-known/mod-registry")
-		.await
-		.unwrap_or(serde_json::Value::Null);
-	if capability["publishing"] == "review" {
-		return Err("this home reviews submissions; use `submit --api-key <token>` instead of `publish`".to_string());
+	let capability = home.get_json("/.well-known/mod-registry").await?;
+	if capability["publishing"] != "open" {
+		return Err("this home does not accept direct feed publication; use `submit --api-key <token>`".to_string());
 	}
-	let entry = next_feed_entry(&home, project_id, object_id, kind).await?;
-	let signed = sign_payload(ObjectKind::FeedEntry, &entry, &[&key]);
-	let receipt = home
-		.post_wire(&format!("/v1/projects/{project_id}/feed"), signed.wire_bytes())
-		.await?;
-	println!("seq: {}", receipt["seq"].as_i64().unwrap_or(0));
-	println!("entry: {}", receipt["entry"].as_str().unwrap_or("?"));
-	Ok(())
+	for _ in 0..3 {
+		let entry = next_feed_entry(&home, project_id, object_id, kind).await?;
+		let signed = try_sign_payload(ObjectKind::FeedEntry, &entry, &[&key])
+			.map_err(|error| format!("feed entry cannot be signed: {error}"))?;
+		let (status, receipt) = home
+			.post_wire_status(&format!("/v1/projects/{project_id}/feed"), signed.wire_bytes())
+			.await?;
+		if status.is_success() {
+			println!("seq: {}", receipt["seq"].as_i64().unwrap_or(0));
+			println!("entry: {}", receipt["entry"].as_str().unwrap_or("?"));
+			return Ok(());
+		}
+		if status != reqwest::StatusCode::CONFLICT {
+			return Err(format!("home returned {status}"));
+		}
+	}
+	Err("the feed head kept moving while publishing; retry later".to_string())
 }
 
 pub async fn submit(
@@ -509,7 +590,8 @@ pub async fn submit(
 	let key = keyfile::load(key_path)?;
 	let home = Home::new(home_url)?;
 	let entry = next_feed_entry(&home, project_id, object_id, kind).await?;
-	let signed = sign_payload(ObjectKind::FeedEntry, &entry, &[&key]);
+	let signed = try_sign_payload(ObjectKind::FeedEntry, &entry, &[&key])
+		.map_err(|error| format!("feed entry cannot be signed: {error}"))?;
 	let receipt = home
 		.post_wire_with_token("/v1/submissions", signed.wire_bytes(), api_key.as_deref())
 		.await?;
@@ -523,15 +605,23 @@ pub async fn submit(
 
 async fn next_feed_entry(home: &Home, project_id: &str, object_id: &str, kind: &str) -> Result<FeedEntry, String> {
 	let project = home.get_json(&format!("/v1/projects/{project_id}")).await?;
-	let head_seq = project["head_seq"].as_i64().unwrap_or(0);
+	let head_seq = project["head_seq"]
+		.as_i64()
+		.filter(|sequence| *sequence >= 0)
+		.ok_or_else(|| "the home returned an invalid feed head".to_string())?;
 	let previous = match project["head_entry"].as_str() {
 		Some(entry) => Some(parse_object_id(entry)?.to_vec()),
-		None => None,
+		None if head_seq == 0 => None,
+		None => return Err("the home returned a feed head without its entry".to_string()),
 	};
+	let sequence = u64::try_from(head_seq)
+		.ok()
+		.and_then(|sequence| sequence.checked_add(1))
+		.ok_or_else(|| "the home's feed sequence is exhausted".to_string())?;
 	Ok(FeedEntry {
 		protocol: 1,
 		project_id: project_id.to_string(),
-		sequence: (head_seq + 1) as u64,
+		sequence,
 		previous,
 		kind: kind.to_string(),
 		object_digest: parse_object_id(object_id)?.to_vec(),
@@ -674,6 +764,51 @@ id = "gd:sha256:bb"
 		assert_eq!(sections[0].body, "crash on launch");
 		assert_eq!(sections[1].heading, "Changes");
 		assert_eq!(sections[1].body, "new map");
+	}
+
+	#[tokio::test]
+	async fn check_validates_a_release_without_uploading() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let key_path = directory.path().join("publisher.key");
+		keyfile::create(&key_path).expect("key");
+		let file = directory.path().join("mod.jar");
+		std::fs::write(&file, b"artifact").expect("write");
+		check(
+			&key_path,
+			"https://example.com",
+			"p",
+			"g",
+			&["1.0.0".to_string()],
+			"1.0.0",
+			"release",
+			&file,
+			None,
+			None,
+		)
+		.await
+		.expect("check");
+	}
+
+	#[test]
+	fn release_payload_rejects_invalid_preflight_input() {
+		let directory = tempfile::tempdir().expect("tempdir");
+		let file = directory.path().join("mod.jar");
+		std::fs::write(&file, b"artifact").expect("write");
+		assert!(release_payload("p", "g", &[], "1.0.0", "release", &file, None, None).is_err());
+		assert!(
+			release_payload(
+				"p",
+				"g",
+				&["1.0.0".to_string()],
+				"1.0.0",
+				"release",
+				&file,
+				None,
+				Some("not-a-digest".to_string()),
+			)
+			.is_err()
+		);
+		assert!(release_payload("p", "g", &["1.0.0".to_string()], "1.0.0", "release", &file, None, None,).is_ok());
 	}
 
 	#[test]

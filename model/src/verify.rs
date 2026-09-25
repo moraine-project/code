@@ -3,21 +3,22 @@ use std::fmt;
 use moraine_codec::Value;
 use moraine_crypto::{ObjectKind, object_id};
 
-use crate::advisory::Advisory;
 use crate::attestation::AttestationObject;
 use crate::canonical::Canonical;
 use crate::changelog::Changelog;
 use crate::definition::{GameDef, LoaderObject, RuntimeDef};
-use crate::delegation::Delegation;
-use crate::deny_list::DenyList;
+use crate::delegation::{Delegation, DelegationPurpose};
 use crate::error::{ModelError, RejectReason};
 use crate::feed::FeedEntry;
-use crate::genesis::Genesis;
+use crate::genesis::{Genesis, GenesisKind};
 use crate::modpack::ModpackManifest;
 use crate::profile::ProfileRevision;
 use crate::release::ReleaseObject;
-use crate::signed::{SignedObject, TrustedKey, verify_envelope};
-use crate::trust::{RootSet, verify_genesis as verify_genesis_signed, verify_key_delegation};
+use crate::signed::{ObjectPayload, SignedObject, TrustedKey, verify_envelope};
+use crate::trust::{
+	RootSet, verify_genesis as verify_genesis_signed, verify_key_delegation, verify_migration, verify_ownership_transfer,
+	verify_recovery,
+};
 
 #[derive(Debug)]
 pub struct VerifiedObject {
@@ -64,18 +65,17 @@ pub fn verify_genesis(wire: &[u8]) -> Result<(RootSet, VerifiedObject), VerifyEr
 
 pub fn verify_object(kind: ObjectKind, wire: &[u8], root: &RootSet) -> Result<VerifiedObject, VerifyError> {
 	match kind {
-		ObjectKind::Delegation => verify_typed::<Delegation>(kind, wire, root),
+		ObjectKind::Delegation => verify_delegation(wire, root),
 		ObjectKind::Release => verify_typed::<ReleaseObject>(kind, wire, root),
 		ObjectKind::Profile => verify_typed::<ProfileRevision>(kind, wire, root),
 		ObjectKind::FeedEntry => verify_typed::<FeedEntry>(kind, wire, root),
-		ObjectKind::Advisory => verify_typed::<Advisory>(kind, wire, root),
 		ObjectKind::Attestation => verify_typed::<AttestationObject>(kind, wire, root),
 		ObjectKind::GameDef => verify_typed::<GameDef>(kind, wire, root),
 		ObjectKind::LoaderDef => verify_typed::<LoaderObject>(kind, wire, root),
 		ObjectKind::RuntimeDef => verify_typed::<RuntimeDef>(kind, wire, root),
 		ObjectKind::Modpack => verify_typed::<ModpackManifest>(kind, wire, root),
 		ObjectKind::Changelog => verify_typed::<Changelog>(kind, wire, root),
-		ObjectKind::DenyList => verify_typed::<DenyList>(kind, wire, root),
+		ObjectKind::Advisory | ObjectKind::DenyList => Err(VerifyError::UnsupportedKind(kind)),
 		other => Err(VerifyError::UnsupportedKind(other)),
 	}
 }
@@ -90,25 +90,46 @@ pub fn verify_object_authorized(
 	match verify_object(kind, wire, root) {
 		Ok(object) => Ok(object),
 		Err(VerifyError::Signature(error)) => match kind {
-			ObjectKind::Delegation => verify_delegated::<Delegation>(kind, wire, root, delegations, now, error),
+			ObjectKind::Delegation => Err(VerifyError::Signature(error)),
 			ObjectKind::Release => verify_delegated::<ReleaseObject>(kind, wire, root, delegations, now, error),
 			ObjectKind::Profile => verify_delegated::<ProfileRevision>(kind, wire, root, delegations, now, error),
 			ObjectKind::FeedEntry => verify_delegated::<FeedEntry>(kind, wire, root, delegations, now, error),
-			ObjectKind::Advisory => verify_delegated::<Advisory>(kind, wire, root, delegations, now, error),
 			ObjectKind::Attestation => verify_delegated::<AttestationObject>(kind, wire, root, delegations, now, error),
 			ObjectKind::GameDef => verify_delegated::<GameDef>(kind, wire, root, delegations, now, error),
 			ObjectKind::LoaderDef => verify_delegated::<LoaderObject>(kind, wire, root, delegations, now, error),
 			ObjectKind::RuntimeDef => verify_delegated::<RuntimeDef>(kind, wire, root, delegations, now, error),
 			ObjectKind::Modpack => verify_delegated::<ModpackManifest>(kind, wire, root, delegations, now, error),
 			ObjectKind::Changelog => verify_delegated::<Changelog>(kind, wire, root, delegations, now, error),
-			ObjectKind::DenyList => verify_delegated::<DenyList>(kind, wire, root, delegations, now, error),
 			other => Err(VerifyError::UnsupportedKind(other)),
 		},
 		Err(other) => Err(other),
 	}
 }
 
-fn verify_delegated<T: Canonical>(
+fn verify_delegation(wire: &[u8], root: &RootSet) -> Result<VerifiedObject, VerifyError> {
+	let kind = ObjectKind::Delegation;
+	if !root.authorizes_kind(kind.as_str()) {
+		return Err(VerifyError::UnauthorizedKind(kind));
+	}
+	let signed = SignedObject::<Delegation>::from_bytes(wire).map_err(VerifyError::Decode)?;
+	match signed.payload.purpose() {
+		DelegationPurpose::Key => verify_key_delegation(&signed, root),
+		DelegationPurpose::OwnershipTransfer => verify_ownership_transfer(&signed, root),
+		DelegationPurpose::Migration => verify_migration(&signed, root),
+		DelegationPurpose::Recovery => verify_recovery(&signed, root),
+	}
+	.map_err(VerifyError::Signature)?;
+	bind_subject(kind, &signed.payload.to_value(), root)?;
+	Ok(VerifiedObject {
+		kind,
+		digest: object_id(kind, &signed.payload_bytes),
+		id: signed.id(kind),
+		payload_bytes: signed.payload_bytes.clone(),
+		wire_bytes: wire.to_vec(),
+	})
+}
+
+fn verify_delegated<T: ObjectPayload>(
 	kind: ObjectKind,
 	wire: &[u8],
 	root: &RootSet,
@@ -116,6 +137,12 @@ fn verify_delegated<T: Canonical>(
 	now: i64,
 	root_error: ModelError,
 ) -> Result<VerifiedObject, VerifyError> {
+	if T::KIND != kind {
+		return Err(VerifyError::Signature(ModelError::new(
+			RejectReason::WrongObjectKind,
+			format!("payload belongs to `{}`, not `{}`", T::KIND.as_str(), kind.as_str()),
+		)));
+	}
 	let signed = SignedObject::<T>::from_bytes(wire).map_err(VerifyError::Decode)?;
 	let message = signed.signed_message(kind);
 	for candidate in delegations {
@@ -149,45 +176,77 @@ fn verify_delegated<T: Canonical>(
 	Err(VerifyError::Signature(root_error))
 }
 
-fn project_scoped(kind: ObjectKind) -> bool {
-	matches!(
-		kind,
-		ObjectKind::Delegation
-			| ObjectKind::Release
-			| ObjectKind::Profile
-			| ObjectKind::FeedEntry
-			| ObjectKind::Changelog
-			| ObjectKind::Modpack
-	)
-}
-
 fn bind_subject(kind: ObjectKind, payload: &Value, root: &RootSet) -> Result<(), VerifyError> {
-	if !project_scoped(kind) {
-		return Ok(());
-	}
-	let Value::Map(pairs) = payload else {
-		return Ok(());
+	let declared = |field: &str| {
+		let Value::Map(pairs) = payload else { return None };
+		pairs
+			.iter()
+			.find(|(key, _)| matches!(key, Value::Text(name) if name == field))
+			.and_then(|(_, value)| value.as_text())
 	};
-	let Some(declared) = pairs
-		.iter()
-		.find(|(key, _)| matches!(key, Value::Text(name) if name == "project_id"))
-		.and_then(|(_, value)| value.as_text())
-	else {
-		return Ok(());
+	let require = |field: &str, expected: &str| -> Result<(), VerifyError> {
+		match declared(field) {
+			Some(value) if value == expected => Ok(()),
+			Some(value) => Err(VerifyError::Signature(ModelError::new(
+				RejectReason::WrongSubject,
+				format!("the object claims `{value}` but the root set establishes `{expected}`"),
+			))),
+			None => Err(VerifyError::Decode(ModelError::new(
+				RejectReason::WrongSubject,
+				format!("the object does not identify its `{field}` subject"),
+			))),
+		}
 	};
-	if declared != root.subject() {
-		return Err(VerifyError::Signature(ModelError::new(
-			RejectReason::WrongSubject,
-			format!(
-				"the object claims `{declared}` but the root set establishes `{}`",
-				root.subject()
-			),
-		)));
+	match kind {
+		ObjectKind::GameDef => {
+			if root.genesis_kind() != GenesisKind::Game {
+				return Err(VerifyError::UnauthorizedKind(kind));
+			}
+			require("game_id", root.subject())?;
+		}
+		ObjectKind::LoaderDef => {
+			if root.genesis_kind() != GenesisKind::Loader {
+				return Err(VerifyError::UnauthorizedKind(kind));
+			}
+			let field = if declared("type") == Some("mapping") {
+				"accepting_loader_id"
+			} else {
+				"loader_id"
+			};
+			require(field, root.subject())?;
+		}
+		ObjectKind::RuntimeDef => {
+			if root.genesis_kind() != GenesisKind::Runtime {
+				return Err(VerifyError::UnauthorizedKind(kind));
+			}
+			require("runtime_id", root.subject())?;
+		}
+		ObjectKind::Attestation => {
+			if declared("subject_kind") == Some("project") {
+				require("subject_id", root.subject())?;
+			}
+			require("signer_id", root.subject())?;
+		}
+		ObjectKind::Release if matches!(declared("type"), Some("release") | Some("withdrawal")) => {
+			require("project_id", root.subject())?;
+		}
+		ObjectKind::Delegation
+		| ObjectKind::Profile
+		| ObjectKind::FeedEntry
+		| ObjectKind::Changelog
+		| ObjectKind::Modpack => require("project_id", root.subject())?,
+		_ => {}
 	}
 	Ok(())
 }
 
-fn verify_typed<T: Canonical>(kind: ObjectKind, wire: &[u8], root: &RootSet) -> Result<VerifiedObject, VerifyError> {
+fn verify_typed<T: ObjectPayload>(kind: ObjectKind, wire: &[u8], root: &RootSet) -> Result<VerifiedObject, VerifyError> {
+	if T::KIND != kind {
+		return Err(VerifyError::Signature(ModelError::new(
+			RejectReason::WrongObjectKind,
+			format!("payload belongs to `{}`, not `{}`", T::KIND.as_str(), kind.as_str()),
+		)));
+	}
 	if kind != ObjectKind::FeedEntry && !root.authorizes_kind(kind.as_str()) {
 		return Err(VerifyError::UnauthorizedKind(kind));
 	}
@@ -211,10 +270,11 @@ mod tests {
 
 	use super::*;
 	use crate::artifact::Artifact;
+	use crate::attestation::{Attestation, AttestationKind, AttestationObject};
 	use crate::compatibility::{Compatibility, Predicate, Scheme, Side};
-	use crate::delegation::KeyDelegation;
+	use crate::delegation::{KeyDelegation, Migration, OwnerRef, OwnershipTransfer};
 	use crate::genesis::{Genesis, GenesisKind, RootKey};
-	use crate::release::ReleasePayload;
+	use crate::release::{ReleasePayload, Withdrawal};
 	use crate::signed::sign_payload;
 	use crate::trust::RootSet;
 
@@ -230,12 +290,13 @@ mod tests {
 				"release".to_string(),
 				"feed-entry".to_string(),
 				"profile".to_string(),
+				"attestation".to_string(),
 			],
 			home_hint: None,
 			contacts: None,
 			created_at: 1_760_000_000,
 		};
-		let signed = sign_payload(ObjectKind::Genesis, &genesis, &[key]);
+		let signed = sign_payload(ObjectKind::Genesis, &genesis, &[key]).expect("valid signed genesis");
 		verify_genesis(&signed.wire_bytes()).expect("genesis").0
 	}
 
@@ -276,7 +337,26 @@ mod tests {
 			minimum_verifier_version: 1,
 			critical_extensions: Vec::new(),
 		};
-		sign_payload(ObjectKind::Release, &release, &[signer]).wire_bytes()
+		sign_payload(ObjectKind::Release, &release, &[signer])
+			.expect("valid signed release")
+			.wire_bytes()
+	}
+
+	fn withdrawal(project_id: &str) -> Withdrawal {
+		Withdrawal {
+			protocol: 1,
+			project_id: project_id.to_string(),
+			release_id: "gd:sha256:release".to_string(),
+			reason: "broken".to_string(),
+			note: None,
+			declared_time: 1_760_000_000,
+		}
+	}
+
+	fn withdrawal_wire(project_id: &str, signer: &SigningKey) -> Vec<u8> {
+		sign_payload(ObjectKind::Release, &withdrawal(project_id), &[signer])
+			.expect("valid signed withdrawal")
+			.wire_bytes()
 	}
 
 	fn delegation(
@@ -297,7 +377,19 @@ mod tests {
 			issued_at: 1_760_000_000,
 			previous_delegation_digest: None,
 		};
-		sign_payload(ObjectKind::Delegation, &Delegation::Key(payload), &[root_key])
+		sign_payload(ObjectKind::Delegation, &Delegation::Key(payload), &[root_key]).expect("valid signed delegation")
+	}
+
+	fn assert_delegation_rejected_by_root_rules(wire: &[u8], root: &RootSet, reason: RejectReason) {
+		for result in [
+			verify_object(ObjectKind::Delegation, wire, root),
+			verify_object_authorized(ObjectKind::Delegation, wire, root, &[], 1_770_000_000),
+		] {
+			assert!(
+				matches!(result, Err(VerifyError::Signature(ref error)) if error.reason == reason),
+				"{result:?}"
+			);
+		}
 	}
 
 	#[test]
@@ -335,7 +427,7 @@ mod tests {
 			unreachable!()
 		};
 		payload.expires_at = Some(1_750_000_000);
-		let expired = sign_payload(ObjectKind::Delegation, &expired.payload, &[&root_key]);
+		let expired = sign_payload(ObjectKind::Delegation, &expired.payload, &[&root_key]).expect("valid signed delegation");
 
 		assert!(verify_object_authorized(ObjectKind::Release, &wire, &root, &[expired], 1_770_000_000).is_err());
 	}
@@ -352,6 +444,23 @@ mod tests {
 	}
 
 	#[test]
+	fn a_withdrawal_is_bound_to_one_project() {
+		let root_key = SigningKey::from_seed(&[1; 32]);
+		let root = root_set(&root_key);
+
+		assert!(verify_object(ObjectKind::Release, &withdrawal_wire(root.subject(), &root_key), &root).is_ok());
+		assert!(sign_payload(ObjectKind::Release, &withdrawal(""), &[&root_key]).is_err());
+
+		let foreign = withdrawal_wire("gd:sha256:someone-else", &root_key);
+		let error = verify_object(ObjectKind::Release, &foreign, &root)
+			.expect_err("a root must not withdraw a release for another project");
+		assert!(
+			matches!(error, VerifyError::Signature(ref error) if error.reason == RejectReason::WrongSubject),
+			"{error:?}"
+		);
+	}
+
+	#[test]
 	fn a_delegation_for_another_project_grants_nothing() {
 		let root_key = SigningKey::from_seed(&[1; 32]);
 		let delegate_key = SigningKey::from_seed(&[2; 32]);
@@ -362,7 +471,7 @@ mod tests {
 			unreachable!()
 		};
 		payload.project_id = "gd:sha256:someone-else".to_string();
-		let foreign = sign_payload(ObjectKind::Delegation, &foreign.payload, &[&root_key]);
+		let foreign = sign_payload(ObjectKind::Delegation, &foreign.payload, &[&root_key]).expect("valid signed delegation");
 
 		assert!(verify_object_authorized(ObjectKind::Release, &wire, &root, &[foreign], 1_770_000_000).is_err());
 	}
@@ -390,7 +499,8 @@ mod tests {
 			unreachable!()
 		};
 		payload.allowed_kinds = vec!["deny-list".to_string()];
-		let overreach = sign_payload(ObjectKind::Delegation, &overreach.payload, &[&root_key]);
+		let overreach =
+			sign_payload(ObjectKind::Delegation, &overreach.payload, &[&root_key]).expect("valid signed delegation");
 
 		assert!(verify_object_authorized(ObjectKind::Release, &wire, &root, &[overreach], 1_770_000_000).is_err());
 	}
@@ -409,8 +519,104 @@ mod tests {
 			unreachable!()
 		};
 		payload.allowed_kinds = vec!["profile".to_string()];
-		let profile_only = sign_payload(ObjectKind::Delegation, &profile_only, &[&root_key]);
+		let profile_only =
+			sign_payload(ObjectKind::Delegation, &profile_only, &[&root_key]).expect("valid signed delegation");
 
 		assert!(verify_object_authorized(ObjectKind::Release, &wire, &root, &[profile_only], 1_770_000_000).is_err());
+	}
+
+	#[test]
+	fn one_sided_ownership_transfer_is_rejected() {
+		let root_key = SigningKey::from_seed(&[1; 32]);
+		let new_owner_key = SigningKey::from_seed(&[2; 32]);
+		let root = root_set(&root_key);
+		let transfer = Delegation::OwnershipTransfer(OwnershipTransfer {
+			protocol: 1,
+			project_id: root.subject().to_string(),
+			from_owner: OwnerRef {
+				kind: "user".to_string(),
+				id: "old-owner".to_string(),
+				key_id: root_key.key_id(),
+			},
+			to_owner: OwnerRef {
+				kind: "user".to_string(),
+				id: "new-owner".to_string(),
+				key_id: new_owner_key.key_id(),
+			},
+			issued_at: 1_760_000_000,
+			previous_delegation_digest: None,
+		});
+		let wire = sign_payload(ObjectKind::Delegation, &transfer, &[&root_key])
+			.expect("valid signed transfer")
+			.wire_bytes();
+
+		assert_delegation_rejected_by_root_rules(&wire, &root, RejectReason::TransferNeedsTwoSignatures);
+	}
+
+	#[test]
+	fn under_threshold_migration_is_rejected() {
+		let root_key = SigningKey::from_seed(&[1; 32]);
+		let root = root_set(&root_key);
+		let migration = Delegation::Migration(Migration {
+			protocol: 1,
+			project_id: root.subject().to_string(),
+			old_home: "https://old.example".to_string(),
+			new_home: "https://new.example".to_string(),
+			cutover_seq: 1,
+			reason: None,
+			declared_time: 1_760_000_000,
+		});
+		let wire = sign_payload(ObjectKind::Delegation, &migration, &[&root_key])
+			.expect("valid signed migration")
+			.wire_bytes();
+
+		assert_delegation_rejected_by_root_rules(&wire, &root, RejectReason::CrossSignatureRequired);
+	}
+
+	#[test]
+	fn delegated_keys_cannot_authorize_delegations() {
+		let root_key = SigningKey::from_seed(&[1; 32]);
+		let delegate_key = SigningKey::from_seed(&[2; 32]);
+		let root = root_set(&root_key);
+		let mut grant = delegation(&root, &root_key, &delegate_key, false).payload;
+		let Delegation::Key(payload) = &mut grant else {
+			unreachable!()
+		};
+		payload.allowed_kinds = vec!["delegation".to_string()];
+		let grant = sign_payload(ObjectKind::Delegation, &grant, &[&root_key]).expect("valid signed delegation");
+		let wire = sign_payload(ObjectKind::Delegation, &grant.payload, &[&delegate_key])
+			.expect("valid signed delegation")
+			.wire_bytes();
+
+		assert!(verify_object_authorized(ObjectKind::Delegation, &wire, &root, &[grant], 1_770_000_000).is_err());
+	}
+
+	#[test]
+	fn a_project_root_cannot_impersonate_an_attestation_provider() {
+		let root_key = SigningKey::from_seed(&[1; 32]);
+		let root = root_set(&root_key);
+		let payload = AttestationObject::Evidence(Attestation {
+			protocol: 1,
+			artifact_digest: vec![0xAB; 32],
+			subject_kind: "project".to_string(),
+			subject_id: root.subject().to_string(),
+			kind: AttestationKind::BuildProvenance,
+			media_type: "application/json".to_string(),
+			body_digest: None,
+			body_inline: None,
+			signer_id: "provider".to_string(),
+			issued_at: 1_760_000_000,
+		});
+		let signed = sign_payload(ObjectKind::Attestation, &payload, &[&root_key]).expect("valid signed attestation");
+		assert!(verify_object(ObjectKind::Attestation, &signed.wire_bytes(), &root).is_err());
+	}
+
+	#[test]
+	fn project_roots_do_not_verify_external_authorities() {
+		let root_key = SigningKey::from_seed(&[1; 32]);
+		let root = root_set(&root_key);
+		for kind in [ObjectKind::Advisory, ObjectKind::DenyList] {
+			assert!(matches!(verify_object(kind, &[], &root), Err(VerifyError::UnsupportedKind(k)) if k == kind));
+		}
 	}
 }

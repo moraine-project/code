@@ -170,6 +170,14 @@ pub(crate) async fn apply(state: &AppState, project_id: &str, object_digest: &[u
 	let Delegation::Recovery(event) = &signed.payload else {
 		return Ok(());
 	};
+	let applied_seq = match state.metadata.project_roots(project_id).await {
+		Ok(roots) => roots.map(|row| row.valid_from_seq).unwrap_or(0),
+		Err(error) => return Err(Box::new(super::storage_error(error))),
+	};
+	let sequence = i64::try_from(event.valid_from_seq).unwrap_or(i64::MAX);
+	if sequence <= applied_seq {
+		return Ok(());
+	}
 	let root = super::load_root(state, project_id).await?;
 	let threshold = root.threshold();
 	let message = signed.signed_message(ObjectKind::Delegation);
@@ -195,15 +203,7 @@ pub(crate) async fn apply(state: &AppState, project_id: &str, object_digest: &[u
 				.into_response(),
 		));
 	}
-	let applied_seq = match state.metadata.project_roots(project_id).await {
-		Ok(roots) => roots.map(|row| row.valid_from_seq).unwrap_or(0),
-		Err(error) => return Err(Box::new(super::storage_error(error))),
-	};
-	let sequence = i64::try_from(event.valid_from_seq).unwrap_or(i64::MAX);
 	let roots = encode_roots(&event.replacement_roots);
-	if sequence <= applied_seq {
-		return Ok(());
-	}
 	if let Err(error) = state
 		.metadata
 		.set_project_roots(project_id, &roots, threshold as i64, sequence, now())

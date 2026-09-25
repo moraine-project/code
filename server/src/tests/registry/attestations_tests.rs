@@ -7,12 +7,18 @@ use tower::ServiceExt;
 
 use crate::test_support::{app, body_json, login, publish_project_with_kinds};
 
-fn attestation_wire(provider: &SigningKey, signer_id: &str, artifact_digest: [u8; 32], kind: AttestationKind) -> Vec<u8> {
+fn attestation_wire(
+	provider: &SigningKey,
+	signer_id: &str,
+	subject_id: &str,
+	artifact_digest: [u8; 32],
+	kind: AttestationKind,
+) -> Vec<u8> {
 	let attestation = Attestation {
 		protocol: 1,
 		artifact_digest: artifact_digest.to_vec(),
 		subject_kind: "project".to_string(),
-		subject_id: "gd:sha256:aa".to_string(),
+		subject_id: subject_id.to_string(),
 		kind,
 		media_type: "application/spdx+json".to_string(),
 		body_digest: Some(vec![0x33; 32]),
@@ -20,7 +26,9 @@ fn attestation_wire(provider: &SigningKey, signer_id: &str, artifact_digest: [u8
 		signer_id: signer_id.to_string(),
 		issued_at: 1_760_000_000,
 	};
-	sign_payload(Kind::Attestation, &AttestationObject::Evidence(attestation), &[provider]).wire_bytes()
+	sign_payload(Kind::Attestation, &AttestationObject::Evidence(attestation), &[provider])
+		.expect("valid signed attestation")
+		.wire_bytes()
 }
 
 async fn pin_provider(application: &axum::Router, provider: &SigningKey) {
@@ -49,6 +57,7 @@ async fn publishes_and_lists_evidence_attestations() {
 		.body(Body::from(attestation_wire(
 			&provider,
 			"scanner",
+			"gd:sha256:aa",
 			artifact,
 			AttestationKind::Sbom,
 		)))
@@ -85,6 +94,7 @@ async fn publishes_and_lists_evidence_attestations() {
 		.body(Body::from(attestation_wire(
 			&unpinned,
 			"ghost",
+			"gd:sha256:aa",
 			artifact,
 			AttestationKind::Sbom,
 		)))
@@ -104,6 +114,7 @@ async fn indexes_a_project_signed_attestation() {
 	let publish = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/attestation"))
 		.body(Body::from(attestation_wire(
 			&signer,
+			&project_id,
 			&project_id,
 			artifact,
 			AttestationKind::BuildProvenance,

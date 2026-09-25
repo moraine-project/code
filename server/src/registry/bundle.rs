@@ -156,7 +156,13 @@ fn instructions(project_id: &str, release_digest: &[u8], genesis: &Genesis, dele
 		));
 	}
 	text.push_str("Check the bytes yourself, offline:\n\n");
-	text.push_str("    moraine-verify object --kind genesis genesis.cbor\n");
+	for root in &genesis.roots {
+		text.push_str(&format!(
+			"    moraine-verify object --kind genesis genesis.cbor --root {} --threshold {}\n",
+			hex::encode(&root.public_key),
+			genesis.threshold
+		));
+	}
 	for root in &genesis.roots {
 		text.push_str(&format!(
 			"    moraine-verify object --kind release release.cbor --root {} --threshold {}\n",

@@ -162,6 +162,11 @@ const MIGRATIONS: &[Migration] = &[
 		sqlite: include_str!("../../migrations/sqlite/0028_scanner_integer_flags.sql"),
 		postgres: include_str!("../../migrations/postgres/0028_scanner_integer_flags.sql"),
 	},
+	Migration {
+		name: "0029_project_owner_keys",
+		sqlite: include_str!("../../migrations/sqlite/0029_project_owner_keys.sql"),
+		postgres: include_str!("../../migrations/postgres/0029_project_owner_keys.sql"),
+	},
 ];
 
 pub(super) async fn run_migrations(pool: &AnyPool, engine: Engine) -> Result<usize, sqlx::Error> {

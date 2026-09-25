@@ -192,7 +192,7 @@ mod version_tests {
 			minimum_verifier_version: 1,
 			critical_extensions: Vec::new(),
 		};
-		let signed = sign_payload(ObjectKind::Release, &release, &[&signer]);
+		let signed = sign_payload(ObjectKind::Release, &release, &[&signer]).expect("valid signed release");
 		let digest = moraine_crypto::object_id(ObjectKind::Release, &signed.payload_bytes).to_vec();
 		let wire = signed.wire_bytes();
 		StoredObject {

@@ -32,7 +32,9 @@ pub(crate) fn game_genesis_wire(key: &SigningKey) -> Vec<u8> {
 		contacts: None,
 		created_at: 1_760_000_000,
 	};
-	sign_payload(Kind::Genesis, &genesis, &[key]).wire_bytes()
+	sign_payload(Kind::Genesis, &genesis, &[key])
+		.expect("valid signed genesis")
+		.wire_bytes()
 }
 
 pub(crate) fn game_definition_wire(key: &SigningKey, game_id: &str) -> Vec<u8> {
@@ -54,7 +56,9 @@ pub(crate) fn game_definition_wire(key: &SigningKey, game_id: &str) -> Vec<u8> {
 		install_adapter: None,
 		declared_time: 1_760_000_000,
 	};
-	sign_payload(Kind::GameDef, &definition, &[key]).wire_bytes()
+	sign_payload(Kind::GameDef, &definition, &[key])
+		.expect("valid signed game definition")
+		.wire_bytes()
 }
 
 pub(crate) fn runtime_genesis_wire(key: &SigningKey) -> Vec<u8> {
@@ -69,7 +73,9 @@ pub(crate) fn runtime_genesis_wire(key: &SigningKey) -> Vec<u8> {
 		contacts: None,
 		created_at: 1_760_000_000,
 	};
-	sign_payload(Kind::Genesis, &genesis, &[key]).wire_bytes()
+	sign_payload(Kind::Genesis, &genesis, &[key])
+		.expect("valid signed genesis")
+		.wire_bytes()
 }
 
 pub(crate) fn runtime_definition_wire(key: &SigningKey, runtime_id: &str) -> Vec<u8> {
@@ -82,7 +88,9 @@ pub(crate) fn runtime_definition_wire(key: &SigningKey, runtime_id: &str) -> Vec
 		version_catalog: Vec::new(),
 		declared_time: 1_760_000_000,
 	};
-	sign_payload(Kind::RuntimeDef, &definition, &[key]).wire_bytes()
+	sign_payload(Kind::RuntimeDef, &definition, &[key])
+		.expect("valid signed runtime definition")
+		.wire_bytes()
 }
 
 pub(crate) fn loader_genesis_wire(key: &SigningKey) -> Vec<u8> {
@@ -97,7 +105,9 @@ pub(crate) fn loader_genesis_wire(key: &SigningKey) -> Vec<u8> {
 		contacts: None,
 		created_at: 1_760_000_000,
 	};
-	sign_payload(Kind::Genesis, &genesis, &[key]).wire_bytes()
+	sign_payload(Kind::Genesis, &genesis, &[key])
+		.expect("valid signed genesis")
+		.wire_bytes()
 }
 
 pub(crate) fn loader_definition_wire(key: &SigningKey, loader_id: &str, game_id: &str) -> Vec<u8> {
@@ -117,6 +127,7 @@ pub(crate) fn loader_definition_wire(key: &SigningKey, loader_id: &str, game_id:
 		}),
 		&[key],
 	)
+	.expect("valid signed loader object")
 	.wire_bytes()
 }
 
@@ -135,6 +146,7 @@ pub(crate) fn loader_release_wire(key: &SigningKey, loader_id: &str, version: &s
 		}),
 		&[key],
 	)
+	.expect("valid signed loader object")
 	.wire_bytes()
 }
 
@@ -166,6 +178,7 @@ pub(crate) fn loader_acceptance_wire(
 		}),
 		&[key],
 	)
+	.expect("valid signed loader object")
 	.wire_bytes()
 }
 
@@ -188,7 +201,9 @@ pub(crate) fn genesis_wire_roots(roots: &[&SigningKey], kinds: &[&str]) -> Vec<u
 		contacts: None,
 		created_at: 1_760_000_000,
 	};
-	sign_payload(Kind::Genesis, &genesis, roots.to_vec().as_slice()).wire_bytes()
+	sign_payload(Kind::Genesis, &genesis, roots.to_vec().as_slice())
+		.expect("valid signed genesis")
+		.wire_bytes()
 }
 
 pub(crate) fn release_wire(signer: &SigningKey, project_id: &str) -> (Vec<u8>, [u8; 32]) {
@@ -282,7 +297,7 @@ pub(crate) fn release_wire_for_game_id(
 		minimum_verifier_version: 1,
 		critical_extensions: Vec::new(),
 	};
-	let signed = sign_payload(Kind::Release, &release, &[signer]);
+	let signed = sign_payload(Kind::Release, &release, &[signer]).expect("valid signed release");
 	let digest = object_id(Kind::Release, &signed.payload_bytes);
 	(signed.wire_bytes(), digest)
 }
@@ -330,7 +345,7 @@ pub(crate) fn release_wire_with_channel(
 		minimum_verifier_version: 1,
 		critical_extensions: Vec::new(),
 	};
-	let signed = sign_payload(Kind::Release, &release, &[signer]);
+	let signed = sign_payload(Kind::Release, &release, &[signer]).expect("valid signed release");
 	let digest = object_id(Kind::Release, &signed.payload_bytes);
 	(signed.wire_bytes(), digest)
 }
@@ -378,7 +393,7 @@ pub(crate) fn release_wire_with_runtime(
 		minimum_verifier_version: 1,
 		critical_extensions: Vec::new(),
 	};
-	let signed = sign_payload(Kind::Release, &release, &[signer]);
+	let signed = sign_payload(Kind::Release, &release, &[signer]).expect("valid signed release");
 	let digest = object_id(Kind::Release, &signed.payload_bytes);
 	(signed.wire_bytes(), digest)
 }
@@ -426,7 +441,7 @@ pub(crate) fn release_wire_with_changelog(
 		minimum_verifier_version: 1,
 		critical_extensions: Vec::new(),
 	};
-	let signed = sign_payload(Kind::Release, &release, &[signer]);
+	let signed = sign_payload(Kind::Release, &release, &[signer]).expect("valid signed release");
 	let digest = object_id(Kind::Release, &signed.payload_bytes);
 	(signed.wire_bytes(), digest)
 }
@@ -467,5 +482,7 @@ pub(crate) fn feed_wire_kind(
 		object_digest: object_digest.to_vec(),
 		declared_at: 1_760_000_000 + sequence as i64,
 	};
-	sign_payload(Kind::FeedEntry, &entry, &[signer]).wire_bytes()
+	sign_payload(Kind::FeedEntry, &entry, &[signer])
+		.expect("valid signed feed entry")
+		.wire_bytes()
 }

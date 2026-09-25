@@ -108,6 +108,12 @@ describe('parseInstance', () => {
 				max_artifact_bytes: 536_870_912,
 				max_upload_bytes_per_account: 5_368_709_120,
 				max_feed_page_entries: 100,
+				max_feed_scan_pages: 50,
+				max_response_bytes: 16_777_216,
+				max_sync_pages: 200,
+				requests_per_minute: 600,
+				max_concurrent_syncs: 4,
+				maintenance_interval_seconds: 3_600,
 				artifact_sources: ['local', 'external', 'mirrored'],
 				upload_modes: ['staged'],
 				server_role: ['home', 'directory'],
@@ -121,6 +127,20 @@ describe('parseInstance', () => {
 		expect(parsed.publishing).toBe('open');
 		expect(parsed.registration).toBe('open');
 		expect(parsed.emailVerification).toBe(false);
+		expect(parsed.protocolVersions).toEqual([1]);
+		expect(parsed.maxArtifactBytes).toBe(536_870_912);
+		expect(parsed.maxUploadBytesPerAccount).toBe(5_368_709_120);
+		expect(parsed.maxFeedPageEntries).toBe(100);
+		expect(parsed.maxFeedScanPages).toBe(50);
+		expect(parsed.maxResponseBytes).toBe(16_777_216);
+		expect(parsed.maxSyncPages).toBe(200);
+		expect(parsed.requestsPerMinute).toBe(600);
+		expect(parsed.maxConcurrentSyncs).toBe(4);
+		expect(parsed.maintenanceIntervalSeconds).toBe(3_600);
+		expect(parsed.artifactSources).toEqual(['local', 'external', 'mirrored']);
+		expect(parsed.uploadModes).toEqual(['staged']);
+		expect(parsed.serverRole).toEqual(['home', 'directory']);
+		expect(parsed.webhookPublicKey).toBeNull();
 		expect(parsed.branding.name).toBeNull();
 		expect(parsed.branding.logo).toBeNull();
 	});
@@ -151,6 +171,9 @@ describe('parseInstance', () => {
 		expect(parsed.publishing).toBe('review');
 		expect(parsed.registration).toBe('closed');
 		expect(parsed.emailVerification).toBe(false);
+		expect(parsed.maxArtifactBytes).toBeNull();
+		expect(parsed.artifactSources).toEqual([]);
+		expect(parsed.serverRole).toEqual([]);
 		expect(parsed.branding.theme).toEqual({});
 		expect(parsed.branding.nav).toEqual([]);
 	});

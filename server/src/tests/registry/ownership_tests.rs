@@ -35,7 +35,9 @@ async fn accepts_a_delegated_release_key_and_rejects_an_unrelated_one() {
 		issued_at: 1_760_000_000,
 		previous_delegation_digest: None,
 	});
-	let wire = sign_payload(Kind::Delegation, &delegation, &[&root]).wire_bytes();
+	let wire = sign_payload(Kind::Delegation, &delegation, &[&root])
+		.expect("valid signed delegation")
+		.wire_bytes();
 	let path = format!("/v1/projects/{project_id}/objects/delegation");
 	let request = axum::http::Request::post(&path).body(Body::from(wire)).expect("request");
 	let response = application.clone().oneshot(request).await.expect("response");
@@ -84,15 +86,17 @@ async fn ownership_transfer_requires_two_signatures_and_updates_the_owner() {
 		from_owner: OwnerRef {
 			kind: "user".to_string(),
 			id: "user-a".to_string(),
+			key_id: first.key_id(),
 		},
 		to_owner: OwnerRef {
 			kind: "org".to_string(),
 			id: "org-b".to_string(),
+			key_id: second.key_id(),
 		},
 		issued_at: 1_760_000_000,
 		previous_delegation_digest: None,
 	});
-	let signed_transfer = sign_payload(Kind::Delegation, &transfer, &[&first, &second]);
+	let signed_transfer = sign_payload(Kind::Delegation, &transfer, &[&first, &second]).expect("valid signed transfer");
 	let transfer_digest = object_id(Kind::Delegation, &signed_transfer.payload_bytes);
 	let response = application
 		.clone()
@@ -137,16 +141,52 @@ async fn ownership_transfer_requires_two_signatures_and_updates_the_owner() {
 		from_owner: OwnerRef {
 			kind: "org".to_string(),
 			id: "org-b".to_string(),
+			key_id: first.key_id(),
 		},
 		to_owner: OwnerRef {
 			kind: "user".to_string(),
 			id: "user-c".to_string(),
+			key_id: second.key_id(),
 		},
 		issued_at: 1_760_000_001,
 		previous_delegation_digest: None,
 	});
-	let wire = sign_payload(Kind::Delegation, &one_signature, &[&first]).wire_bytes();
+	let wire = sign_payload(Kind::Delegation, &one_signature, &[&first])
+		.expect("valid signed delegation")
+		.wire_bytes();
 	let response = application
+		.clone()
+		.oneshot(
+			axum::http::Request::post(format!("/v1/projects/{project_id}/transfer"))
+				.body(Body::from(wire))
+				.expect("request"),
+		)
+		.await
+		.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+	let stranger = key(99);
+	let mismatched = Delegation::OwnershipTransfer(OwnershipTransfer {
+		protocol: 1,
+		project_id: project_id.clone(),
+		from_owner: OwnerRef {
+			kind: "user".to_string(),
+			id: "user-a".to_string(),
+			key_id: stranger.key_id(),
+		},
+		to_owner: OwnerRef {
+			kind: "org".to_string(),
+			id: "org-b".to_string(),
+			key_id: first.key_id(),
+		},
+		issued_at: 1_760_000_002,
+		previous_delegation_digest: None,
+	});
+	let wire = sign_payload(Kind::Delegation, &mismatched, &[&first, &second])
+		.expect("valid signed delegation")
+		.wire_bytes();
+	let response = application
+		.clone()
 		.oneshot(
 			axum::http::Request::post(format!("/v1/projects/{project_id}/transfer"))
 				.body(Body::from(wire))
@@ -166,12 +206,13 @@ async fn withdrawal_marks_a_release_without_rewriting_it() {
 
 	let withdrawal = Withdrawal {
 		protocol: 1,
+		project_id: project_id.clone(),
 		release_id: release_id.clone(),
 		reason: "compromise".to_string(),
 		note: Some("automated key leak".to_string()),
 		declared_time: 1_760_000_100,
 	};
-	let signed = sign_payload(Kind::Release, &withdrawal, &[&signer]);
+	let signed = sign_payload(Kind::Release, &withdrawal, &[&signer]).expect("valid signed withdrawal");
 	let digest = object_id(Kind::Release, &signed.payload_bytes);
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
 		.body(Body::from(signed.wire_bytes()))

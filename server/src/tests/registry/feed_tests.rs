@@ -26,7 +26,7 @@ async fn rejects_an_object_kind_the_genesis_does_not_authorize() {
 		}],
 		declared_time: 1_760_000_000,
 	};
-	let signed = sign_payload(Kind::Changelog, &changelog, &[&signer]);
+	let signed = sign_payload(Kind::Changelog, &changelog, &[&signer]).expect("valid signed changelog");
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/changelog"))
 		.body(Body::from(signed.wire_bytes()))
 		.expect("request");
@@ -115,6 +115,7 @@ async fn replaying_an_applied_feed_entry_is_idempotent() {
 		.expect("request");
 	let first = application.clone().oneshot(request).await.expect("response");
 	assert_eq!(first.status(), StatusCode::CREATED);
+	let first_entry = id_bytes(body_json(first).await["entry"].as_str().expect("entry id"));
 
 	let request = axum::http::Request::post(&path).body(Body::from(feed)).expect("request");
 	let replayed = application.clone().oneshot(request).await.expect("response");
@@ -125,6 +126,12 @@ async fn replaying_an_applied_feed_entry_is_idempotent() {
 	);
 	let receipt = body_json(replayed).await;
 	assert_eq!(receipt["seq"], 1);
+
+	let duplicate = feed_wire(&signer, &project_id, 2, Some(first_entry), release_digest);
+	let request = axum::http::Request::post(&path).body(Body::from(duplicate)).expect("request");
+	let duplicate = application.clone().oneshot(request).await.expect("response");
+	assert_eq!(duplicate.status(), StatusCode::CREATED);
+	assert_eq!(body_json(duplicate).await["seq"], 1);
 
 	let page = body_json(
 		application
@@ -351,12 +358,13 @@ async fn feed_titles_a_withdrawal() {
 
 	let withdrawal = Withdrawal {
 		protocol: 1,
+		project_id: project_id.clone(),
 		release_id: "gd:sha256:whatever".to_string(),
 		reason: "compromise".to_string(),
 		note: None,
 		declared_time: 1_760_000_200,
 	};
-	let signed = sign_payload(Kind::Release, &withdrawal, &[&signer]);
+	let signed = sign_payload(Kind::Release, &withdrawal, &[&signer]).expect("valid signed withdrawal");
 	let digest = object_id(Kind::Release, &signed.payload_bytes);
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/release"))
 		.body(Body::from(signed.wire_bytes()))
@@ -442,4 +450,29 @@ async fn filters_release_entries_by_runtime_compatibility() {
 	let response = application.oneshot(older).await.expect("response");
 	let page = body_json(response).await;
 	assert!(page["entries"].as_array().expect("entries").is_empty());
+}
+
+#[tokio::test]
+async fn a_zero_feed_page_limit_does_not_panic_or_cap_an_explicit_page() {
+	let (application, _directory) = app_with_limit(crate::config::Publishing::Open, false, 0).await;
+	let signer = key(32);
+	let (project_id, _release) = publish_project(&application, &signer).await;
+	let request = axum::http::Request::get(format!("/v1/projects/{project_id}/feed?limit=1000"))
+		.body(Body::empty())
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn rejects_a_feed_event_that_names_the_wrong_object_variant() {
+	let (application, _directory) = app().await;
+	let signer = key(31);
+	let (project_id, release_digest) = publish_project(&application, &signer).await;
+	let entry = feed_wire_kind(&signer, &project_id, 1, None, release_digest, "profile-updated");
+	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/feed"))
+		.body(Body::from(entry))
+		.expect("request");
+	let response = application.oneshot(request).await.expect("response");
+	assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

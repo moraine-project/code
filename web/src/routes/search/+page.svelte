@@ -229,7 +229,7 @@
 			{:else}
 				<p class="text-sm text-base-content/60">
 					{#if data.totalEstimate !== null && data.totalEstimate > data.results.length}
-						Showing {data.results.length} of about {data.totalEstimate}
+						{data.results.length} on this page · about {data.totalEstimate} in total
 					{:else}
 						{data.results.length}
 						{data.results.length === 1 ? 'result' : 'results'}

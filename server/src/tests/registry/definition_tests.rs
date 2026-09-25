@@ -68,7 +68,9 @@ fn game_genesis(key: &SigningKey) -> Vec<u8> {
 		contacts: None,
 		created_at: 1_760_000_000,
 	};
-	sign_payload(ObjectKind::Genesis, &genesis, &[key]).wire_bytes()
+	sign_payload(ObjectKind::Genesis, &genesis, &[key])
+		.expect("valid signed genesis")
+		.wire_bytes()
 }
 
 async fn publish_loader_definition(application: &Router, loader_id: &str, body: Vec<u8>) -> String {
@@ -95,7 +97,9 @@ fn loader_genesis(key: &SigningKey) -> Vec<u8> {
 		contacts: None,
 		created_at: 1_760_000_000,
 	};
-	sign_payload(ObjectKind::Genesis, &genesis, &[key]).wire_bytes()
+	sign_payload(ObjectKind::Genesis, &genesis, &[key])
+		.expect("valid signed genesis")
+		.wire_bytes()
 }
 
 fn loader_definition(key: &SigningKey, loader_id: &str) -> Vec<u8> {
@@ -119,6 +123,7 @@ fn loader_definition_for(key: &SigningKey, loader_id: &str, game_id: &str) -> Ve
 		}),
 		&[key],
 	)
+	.expect("valid signed loader definition")
 	.wire_bytes()
 }
 
@@ -148,6 +153,7 @@ fn loader_definition_with_game_versions(
 		}),
 		&[key],
 	)
+	.expect("valid signed loader definition")
 	.wire_bytes()
 }
 
@@ -185,7 +191,9 @@ fn game_definition_catalog(
 		install_adapter: None,
 		declared_time: 1_760_000_000,
 	};
-	sign_payload(ObjectKind::GameDef, &definition, &[key]).wire_bytes()
+	sign_payload(ObjectKind::GameDef, &definition, &[key])
+		.expect("valid signed game definition")
+		.wire_bytes()
 }
 
 #[tokio::test]
@@ -328,7 +336,8 @@ async fn keeps_the_loader_definition_current_when_a_release_arrives() {
 			declared_time: 1_760_000_000,
 		}),
 		&[&key],
-	);
+	)
+	.expect("valid signed loader release");
 	publish_loader_definition(&application, &loader_id, release.wire_bytes()).await;
 
 	let list = axum::http::Request::get("/v1/loaders").body(Body::empty()).expect("request");

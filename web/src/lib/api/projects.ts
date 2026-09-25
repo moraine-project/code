@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { Fetcher } from './request';
-import { registryUrl } from './request';
+import { ApiError, registryUrl } from './request';
 
 export const projectSummarySchema = z.object({
 	project_id: z.string(),
@@ -118,7 +118,7 @@ export async function fetchProject(
 		registryUrl(base, `/v1/projects/${encodeURIComponent(projectId)}`),
 	);
 	if (!response.ok) {
-		throw new Error(`home returned ${response.status} for the project`);
+		throw new ApiError(response.status, `home returned ${response.status} for the project`);
 	}
 	return projectSummarySchema.parse(await response.json());
 }
@@ -135,7 +135,7 @@ export async function fetchProfile(
 		return null;
 	}
 	if (!response.ok) {
-		throw new Error(`home returned ${response.status} for the profile`);
+		throw new ApiError(response.status, `home returned ${response.status} for the profile`);
 	}
 	return profileSchema.parse(await response.json());
 }
@@ -162,7 +162,7 @@ export async function fetchFeed(
 		registryUrl(base, `/v1/projects/${encodeURIComponent(projectId)}/feed?${params.toString()}`),
 	);
 	if (!response.ok) {
-		throw new Error(`home returned ${response.status} for the feed`);
+		throw new ApiError(response.status, `home returned ${response.status} for the feed`);
 	}
 	return feedPageSchema.parse(await response.json());
 }
@@ -175,7 +175,7 @@ export async function fetchObject(
 	const hex = objectId.startsWith('gd:sha256:') ? objectId.slice('gd:sha256:'.length) : objectId;
 	const response = await fetchFn(registryUrl(base, `/v1/objects/${hex}`));
 	if (!response.ok) {
-		throw new Error(`home returned ${response.status} for the object`);
+		throw new ApiError(response.status, `home returned ${response.status} for the object`);
 	}
 	return new Uint8Array(await response.arrayBuffer());
 }
@@ -188,7 +188,8 @@ export async function fetchChannels(
 	const response = await fetchFn(
 		registryUrl(base, `/v1/projects/${encodeURIComponent(projectId)}/channels`),
 	);
-	if (!response.ok) throw new Error(`home returned ${response.status} for channels`);
+	if (!response.ok)
+		throw new ApiError(response.status, `home returned ${response.status} for channels`);
 	return z.array(channelSchema).parse(await response.json());
 }
 
@@ -200,7 +201,8 @@ export async function fetchMigrations(
 	const response = await fetchFn(
 		registryUrl(base, `/v1/projects/${encodeURIComponent(projectId)}/migrations`),
 	);
-	if (!response.ok) throw new Error(`home returned ${response.status} for migrations`);
+	if (!response.ok)
+		throw new ApiError(response.status, `home returned ${response.status} for migrations`);
 	return z.array(migrationSchema).parse(await response.json());
 }
 
@@ -212,7 +214,8 @@ export async function fetchRecovery(
 	const response = await fetchFn(
 		registryUrl(base, `/v1/projects/${encodeURIComponent(projectId)}/recovery`),
 	);
-	if (!response.ok) throw new Error(`home returned ${response.status} for recovery state`);
+	if (!response.ok)
+		throw new ApiError(response.status, `home returned ${response.status} for recovery state`);
 	return recoverySchema.parse(await response.json());
 }
 
@@ -224,6 +227,7 @@ export async function fetchDenyEntries(
 	const response = await fetchFn(
 		registryUrl(base, `/v1/deny-lists?project=${encodeURIComponent(projectId)}`),
 	);
-	if (!response.ok) throw new Error(`home returned ${response.status} for deny-list entries`);
+	if (!response.ok)
+		throw new ApiError(response.status, `home returned ${response.status} for deny-list entries`);
 	return z.array(denyEntrySchema).parse(await response.json());
 }

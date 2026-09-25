@@ -2,8 +2,8 @@ use moraine_codec::Value;
 use moraine_crypto::KeyId;
 
 use crate::canonical::{
-	Canonical, Fields, expect_array, expect_bytes, expect_i64, expect_text, expect_text_array, expect_u32, expect_u64,
-	map_of,
+	Canonical, Fields, canonical_i64, expect_array, expect_bytes, expect_canonical_u64, expect_i64, expect_text,
+	expect_text_array, expect_u32, expect_u64, map_of,
 };
 use crate::error::{ModelError, RejectReason};
 use crate::genesis::RootKey;
@@ -42,6 +42,7 @@ impl DelegationPurpose {
 pub struct OwnerRef {
 	pub kind: String,
 	pub id: String,
+	pub key_id: KeyId,
 }
 
 impl OwnerRef {
@@ -52,6 +53,9 @@ impl OwnerRef {
 		if self.id.is_empty() {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "owner id"));
 		}
+		if self.key_id.algorithm() != ALG_ED25519 {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "owner key id"));
+		}
 		Ok(())
 	}
 }
@@ -60,15 +64,20 @@ impl Canonical for OwnerRef {
 	fn to_value(&self) -> Value {
 		map_of(
 			"OwnerRef",
-			[("kind", Value::text(self.kind.clone())), ("id", Value::text(self.id.clone()))],
+			[
+				("kind", Value::text(self.kind.clone())),
+				("id", Value::text(self.id.clone())),
+				("key_id", Value::bytes(self.key_id.digest())),
+			],
 		)
 	}
 
 	fn from_value(value: Value) -> Result<Self, ModelError> {
-		let fields = Fields::new("OwnerRef", value)?.reject_unknown(&["kind", "id"])?;
+		let fields = Fields::new("OwnerRef", value)?.reject_unknown(&["kind", "id", "key_id"])?;
 		let owner = Self {
 			kind: expect_text(fields.required("kind")?, "kind")?,
 			id: expect_text(fields.required("id")?, "id")?,
+			key_id: expect_key_id(fields.required("key_id")?, "key_id")?,
 		};
 		owner.validate()?;
 		Ok(owner)
@@ -81,13 +90,24 @@ pub struct ReleaseWindow {
 	pub to_seq: u64,
 }
 
+impl ReleaseWindow {
+	pub fn validate(&self) -> Result<(), ModelError> {
+		expect_canonical_u64(self.from_seq, "from_seq")?;
+		expect_canonical_u64(self.to_seq, "to_seq")?;
+		if self.from_seq > self.to_seq {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "from_seq"));
+		}
+		Ok(())
+	}
+}
+
 impl Canonical for ReleaseWindow {
 	fn to_value(&self) -> Value {
 		map_of(
 			"ReleaseWindow",
 			[
-				("from_seq", Value::int(self.from_seq as i64)),
-				("to_seq", Value::int(self.to_seq as i64)),
+				("from_seq", Value::int(canonical_i64(self.from_seq, "from_seq"))),
+				("to_seq", Value::int(canonical_i64(self.to_seq, "to_seq"))),
 			],
 		)
 	}
@@ -98,9 +118,7 @@ impl Canonical for ReleaseWindow {
 			from_seq: expect_u64(fields.required("from_seq")?, "from_seq")?,
 			to_seq: expect_u64(fields.required("to_seq")?, "to_seq")?,
 		};
-		if window.from_seq > window.to_seq {
-			return Err(ModelError::field(RejectReason::InvalidFieldValue, "from_seq"));
-		}
+		window.validate()?;
 		Ok(window)
 	}
 }
@@ -124,8 +142,14 @@ impl KeyDelegation {
 		if self.protocol != 1 {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "protocol"));
 		}
+		if self.project_id.is_empty() {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "project_id"));
+		}
 		if self.allowed_kinds.is_empty() {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "allowed_kinds"));
+		}
+		if let Some(sequence) = self.valid_from_seq {
+			expect_canonical_u64(sequence, "valid_from_seq")?;
 		}
 		Ok(())
 	}
@@ -153,7 +177,7 @@ impl Canonical for KeyDelegation {
 			pairs.push(("max_version_scope", Value::text(scope.clone())));
 		}
 		if let Some(sequence) = self.valid_from_seq {
-			pairs.push(("valid_from_seq", Value::int(sequence as i64)));
+			pairs.push(("valid_from_seq", Value::int(canonical_i64(sequence, "valid_from_seq"))));
 		}
 		if let Some(expires_at) = self.expires_at {
 			pairs.push(("expires_at", Value::int(expires_at)));
@@ -236,9 +260,15 @@ impl OwnershipTransfer {
 		if self.protocol != 1 {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "protocol"));
 		}
+		if self.project_id.is_empty() {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "project_id"));
+		}
 		self.from_owner.validate()?;
 		self.to_owner.validate()?;
 		if self.from_owner == self.to_owner {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "to_owner"));
+		}
+		if self.from_owner.key_id == self.to_owner.key_id {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "to_owner"));
 		}
 		Ok(())
@@ -304,12 +334,16 @@ impl Migration {
 		if self.protocol != 1 {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "protocol"));
 		}
+		if self.project_id.is_empty() {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "project_id"));
+		}
 		if self.old_home.is_empty() || self.new_home.is_empty() {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "new_home"));
 		}
 		if self.old_home == self.new_home {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "new_home"));
 		}
+		expect_canonical_u64(self.cutover_seq, "cutover_seq")?;
 		Ok(())
 	}
 }
@@ -322,7 +356,7 @@ impl Canonical for Migration {
 			("project_id", Value::text(self.project_id.clone())),
 			("old_home", Value::text(self.old_home.clone())),
 			("new_home", Value::text(self.new_home.clone())),
-			("cutover_seq", Value::int(self.cutover_seq as i64)),
+			("cutover_seq", Value::int(canonical_i64(self.cutover_seq, "cutover_seq"))),
 		];
 		if let Some(reason) = &self.reason {
 			pairs.push(("reason", Value::text(reason.clone())));
@@ -374,12 +408,17 @@ impl RecoveryEvent {
 		if self.protocol != 1 {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "protocol"));
 		}
+		if self.project_id.is_empty() {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "project_id"));
+		}
 		if self.compromised_key_ids.is_empty() {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "compromised_key_ids"));
 		}
 		if self.replacement_roots.is_empty() {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "replacement_roots"));
 		}
+		expect_canonical_u64(self.valid_from_seq, "valid_from_seq")?;
+		self.affected_release_window.validate()?;
 		for root in &self.replacement_roots {
 			let derived = moraine_crypto::key_id(ALG_ED25519, &root.public_key)
 				.map_err(|_| ModelError::new(RejectReason::InvalidFieldValue, "invalid replacement key"))?;
@@ -411,7 +450,10 @@ impl Canonical for RecoveryEvent {
 							.collect::<Vec<_>>(),
 					),
 				),
-				("valid_from_seq", Value::int(self.valid_from_seq as i64)),
+				(
+					"valid_from_seq",
+					Value::int(canonical_i64(self.valid_from_seq, "valid_from_seq")),
+				),
 				(
 					"replacement_roots",
 					Value::array(self.replacement_roots.iter().map(Canonical::to_value).collect::<Vec<_>>()),
@@ -473,6 +515,17 @@ pub enum Delegation {
 }
 
 impl Delegation {
+	pub fn validate(&self) -> Result<(), ModelError> {
+		match self {
+			Self::Key(delegation) => delegation.validate(),
+			Self::OwnershipTransfer(transfer) => transfer.validate(),
+			Self::Migration(migration) => migration.validate(),
+			Self::Recovery(recovery) => recovery.validate(),
+		}
+	}
+}
+
+impl Delegation {
 	pub const fn purpose(&self) -> DelegationPurpose {
 		match self {
 			Self::Key(_) => DelegationPurpose::Key,
@@ -506,6 +559,13 @@ impl Canonical for Delegation {
 			None => Err(ModelError::field(RejectReason::InvalidFieldValue, "purpose")),
 		}
 	}
+}
+
+fn expect_key_id(value: &Value, key: &str) -> Result<KeyId, ModelError> {
+	let digest: [u8; 32] = expect_bytes(value, key)?
+		.try_into()
+		.map_err(|_| ModelError::field(RejectReason::InvalidFieldValue, key))?;
+	Ok(KeyId::from_digest(ALG_ED25519, digest))
 }
 
 fn expect_purpose(fields: &Fields, expected: DelegationPurpose) -> Result<(), ModelError> {

@@ -50,10 +50,14 @@ impl Parser<'_> {
 			}
 			MAJOR_NEGATIVE => {
 				let argument = self.read_argument(additional)?;
-				if argument > i64::MAX as u64 {
+				if argument > 1_u64 << 63 {
 					return Err(CodecError::IntegerOutOfRange);
 				}
-				Ok(Value::Integer(-1 - argument as i64))
+				Ok(Value::Integer(if argument == 1_u64 << 63 {
+					i64::MIN
+				} else {
+					-1 - argument as i64
+				}))
 			}
 			MAJOR_BYTES => {
 				let length = self.read_length(additional)?;

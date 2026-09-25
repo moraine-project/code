@@ -42,7 +42,25 @@ the grant is suspended or revoked. In `open` mode it is admitted immediately.
 
 ## Sign a release
 
+Run the local preflight first. It validates the artifact, release payload, and
+signature without uploading anything:
+
 ```sh
+moraine-publish check \
+	--key publisher.key \
+	--home https://example.org \
+	--project my-mod \
+	--game minecraft \
+	--game-version 1.21.1 \
+	--loader fabric \
+	--version 1.2.0 \
+	--file my-mod-1.2.0.jar
+```
+
+Then upload the bytes, store the signed release object, and make it visible:
+
+```sh
+moraine-publish upload --home https://example.org --file my-mod-1.2.0.jar
 moraine-publish release \
 	--key publisher.key \
 	--home https://example.org \
@@ -51,24 +69,19 @@ moraine-publish release \
 	--game-version 1.21.1 \
 	--loader fabric \
 	--version 1.2.0 \
-	--file my-mod-1.2.0.jar \
-	--changelog CHANGELOG.md
-```
-
-Then upload the bytes and publish the record:
-
-```sh
-moraine-publish upload --home https://example.org --file my-mod-1.2.0.jar
+	--file my-mod-1.2.0.jar
 moraine-publish publish \
 	--key publisher.key \
 	--home https://example.org \
 	--project my-mod \
-	--object release.json
+	--object <release-id>
 ```
 
-`upload` runs first so the artifact digest is already known to the home, and
-`publish` makes the signed record visible. A release is immutable once
-published. Corrections take a new version.
+The steps are separate, so run them in that order: the preflight cannot check
+bytes that are not present, and a visible release should not point at an
+unuploaded artifact. `publish` treats a repeated object/event as the already
+published entry, so retrying that final step is safe. A release is immutable
+once published. Corrections take a new version.
 
 The project's identity is fixed by genesis, so the same signed record verifies
 at any home. What differs between homes is the ID in the URL, not the bytes.

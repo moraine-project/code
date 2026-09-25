@@ -1,5 +1,5 @@
 use moraine_codec::Value;
-use moraine_crypto::{KeyId, key_id};
+use moraine_crypto::{KeyId, ObjectKind, key_id};
 
 use crate::canonical::{
 	Canonical, Fields, expect_array, expect_bytes, expect_i64, expect_text, expect_text_array, expect_u32, map_of,
@@ -33,6 +33,47 @@ impl GenesisKind {
 			"runtime" => Self::Runtime,
 			_ => return None,
 		})
+	}
+
+	pub fn authority_kinds(self) -> &'static [ObjectKind] {
+		match self {
+			Self::Project => &[
+				ObjectKind::Delegation,
+				ObjectKind::Release,
+				ObjectKind::Profile,
+				ObjectKind::FeedEntry,
+				ObjectKind::Changelog,
+				ObjectKind::Modpack,
+				ObjectKind::Attestation,
+			],
+			Self::Game => &[ObjectKind::Delegation, ObjectKind::GameDef],
+			Self::Loader => &[ObjectKind::Delegation, ObjectKind::LoaderDef],
+			Self::Runtime => &[ObjectKind::Delegation, ObjectKind::RuntimeDef],
+		}
+	}
+
+	pub fn allows_authorized_kind(self, kind: &str) -> bool {
+		ObjectKind::parse(kind).is_some_and(|kind| self.authority_kinds().contains(&kind))
+	}
+
+	pub fn validate_authorized_kinds(&self, kinds: &[String]) -> Result<(), ModelError> {
+		for kind in kinds {
+			let Some(parsed) = ObjectKind::parse(kind) else {
+				return Err(ModelError::field(RejectReason::InvalidFieldValue, "authorized_kinds"));
+			};
+			if !self.authority_kinds().contains(&parsed) {
+				return Err(ModelError::new(
+					RejectReason::UnauthorizedKind,
+					format!("{} genesis cannot authorize `{kind}`", self.as_str()),
+				));
+			}
+		}
+		for (index, kind) in kinds.iter().enumerate() {
+			if kinds[..index].iter().any(|earlier| earlier == kind) {
+				return Err(ModelError::field(RejectReason::InvalidFieldValue, "authorized_kinds"));
+			}
+		}
+		Ok(())
 	}
 
 	const fn minimum_kinds(self) -> &'static [&'static str] {
@@ -134,6 +175,7 @@ impl Genesis {
 				"threshold must be between 1 and the number of roots",
 			));
 		}
+		self.kind.validate_authorized_kinds(&self.authorized_kinds)?;
 		for required in self.kind.minimum_kinds() {
 			if !self.authorized_kinds.iter().any(|kind| kind == required) {
 				return Err(ModelError::new(

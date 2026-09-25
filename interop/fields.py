@@ -75,7 +75,7 @@ def u32(value, name):
 
 
 def u64(value, name):
-    return integer(value, name, 0, 0xFFFFFFFFFFFFFFFF)
+    return integer(value, name, 0, 0x7FFFFFFFFFFFFFFF)
 
 
 def i64(value, name):

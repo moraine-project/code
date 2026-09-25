@@ -1,5 +1,6 @@
 use moraine_model::Canonical;
 use moraine_model::event::{Event, EventKind};
+use sha2::{Digest, Sha256};
 
 use super::{new_id, now};
 use crate::routes::AppState;
@@ -23,7 +24,7 @@ pub(crate) async fn enqueue_event(
 	}
 	let event = Event {
 		protocol: 1,
-		event_id: new_id(),
+		event_id: feed_event_id(project_id, feed_seq, object_digest),
 		event_kind: kind,
 		project_id: project_id.to_string(),
 		game_id: None,
@@ -57,4 +58,14 @@ pub(crate) async fn enqueue_event(
 
 fn subscribes(event_kinds: &str, kind: &str) -> bool {
 	event_kinds.is_empty() || event_kinds.split(',').any(|candidate| candidate == kind)
+}
+
+fn feed_event_id(project_id: &str, feed_seq: i64, object_digest: &[u8]) -> String {
+	let mut value = Vec::new();
+	value.extend_from_slice(project_id.as_bytes());
+	value.push(0);
+	value.extend_from_slice(&feed_seq.to_be_bytes());
+	value.push(0);
+	value.extend_from_slice(object_digest);
+	hex::encode(Sha256::digest(value))
 }

@@ -44,7 +44,7 @@ test('submits, assigns, and accepts a release in review mode', async ({ page }) 
 	await page.goto(reviewUrl('/account'));
 	await page.getByLabel('Email').fill('ops@example.org');
 	await page.getByLabel('Password').fill(state.reviewPassword);
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await page.locator('form').getByRole('button', { name: 'Sign in' }).click();
 	await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
 
 	await page.goto(reviewUrl('/publish'));
@@ -102,10 +102,10 @@ test('submits, assigns, and accepts a release in review mode', async ({ page }) 
 	await page.goto(`${state.baseURL}/account`);
 	await page.getByLabel('Email').fill('ops@example.org');
 	await page.getByLabel('Password').fill(state.password);
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await page.locator('form').getByRole('button', { name: 'Sign in' }).click();
 	await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
 	await page.goto(`${state.baseURL}/dashboard`);
-	await page.getByRole('tab', { name: 'Federation' }).click();
+	await page.getByRole('button', { name: 'Federation' }).click();
 	await page.getByLabel('Home URL').fill(state.reviewBaseURL);
 	await page.getByLabel('Project ID', { exact: true }).fill(projectId);
 	await page.getByRole('button', { name: 'Pull project' }).click();

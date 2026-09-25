@@ -96,6 +96,10 @@ pub fn expect_canonical_u64(value: u64, key: &str) -> Result<u64, ModelError> {
 	Ok(value)
 }
 
+pub fn canonical_i64(value: u64, key: &str) -> i64 {
+	i64::try_from(value).unwrap_or_else(|_| panic!("{key} exceeds the canonical integer range"))
+}
+
 pub fn expect_u32(value: &Value, key: &str) -> Result<u32, ModelError> {
 	let number = expect_u64(value, key)?;
 	u32::try_from(number).map_err(|_| ModelError::field(RejectReason::InvalidFieldValue, key))

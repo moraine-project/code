@@ -214,14 +214,17 @@ for everything else. Importing the same ID with different genesis bytes is a
 genesis or a feed entry. The server loads the project genesis, verifies the
 object against the root keys and threshold, and stores it. A genesis fixes a
 closed set of authorized kinds, and an object whose kind is not in that set is
-rejected with `400` even when its signature is valid; a kind that is not listed
-cannot be published without a new project identity. `{kind}` is one of
-`delegation`, `release`, `profile`, `advisory`, `attestation`, `game-def`,
-`loader-def`, `runtime-def`, `modpack`, or `changelog`. A changelog is a signed
-object referenced by a release's `changelog_digest`; it carries locale-tagged
-sections with an optional severity each, and its text is indexed for search
-under the project the release names, so a phrase that only appears in release
-notes still finds the project.
+rejected with `400` even when its signature is valid. A project authorizes
+`delegation`, `release`, `profile`, `feed-entry`, `changelog`, `modpack`, and
+`attestation`; game, loader, and runtime roots authorize their matching
+definition kinds. Advisories and deny lists are provider or issuer records and
+are not project-root authority. A kind that is not listed cannot be published
+without a new project identity. A changelog is a signed object referenced by a
+release's `changelog_digest`; it carries locale-tagged sections with an
+optional severity each, and its text is indexed for search under the project
+the release names, so a phrase that only appears in release notes still finds
+the project. Legacy project genesis records may still list advisory or deny-list
+names, but those entries never grant project-root authority.
 
 `POST /v1/projects/{id}/feed` appends a signed feed entry. The entry must be
 the next sequence, its `previous` must equal the current head digest, and the
@@ -240,8 +243,10 @@ returns an empty match list, not a `404`, because "not here" is not an error.
 current profile ID, and the owner if one is recorded.
 
 `POST /v1/projects/{id}/transfer` verifies and stores a signed
-ownership-transfer object. It must carry two signatures over the same payload,
-one from each side, and it returns the transfer object's ID. It does not change
+ownership-transfer object. Its owner references carry the `key_id` for each
+side, and the envelope must contain valid signatures from both named IDs under
+the current root set. The server also checks that the project ID matches the
+current root subject. It returns the transfer object's ID. It does not change
 the owner by itself.
 
 The owner changes when a feed entry of kind `ownership-transferred` that
@@ -323,7 +328,9 @@ verifies must fetch the object document instead.
 A withdrawal is a signed statement published as a stored object and made
 effective by a feed entry, exactly like an ownership transfer. Its reason is
 one of `compromise`, `harmful`, `broken`, `legal`, or `author-preference`, and
-it marks a release without erasing it.
+it marks a release without erasing it. A withdrawal names the project it belongs
+to in a required `project_id`, which is non-empty and must equal the root
+subject, so a root cannot withdraw a release on another project's behalf.
 
 Verification accepts the root threshold first. If that fails it loads the
 project's stored `delegation` objects, verifies each key delegation against the
@@ -367,8 +374,9 @@ names the old and new home URLs and the `cutover_seq` the move takes effect at,
 and it is the homes that make it a fact: the record must be signed by at least
 the project's threshold plus two keys from the project's root set, so the old
 home's publishing identity and the new home must both sign in addition to the
-publisher. A record that does not meet that count is refused with `400` rather
-than stored under-signed.
+publisher. Verification also requires the record's project ID to match the root
+subject and the root to authorize `delegation`. A record that does not meet
+that count or scope is refused with `400` rather than stored under-signed.
 
 `GET /v1/projects/{id}/migrations` lists the migrations this instance holds,
 newest first, with the linked object ID, both home URLs, the cutover sequence,

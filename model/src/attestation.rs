@@ -1,6 +1,8 @@
 use moraine_codec::Value;
 
-use crate::canonical::{Canonical, Fields, expect_bytes, expect_i64, expect_text, expect_u32, map_of};
+use crate::canonical::{
+	Canonical, Fields, canonical_i64, expect_bytes, expect_canonical_u64, expect_i64, expect_text, expect_u32, map_of,
+};
 use crate::error::{ModelError, RejectReason};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +161,7 @@ impl MirrorCommitment {
 		if self.artifact_digest.len() != 32 {
 			return Err(ModelError::field(RejectReason::InvalidFieldValue, "artifact_digest"));
 		}
+		expect_canonical_u64(self.size, "size")?;
 		Ok(())
 	}
 }
@@ -170,7 +173,7 @@ impl Canonical for MirrorCommitment {
 			("type", Value::text("mirror-commitment")),
 			("mirror_id", Value::text(self.mirror_id.clone())),
 			("artifact_digest", Value::bytes(self.artifact_digest.clone())),
-			("size", Value::int(self.size as i64)),
+			("size", Value::int(canonical_i64(self.size, "size"))),
 			("accepted_at", Value::int(self.accepted_at)),
 		];
 		if let Some(retention_until) = self.retention_until {
@@ -214,6 +217,15 @@ impl Canonical for MirrorCommitment {
 pub enum AttestationObject {
 	Evidence(Attestation),
 	MirrorCommitment(MirrorCommitment),
+}
+
+impl AttestationObject {
+	pub fn validate(&self) -> Result<(), ModelError> {
+		match self {
+			Self::Evidence(attestation) => attestation.validate(),
+			Self::MirrorCommitment(commitment) => commitment.validate(),
+		}
+	}
 }
 
 impl Canonical for AttestationObject {

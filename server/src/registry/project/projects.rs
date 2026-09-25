@@ -4,7 +4,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use moraine_crypto::{ObjectKind, object_id};
-use moraine_model::delegation::Delegation;
+use moraine_model::delegation::{Delegation, OwnershipTransfer};
 use moraine_model::signed::SignedObject;
 use moraine_model::trust::verify_ownership_transfer;
 use serde::Serialize;
@@ -196,11 +196,11 @@ pub(super) async fn apply_withdrawal(state: &AppState, project_id: &str, object_
 	}
 }
 
-pub(super) async fn apply_ownership_transfer(
+pub(super) async fn validate_ownership_transfer(
 	state: &AppState,
 	project_id: &str,
 	object_digest: &[u8],
-) -> Result<(), Box<Response>> {
+) -> Result<OwnershipTransfer, Box<Response>> {
 	let project = match state.metadata.project(project_id).await {
 		Ok(Some(project)) => project,
 		Ok(None) => return Err(Box::new((StatusCode::NOT_FOUND, "no such project").into_response())),
@@ -228,16 +228,39 @@ pub(super) async fn apply_ownership_transfer(
 	if let Err(error) = verify_ownership_transfer(&signed, &root) {
 		return Err(Box::new(bad_request(state, VerifyError::Signature(error))));
 	}
-	if let (Some(current_kind), Some(current_id)) = (&project.owner_kind, &project.owner_id)
-		&& (current_kind != &record.from_owner.kind || current_id != &record.from_owner.id)
+	if let (Some(current_kind), Some(current_id)) = (&project.owner_kind, &project.owner_id) {
+		if current_kind == &record.to_owner.kind && current_id == &record.to_owner.id {
+			return Ok(record.clone());
+		}
+		if current_kind != &record.from_owner.kind || current_id != &record.from_owner.id {
+			return Err(Box::new(
+				(StatusCode::CONFLICT, "the transfer does not start from the current owner").into_response(),
+			));
+		}
+	}
+	let expected_from_key = record.from_owner.key_id.digest();
+	if project
+		.owner_key_id
+		.as_deref()
+		.is_some_and(|key_id| key_id != expected_from_key.as_slice())
 	{
 		return Err(Box::new(
-			(StatusCode::CONFLICT, "the transfer does not start from the current owner").into_response(),
+			(StatusCode::CONFLICT, "the transfer does not start from the current owner key").into_response(),
 		));
 	}
+	Ok(record.clone())
+}
+
+pub(super) async fn apply_ownership_transfer(
+	state: &AppState,
+	project_id: &str,
+	object_digest: &[u8],
+) -> Result<(), Box<Response>> {
+	let record = validate_ownership_transfer(state, project_id, object_digest).await?;
+	let to_owner_key = record.to_owner.key_id.digest();
 	match state
 		.metadata
-		.set_project_owner(project_id, &record.to_owner.kind, &record.to_owner.id)
+		.set_project_owner(project_id, &record.to_owner.kind, &record.to_owner.id, &to_owner_key)
 		.await
 	{
 		Ok(_) => Ok(()),

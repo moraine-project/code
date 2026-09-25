@@ -33,7 +33,7 @@ async fn publish_revision(
 		rights: None,
 		declared_time: 1_760_000_000,
 	};
-	let signed = sign_payload(Kind::Profile, &profile, &[signer]);
+	let signed = sign_payload(Kind::Profile, &profile, &[signer]).expect("valid signed profile");
 	let digest = object_id(Kind::Profile, &signed.payload_bytes);
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/profile"))
 		.body(Body::from(signed.wire_bytes()))

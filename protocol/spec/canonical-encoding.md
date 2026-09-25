@@ -67,6 +67,8 @@ Signed bytes are deterministic CBOR:
 
 - Map keys sort by encoded length first, then bytewise.
 - Integers and lengths use the smallest form that fits.
+- Fields encoded as `u64` must be no greater than `i64::MAX`; values above that
+  range are rejected rather than wrapped or truncated.
 - No indefinite-length items, no floats, no CBOR tags.
 - Duplicate map keys are rejected, and two text keys that differ only by
   Unicode normalization are rejected as a collision.
@@ -104,14 +106,14 @@ know, or a game or loader ordering the consumer cannot resolve, yields
 membership; range comparison arrives with the game and loader definition
 objects.
 
-## Ownership transfers need two signatures
+## Ownership transfers bind both signing sides
 
-A transfer requires two valid signatures over the same payload. A new owner
-reference carries no key, so the implementation requires two distinct
-signatures, both authorized under the current root set. A project that wants a
-new owner to sign prepares a delegation for that key first. One signature is
-rejected as `transfer-needs-two-signatures`. The property that matters is
-kept: no single signature moves a project.
+Each owner reference in a transfer carries its signing `key_id`. The transfer
+is valid only when the envelope contains valid signatures from both named IDs
+under the current root set. A project that wants a new owner key to sign must
+first make that key part of the current root set. A missing or mismatched side
+is rejected as `transfer-needs-two-signatures`; the owner reference alone never
+grants authority.
 
 ## Not covered yet
 

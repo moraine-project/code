@@ -10,7 +10,7 @@ use moraine_model::genesis::{Genesis, GenesisKind, RootKey};
 use moraine_model::modpack::{ModpackEntry, ModpackManifest, ModpackOverride};
 use moraine_model::profile::ProfileRevision;
 use moraine_model::release::{ReleasePayload, Withdrawal};
-use moraine_model::signed::{SignedObject, sign_payload};
+use moraine_model::signed::{ObjectPayload, SignedObject, sign_payload};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
@@ -52,13 +52,13 @@ fn digest(value: &str, what: &str) -> Result<Vec<u8>, String> {
 	bytes(hex, what)
 }
 
-fn finish<T: Canonical + Clone>(kind: ObjectKind, payload: &T, seed: &[u8; 32]) -> Signed {
+fn finish<T: Canonical + Clone + ObjectPayload>(kind: ObjectKind, payload: &T, seed: &[u8; 32]) -> Result<Signed, String> {
 	let key = SigningKey::from_seed(seed);
-	let signed = sign_payload(kind, payload, &[&key]);
-	Signed {
+	let signed = sign_payload(kind, payload, &[&key]).map_err(|error| format!("payload cannot be signed: {error}"))?;
+	Ok(Signed {
 		id: signed.id(kind),
 		wire: signed.wire_bytes(),
-	}
+	})
 }
 
 fn side(value: &str) -> Result<Side, String> {
@@ -151,7 +151,7 @@ fn build_genesis(input: &GenesisInput, signing_seed: &[u8; 32]) -> Result<Signed
 		contacts: None,
 		created_at: input.created_at,
 	};
-	Ok(finish(ObjectKind::Genesis, &genesis, signing_seed))
+	finish(ObjectKind::Genesis, &genesis, signing_seed)
 }
 
 #[derive(Deserialize)]
@@ -242,7 +242,7 @@ fn build_release(input: &ReleaseInput, seed: &[u8; 32]) -> Result<Signed, String
 		minimum_verifier_version: 1,
 		critical_extensions: Vec::new(),
 	};
-	Ok(finish(ObjectKind::Release, &release, seed))
+	finish(ObjectKind::Release, &release, seed)
 }
 
 #[derive(Deserialize)]
@@ -280,7 +280,7 @@ fn build_profile(input: &ProfileInput, seed: &[u8; 32]) -> Result<Signed, String
 		rights: None,
 		declared_time: input.declared_time,
 	};
-	Ok(finish(ObjectKind::Profile, &profile, seed))
+	finish(ObjectKind::Profile, &profile, seed)
 }
 
 #[derive(Deserialize)]
@@ -309,7 +309,7 @@ fn build_changelog(input: &ChangelogInput, seed: &[u8; 32]) -> Result<Signed, St
 		}],
 		declared_time: input.declared_time,
 	};
-	Ok(finish(ObjectKind::Changelog, &changelog, seed))
+	finish(ObjectKind::Changelog, &changelog, seed)
 }
 
 #[derive(Deserialize)]
@@ -389,11 +389,12 @@ fn build_modpack(input: &ModpackInput, seed: &[u8; 32]) -> Result<Signed, String
 		declared_time: input.declared_time,
 	};
 	manifest.validate().map_err(|error| error.to_string())?;
-	Ok(finish(ObjectKind::Modpack, &manifest, seed))
+	finish(ObjectKind::Modpack, &manifest, seed)
 }
 
 #[derive(Deserialize)]
 struct WithdrawalInput {
+	project_id: String,
 	release_id: String,
 	reason: String,
 	#[serde(default)]
@@ -404,13 +405,14 @@ struct WithdrawalInput {
 fn build_withdrawal(input: &WithdrawalInput, seed: &[u8; 32]) -> Result<Signed, String> {
 	let withdrawal = Withdrawal {
 		protocol: 1,
+		project_id: input.project_id.clone(),
 		release_id: input.release_id.clone(),
 		reason: input.reason.clone(),
 		note: input.note.clone(),
 		declared_time: input.declared_time,
 	};
 	withdrawal.validate().map_err(|error| error.to_string())?;
-	Ok(finish(ObjectKind::Release, &withdrawal, seed))
+	finish(ObjectKind::Release, &withdrawal, seed)
 }
 
 #[derive(Deserialize)]
@@ -423,13 +425,14 @@ struct TransferInput {
 	issued_at: i64,
 }
 
-fn owner(kind: &str, id: &str) -> Result<OwnerRef, String> {
+fn owner(kind: &str, id: &str, key_id: moraine_crypto::KeyId) -> Result<OwnerRef, String> {
 	if !matches!(kind, "user" | "org") || id.trim().is_empty() {
 		return Err("owner kind must be user or org and owner id is required".to_string());
 	}
 	Ok(OwnerRef {
 		kind: kind.to_string(),
 		id: id.to_string(),
+		key_id,
 	})
 }
 
@@ -437,8 +440,8 @@ fn build_transfer(input: &TransferInput, old_seed: &[u8; 32], new_seed: &[u8; 32
 	let transfer = OwnershipTransfer {
 		protocol: 1,
 		project_id: input.project_id.clone(),
-		from_owner: owner(&input.from_kind, &input.from_id)?,
-		to_owner: owner(&input.to_kind, &input.to_id)?,
+		from_owner: owner(&input.from_kind, &input.from_id, SigningKey::from_seed(old_seed).key_id())?,
+		to_owner: owner(&input.to_kind, &input.to_id, SigningKey::from_seed(new_seed).key_id())?,
 		issued_at: input.issued_at,
 		previous_delegation_digest: None,
 	};
@@ -446,7 +449,8 @@ fn build_transfer(input: &TransferInput, old_seed: &[u8; 32], new_seed: &[u8; 32
 	let transfer = Delegation::OwnershipTransfer(transfer);
 	let old = SigningKey::from_seed(old_seed);
 	let new = SigningKey::from_seed(new_seed);
-	let signed = sign_payload(ObjectKind::Delegation, &transfer, &[&old, &new]);
+	let signed = sign_payload(ObjectKind::Delegation, &transfer, &[&old, &new])
+		.map_err(|error| format!("transfer cannot be signed: {error}"))?;
 	Ok(Signed {
 		id: signed.id(ObjectKind::Delegation),
 		wire: signed.wire_bytes(),
@@ -478,7 +482,7 @@ fn build_feed_entry(input: &FeedEntryInput, seed: &[u8; 32]) -> Result<Signed, S
 		object_digest: digest(&input.object_digest, "the object id")?,
 		declared_at: input.declared_at,
 	};
-	Ok(finish(ObjectKind::FeedEntry, &entry, seed))
+	finish(ObjectKind::FeedEntry, &entry, seed)
 }
 
 fn parse<T: for<'a> Deserialize<'a>>(input: &str) -> Result<T, String> {
@@ -730,6 +734,7 @@ mod tests {
 	fn lifecycle_records_are_signed_by_the_browser_boundary() {
 		let withdrawal = build_withdrawal(
 			&WithdrawalInput {
+				project_id: PROJECT.to_string(),
 				release_id: PROJECT.to_string(),
 				reason: "author-preference".to_string(),
 				note: None,

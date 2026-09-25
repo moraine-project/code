@@ -125,7 +125,9 @@ mod tests {
 			minimum_verifier_version: 1,
 			critical_extensions: Vec::new(),
 		};
-		sign_payload(Kind::Release, &release, &[signer]).wire_bytes()
+		sign_payload(Kind::Release, &release, &[signer])
+			.expect("valid signed release")
+			.wire_bytes()
 	}
 
 	#[test]

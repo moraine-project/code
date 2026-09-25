@@ -1,6 +1,9 @@
 use moraine_codec::Value;
 
-use crate::canonical::{Canonical, Fields, expect_bool, expect_bytes, expect_i64, expect_text, expect_text_array, map_of};
+use crate::canonical::{
+	Canonical, Fields, canonical_i64, expect_bool, expect_bytes, expect_canonical_u64, expect_i64, expect_text,
+	expect_text_array, map_of,
+};
 use crate::error::{ModelError, RejectReason};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,11 +17,24 @@ pub struct Artifact {
 	pub arch_predicate: Option<Vec<String>>,
 }
 
+impl Artifact {
+	pub fn validate(&self) -> Result<(), ModelError> {
+		if self.digest.len() != 32 {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "digest"));
+		}
+		expect_canonical_u64(self.size, "size")?;
+		if self.filename.is_empty() {
+			return Err(ModelError::field(RejectReason::InvalidFieldValue, "filename"));
+		}
+		Ok(())
+	}
+}
+
 impl Canonical for Artifact {
 	fn to_value(&self) -> Value {
 		let mut pairs = vec![
 			("digest", Value::bytes(self.digest.clone())),
-			("size", Value::int(self.size as i64)),
+			("size", Value::int(canonical_i64(self.size, "size"))),
 			("media_type", Value::text(self.media_type.clone())),
 			("filename", Value::text(self.filename.clone())),
 			("is_primary", Value::Bool(self.is_primary)),
@@ -49,9 +65,6 @@ impl Canonical for Artifact {
 			"arch_predicate",
 		])?;
 		let digest = expect_bytes(fields.required("digest")?, "digest")?;
-		if digest.len() != 32 {
-			return Err(ModelError::field(RejectReason::InvalidFieldValue, "digest"));
-		}
 		let artifact = Self {
 			digest,
 			size: u64::try_from(expect_i64(fields.required("size")?, "size")?)
@@ -68,9 +81,7 @@ impl Canonical for Artifact {
 				.map(|v| expect_text_array(v, "arch_predicate"))
 				.transpose()?,
 		};
-		if artifact.filename.is_empty() {
-			return Err(ModelError::field(RejectReason::InvalidFieldValue, "filename"));
-		}
+		artifact.validate()?;
 		Ok(artifact)
 	}
 }

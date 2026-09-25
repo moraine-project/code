@@ -122,7 +122,8 @@ async fn pins_a_mirror_and_records_a_commitment() {
 		ObjectKind::Attestation,
 		&AttestationObject::MirrorCommitment(commitment.clone()),
 		&[&mirror],
-	);
+	)
+	.expect("valid signed commitment");
 	let request = axum::http::Request::post("/v1/mirror-commitments")
 		.body(Body::from(signed.wire_bytes()))
 		.expect("request");
@@ -150,7 +151,8 @@ async fn pins_a_mirror_and_records_a_commitment() {
 		ObjectKind::Attestation,
 		&AttestationObject::MirrorCommitment(unpinned),
 		&[&mirror],
-	);
+	)
+	.expect("valid signed commitment");
 	let request = axum::http::Request::post("/v1/mirror-commitments")
 		.body(Body::from(signed.wire_bytes()))
 		.expect("request");

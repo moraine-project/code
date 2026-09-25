@@ -1,16 +1,33 @@
 use axum::body::Body;
 use axum::http::{StatusCode, header};
-use moraine_crypto::{ObjectKind as Kind, object_id};
+use moraine_crypto::{ObjectKind as Kind, SigningKey, domain_tag, object_id};
 use moraine_model::Canonical;
 use moraine_model::advisory::{Advisory, Affected, Category, Severity};
 use moraine_model::compatibility::Side;
 use moraine_model::dependency::TargetKind;
 use moraine_model::feed::FeedEntry;
 use moraine_model::modpack::{ModpackEntry, ModpackManifest, ModpackOverride};
-use moraine_model::signed::sign_payload;
+use moraine_model::signed::{ALG_ED25519, Signature, SignatureEnvelope, SignedObject, sign_payload};
 use tower::ServiceExt;
 
 use crate::test_support::*;
+
+fn raw_envelope(kind: Kind, payload: &[u8], signers: &[&SigningKey]) -> SignatureEnvelope {
+	let mut message = domain_tag(kind);
+	message.extend_from_slice(payload);
+	SignatureEnvelope {
+		alg: ALG_ED25519,
+		signatures: signers
+			.iter()
+			.map(|signer| Signature {
+				alg: ALG_ED25519,
+				key_id: signer.key_id(),
+				sig: signer.sign(&message),
+			})
+			.collect(),
+		key_ids: signers.iter().map(|signer| signer.key_id()).collect(),
+	}
+}
 
 #[tokio::test]
 async fn serves_json_views_of_profile_and_release() {
@@ -37,7 +54,7 @@ async fn serves_json_views_of_profile_and_release() {
 		rights: None,
 		declared_time: 1_760_000_000,
 	};
-	let signed_profile = sign_payload(Kind::Profile, &profile, &[&signer]);
+	let signed_profile = sign_payload(Kind::Profile, &profile, &[&signer]).expect("valid signed profile");
 	let profile_digest = object_id(Kind::Profile, &signed_profile.payload_bytes);
 	let path = format!("/v1/projects/{project_id}/objects/profile");
 	let request = axum::http::Request::post(&path)
@@ -55,7 +72,9 @@ async fn serves_json_views_of_profile_and_release() {
 		object_digest: profile_digest.to_vec(),
 		declared_at: 1_760_000_000,
 	};
-	let feed = sign_payload(Kind::FeedEntry, &entry, &[&signer]).wire_bytes();
+	let feed = sign_payload(Kind::FeedEntry, &entry, &[&signer])
+		.expect("valid signed feed entry")
+		.wire_bytes();
 	let path = format!("/v1/projects/{project_id}/feed");
 	let request = axum::http::Request::post(&path).body(Body::from(feed)).expect("request");
 	let response = application.clone().oneshot(request).await.expect("response");
@@ -219,7 +238,7 @@ async fn release_view_lists_pinned_provider_advisories() {
 		expires_at: None,
 		retracted_at: None,
 	};
-	let signed = sign_payload(Kind::Advisory, &advisory, &[&provider]);
+	let signed = sign_payload(Kind::Advisory, &advisory, &[&provider]).expect("valid signed advisory");
 	let request = axum::http::Request::post("/v1/advisories")
 		.body(Body::from(signed.wire_bytes()))
 		.expect("request");
@@ -239,7 +258,7 @@ async fn release_view_lists_pinned_provider_advisories() {
 		provider_id: "ghost".to_string(),
 		..advisory
 	};
-	let signed = sign_payload(Kind::Advisory, &unknown, &[&provider]);
+	let signed = sign_payload(Kind::Advisory, &unknown, &[&provider]).expect("valid signed advisory");
 	let request = axum::http::Request::post("/v1/advisories")
 		.body(Body::from(signed.wire_bytes()))
 		.expect("request");
@@ -275,7 +294,7 @@ async fn serves_a_modpack_manifest_and_rejects_an_escaping_override() {
 		server_manifest_digest: None,
 		declared_time: 1_760_000_500,
 	};
-	let signed = sign_payload(Kind::Modpack, &manifest, &[&signer]);
+	let signed = sign_payload(Kind::Modpack, &manifest, &[&signer]).expect("valid signed modpack");
 	let pack_digest = object_id(Kind::Modpack, &signed.payload_bytes);
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/modpack"))
 		.body(Body::from(signed.wire_bytes()))
@@ -294,7 +313,8 @@ async fn serves_a_modpack_manifest_and_rejects_an_escaping_override() {
 
 	let mut escaping = manifest.clone();
 	escaping.overrides[0].target_path = "../escape.txt".to_string();
-	let signed = sign_payload(Kind::Modpack, &escaping, &[&signer]);
+	let payload_bytes = escaping.to_canonical_bytes();
+	let signed = SignedObject::from_parts(raw_envelope(Kind::Modpack, &payload_bytes, &[&signer]), escaping);
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/modpack"))
 		.body(Body::from(signed.wire_bytes()))
 		.expect("request");
@@ -354,7 +374,7 @@ async fn serves_a_changelog_and_names_it_from_the_release() {
 		}],
 		declared_time: 1_760_000_000,
 	};
-	let signed_changelog = sign_payload(Kind::Changelog, &changelog, &[&signer]);
+	let signed_changelog = sign_payload(Kind::Changelog, &changelog, &[&signer]).expect("valid signed changelog");
 	let changelog_digest = object_id(Kind::Changelog, &signed_changelog.payload_bytes);
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/changelog"))
 		.body(Body::from(signed_changelog.wire_bytes()))
@@ -403,7 +423,7 @@ async fn serves_a_changelog_and_names_it_from_the_release() {
 		minimum_verifier_version: 1,
 		critical_extensions: Vec::new(),
 	};
-	let signed_release = sign_payload(Kind::Release, &release, &[&signer]);
+	let signed_release = sign_payload(Kind::Release, &release, &[&signer]).expect("valid signed release");
 	let decoded = ReleaseObject::from_canonical_bytes(&signed_release.payload_bytes).expect("decode");
 	let ReleaseObject::Release(decoded) = decoded else {
 		panic!("expected a release payload");
@@ -479,7 +499,7 @@ async fn rejects_a_profile_tag_the_game_does_not_declare() {
 		install_adapter: None,
 		declared_time: 1_760_000_000,
 	};
-	let signed = sign_payload(Kind::GameDef, &definition, &[&game_key]);
+	let signed = sign_payload(Kind::GameDef, &definition, &[&game_key]).expect("valid signed definition");
 	let request = axum::http::Request::post(format!("/v1/games/{game_id}/definitions"))
 		.body(Body::from(signed.wire_bytes()))
 		.expect("request");
@@ -509,7 +529,9 @@ async fn rejects_a_profile_tag_the_game_does_not_declare() {
 			rights: None,
 			declared_time: 1_760_000_000,
 		};
-		sign_payload(Kind::Profile, &profile, &[&signer]).wire_bytes()
+		sign_payload(Kind::Profile, &profile, &[&signer])
+			.expect("valid signed profile")
+			.wire_bytes()
 	};
 
 	let request = axum::http::Request::post(format!("/v1/projects/{project_id}/objects/profile"))

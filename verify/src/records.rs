@@ -147,7 +147,7 @@ fn build_deny_list(project_id: &str) -> DenyList {
 	}
 }
 
-pub(crate) fn vectors() -> Vec<Vector> {
+pub(crate) fn vectors() -> Result<Vec<Vector>, String> {
 	let k1 = signer(1);
 	let k2 = signer(2);
 	let k3 = signer(3);
@@ -155,7 +155,8 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	let mut vectors = Vec::with_capacity(16);
 
 	let migration = build_migration(&project_id);
-	let signed_migration = sign_payload(ObjectKind::Delegation, &migration, &[&k1, &k2, &k3]);
+	let signed_migration =
+		sign_payload(ObjectKind::Delegation, &migration, &[&k1, &k2, &k3]).map_err(|error| error.to_string())?;
 	let migration_trust = trust(&[&k1, &k2, &k3], 1);
 	vectors.push(object_vector(
 		"migration-cross-signed",
@@ -167,7 +168,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 		Some(migration_trust),
 	));
 
-	let signed_partial = sign_payload(ObjectKind::Delegation, &migration, &[&k1, &k2]);
+	let signed_partial = sign_payload(ObjectKind::Delegation, &migration, &[&k1, &k2]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"migration-missing-cross-signature",
 		"migration",
@@ -179,7 +180,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	));
 
 	let recovery = build_recovery(&project_id, &k2, &k3);
-	let signed_recovery = sign_payload(ObjectKind::Delegation, &recovery, &[&k1, &k2]);
+	let signed_recovery = sign_payload(ObjectKind::Delegation, &recovery, &[&k1, &k2]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"recovery-threshold-met",
 		"recovery",
@@ -190,7 +191,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 		Some(trust(&[&k1, &k2], 2)),
 	));
 
-	let signed_under = sign_payload(ObjectKind::Delegation, &recovery, &[&k1]);
+	let signed_under = sign_payload(ObjectKind::Delegation, &recovery, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"recovery-below-threshold",
 		"recovery",
@@ -202,7 +203,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	));
 
 	let location = build_location();
-	let signed_location = sign_payload(ObjectKind::Release, &location, &[&k1]);
+	let signed_location = sign_payload(ObjectKind::Release, &location, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"location-record-valid",
 		"locations",
@@ -214,7 +215,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	));
 
 	let commitment = build_commitment();
-	let signed_commitment = sign_payload(ObjectKind::Attestation, &commitment, &[&k1]);
+	let signed_commitment = sign_payload(ObjectKind::Attestation, &commitment, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"mirror-commitment-valid",
 		"locations",
@@ -226,7 +227,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	));
 
 	let evidence = build_attestation();
-	let signed_evidence = sign_payload(ObjectKind::Attestation, &evidence, &[&k1]);
+	let signed_evidence = sign_payload(ObjectKind::Attestation, &evidence, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"attestation-build-provenance",
 		"locations",
@@ -238,7 +239,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	));
 
 	let changelog = build_changelog(&project_id);
-	let signed_changelog = sign_payload(ObjectKind::Changelog, &changelog, &[&k1]);
+	let signed_changelog = sign_payload(ObjectKind::Changelog, &changelog, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"changelog-valid",
 		"changelog",
@@ -250,7 +251,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	));
 
 	let modpack = build_modpack(&project_id);
-	let signed_modpack = sign_payload(ObjectKind::Modpack, &modpack, &[&k1]);
+	let signed_modpack = sign_payload(ObjectKind::Modpack, &modpack, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"modpack-valid",
 		"modpack",
@@ -262,7 +263,7 @@ pub(crate) fn vectors() -> Vec<Vector> {
 	));
 
 	let deny_list = build_deny_list(&project_id);
-	let signed_deny_list = sign_payload(ObjectKind::DenyList, &deny_list, &[&k1]);
+	let signed_deny_list = sign_payload(ObjectKind::DenyList, &deny_list, &[&k1]).map_err(|error| error.to_string())?;
 	vectors.push(object_vector(
 		"deny-list-valid",
 		"deny-list",
@@ -319,5 +320,5 @@ pub(crate) fn vectors() -> Vec<Vector> {
 		Some(trust(&[&k1], 1)),
 	));
 
-	vectors
+	Ok(vectors)
 }

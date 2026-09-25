@@ -93,8 +93,9 @@ compiles its own from the TOML instead and gets its own local IDs.
 ## Regenerating the canonical set
 
 The authority key is `definitions/canonical.key`. It is git-ignored and not part
-of the repository. Whoever holds it authors the next revision, using `revision_of`
-to add versions without changing the IDs, then rebuilds:
+of the repository. The shipped canonical objects are usable, but the key is
+what lets its holder author another revision under the same IDs, using
+`revision_of`:
 
 ```sh
 moraine-publish define --key definitions/canonical.key \
@@ -102,8 +103,10 @@ moraine-publish define --key definitions/canonical.key \
 moraine-publish lock-definitions --dir definitions/canonical --out definitions/curated.lock
 ```
 
-Keep that key safe. If it is lost, the set can only be replaced under a new
-identity, which breaks the shared IDs.
+Keep that key safe. There is no recovery or rotation path for it in this
+implementation. If it is lost, a newly generated key creates new identities;
+instances using the old set must keep the existing signed objects or explicitly
+migrate to the new identities.
 
 ## Multiple games, and what an ID is
 

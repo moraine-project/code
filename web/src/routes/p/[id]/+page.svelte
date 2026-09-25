@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Download } from '@lucide/svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
@@ -7,7 +7,7 @@
 	import SelectField, { type SelectOption } from '$lib/components/SelectField.svelte';
 	import { safeExternalUrl } from '$lib/api/external-url';
 	import { shortDigest } from '$lib/api/digests';
-	import type { FeedEntry } from '$lib/api/projects';
+	import { fetchFeed, type FeedEntry } from '$lib/api/projects';
 	import { follow, follows, unfollow } from '$lib/api/notifications';
 	import { session } from '$lib/session.svelte';
 	import { home } from '$lib/home.svelte';
@@ -16,20 +16,66 @@
 
 	let { data }: PageProps = $props();
 
+	const feedPageSize = 50;
+
 	let tab = $state<'description' | 'versions'>('description');
 	let following = $state(false);
 	let followBusy = $state(false);
 	let followError = $state<string | null>(null);
+	let olderEntries = $state<FeedEntry[]>([]);
+	let olderBusy = $state(false);
+	let olderError = $state<string | null>(null);
 
-	$effect(() => {
-		if (!session.user) {
+	let followToken = 0;
+
+	async function refreshFollowing() {
+		const token = ++followToken;
+		const user = await session.refresh();
+		if (token !== followToken) return;
+		if (!user) {
 			following = false;
 			return;
 		}
-		void follows()
-			.then((projects) => (following = projects.includes(data.projectId)))
-			.catch(() => (following = false));
+		try {
+			const projects = await follows();
+			if (token === followToken) following = projects.includes(data.projectId);
+		} catch {
+			if (token === followToken) following = false;
+		}
+	}
+
+	afterNavigate(() => {
+		olderEntries = [];
+		void refreshFollowing();
 	});
+
+	async function loadOlder() {
+		const first = entries[0];
+		if (!first || olderBusy) {
+			return;
+		}
+		olderBusy = true;
+		olderError = null;
+		try {
+			const older = await fetchFeed(
+				data.home,
+				data.projectId,
+				Math.max(0, first.seq - feedPageSize),
+				feedPageSize,
+				{
+					gameVersion: data.gameVersion || undefined,
+					loader: data.loader || undefined,
+					loaderVersion: data.loaderVersion || undefined,
+				},
+			);
+			const known = new Set(entries.map((entry) => entry.entry));
+			olderEntries = olderEntries.concat(older.entries.filter((entry) => !known.has(entry.entry)));
+		} catch (cause) {
+			olderError = cause instanceof Error ? cause.message : 'could not load older releases';
+		} finally {
+			olderBusy = false;
+		}
+	}
 
 	async function toggleFollow() {
 		if (!session.user) {
@@ -77,11 +123,14 @@
 
 	const gameName = $derived(data.gamePayload?.display_name ?? '');
 
-	const releases = $derived(
-		(data.feed?.entries ?? []).filter((entry) => entry.release).toReversed(),
+	const entries = $derived(
+		[...(data.feed?.entries ?? []), ...olderEntries].toSorted((a, b) => a.seq - b.seq),
 	);
+	const hasOlder = $derived((entries[0]?.seq ?? 1) > 1);
+
+	const releases = $derived(entries.filter((entry) => entry.release).toReversed());
 	const packs = $derived(
-		(data.feed?.entries ?? []).filter((entry) => entry.kind === 'modpack-published').toReversed(),
+		entries.filter((entry) => entry.kind === 'modpack-published').toReversed(),
 	);
 
 	const links = $derived(
@@ -208,19 +257,21 @@
 		</div>
 	</header>
 
-	<div role="tablist" class="tabs tabs-border">
+	<div class="tabs tabs-border" aria-label="Project sections">
 		<button
-			role="tab"
+			type="button"
 			class="tab"
 			class:tab-active={tab === 'description'}
+			aria-pressed={tab === 'description'}
 			onclick={() => (tab = 'description')}
 		>
 			Description
 		</button>
 		<button
-			role="tab"
+			type="button"
 			class="tab"
 			class:tab-active={tab === 'versions'}
+			aria-pressed={tab === 'versions'}
 			onclick={() => (tab = 'versions')}
 		>
 			Versions
@@ -308,7 +359,7 @@
 					<div class="mt-4">
 						<h3 class="text-sm font-semibold">Current channels</h3>
 						<div class="mt-2 flex flex-wrap gap-2">
-							{#each data.channels as channel}
+							{#each data.channels as channel (channel.release)}
 								<a
 									class="badge badge-outline"
 									href={releaseUrl({ object: channel.release } as FeedEntry)}
@@ -332,7 +383,7 @@
 					<div class="mt-4 text-sm">
 						<h3 class="font-semibold">Home history</h3>
 						<ul class="mt-2 flex flex-col gap-1 text-xs text-base-content/70">
-							{#each data.migrations as migration}
+							{#each data.migrations as migration (migration.cutover_seq)}
 								<li>
 									{migration.old_home} → {migration.new_home} at feed sequence {migration.cutover_seq}
 								</li>
@@ -406,6 +457,20 @@
 						</div>
 					{/each}
 				</div>
+			{/if}
+
+			{#if olderError}
+				<p role="alert" class="text-xs text-error">{olderError}</p>
+			{/if}
+			{#if hasOlder}
+				<button
+					class="btn btn-outline w-fit"
+					type="button"
+					onclick={loadOlder}
+					disabled={olderBusy}
+				>
+					{olderBusy ? 'Loading…' : 'Load older releases'}
+				</button>
 			{/if}
 		</section>
 	{/if}

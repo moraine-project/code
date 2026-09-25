@@ -50,61 +50,69 @@
 			<a class="btn btn-primary" href="/">Back home</a>
 		</EmptyState>
 	{:else}
-		<div role="tablist" class="tabs tabs-box w-fit">
+		<div class="tabs tabs-box w-fit" aria-label="Dashboard sections">
 			<button
-				role="tab"
+				type="button"
 				class="tab"
 				class:tab-active={tab === 'overview'}
+				aria-pressed={tab === 'overview'}
 				onclick={() => (tab = 'overview')}
 			>
 				Overview
 			</button>
 			<button
-				role="tab"
+				type="button"
 				class="tab"
 				class:tab-active={tab === 'accounts'}
+				aria-pressed={tab === 'accounts'}
 				onclick={() => (tab = 'accounts')}
 			>
 				Accounts
 			</button>
 			<button
-				role="tab"
+				type="button"
 				class="tab"
 				class:tab-active={tab === 'definitions'}
+				aria-pressed={tab === 'definitions'}
 				onclick={() => (tab = 'definitions')}
 			>
 				Definitions
 			</button>
 			<button
-				role="tab"
+				type="button"
 				class="tab"
 				class:tab-active={tab === 'federation'}
+				aria-pressed={tab === 'federation'}
 				onclick={() => (tab = 'federation')}
 			>
 				Federation
 			</button>
 			<button
-				role="tab"
+				type="button"
 				class="tab"
 				class:tab-active={tab === 'policy'}
+				aria-pressed={tab === 'policy'}
 				onclick={() => (tab = 'policy')}>Policy</button
 			>
 			<button
-				role="tab"
+				type="button"
 				class="tab"
 				class:tab-active={tab === 'moderation'}
+				aria-pressed={tab === 'moderation'}
 				onclick={() => (tab = 'moderation')}>Moderation</button
 			>
 			<button
-				role="tab"
+				type="button"
 				class="tab"
 				class:tab-active={tab === 'records'}
+				aria-pressed={tab === 'records'}
 				onclick={() => (tab = 'records')}>Records</button
 			>
 			<button
-				role="tab"
+				type="button"
 				class="tab"
 				class:tab-active={tab === 'scanners'}
+				aria-pressed={tab === 'scanners'}
 				onclick={() => (tab = 'scanners')}>Scanners</button
 			>
 		</div>

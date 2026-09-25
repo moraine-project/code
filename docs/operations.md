@@ -116,10 +116,9 @@ Retention and limits:
 | `MORAINE_FEDERATION_ALLOW_HTTP_LOCAL` | `false` | Allow `http://` federation to loopback, for local tests |
 | `MORAINE_INSTANCE_BRANDING` | unset | Path to a JSON file that names and themes this instance |
 
-Set a limit to `0` to turn that limit off, with one exception:
-`MORAINE_MAX_FEED_PAGE_ENTRIES` must be at least 1, because a page that returns
-nothing cannot be paged through. An operator running a public instance wants
-the defaults; an operator running one for a small group may lower them.
+Set a limit to `0` to turn that limit off. An operator running a public
+instance wants the defaults; an operator running one for a small group may
+lower them.
 
 ### Scanning
 
@@ -319,7 +318,9 @@ against one will not match the other.
 The repository ships a **canonical signed set** under `definitions/canonical/`,
 with the IDs listed in `definitions/curated.lock`. Importing those objects gives
 an instance the same game and loader IDs as every other instance that took them,
-so federation matches out of the box:
+so federation matches out of the box. The private authority key is not shipped,
+and this implementation has no recovery or rotation path for that key. Keep the
+shipped objects or an authority-key backup if the set must keep those identities.
 
 ```sh
 moraine-publish define --out definitions/canonical --home https://your-instance

@@ -55,6 +55,29 @@ enum Command {
 		changelog: Option<String>,
 	},
 
+	Check {
+		#[arg(long)]
+		key: PathBuf,
+		#[arg(long)]
+		home: String,
+		#[arg(long)]
+		project: String,
+		#[arg(long)]
+		game: String,
+
+		#[arg(long = "game-version")]
+		game_versions: Vec<String>,
+		#[arg(long)]
+		version: String,
+		#[arg(long, default_value = "release")]
+		channel: String,
+		#[arg(long)]
+		file: PathBuf,
+		#[arg(long)]
+		loader: Option<String>,
+		#[arg(long)]
+		changelog: Option<String>,
+	},
 	Changelog {
 		#[arg(long)]
 		key: PathBuf,
@@ -394,6 +417,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			changelog,
 		} => {
 			commands::release(
+				&key,
+				&home,
+				&project,
+				&game,
+				&game_versions,
+				&version,
+				&channel,
+				&file,
+				loader,
+				changelog,
+			)
+			.await
+		}
+		Command::Check {
+			key,
+			home,
+			project,
+			game,
+			game_versions,
+			version,
+			channel,
+			file,
+			loader,
+			changelog,
+		} => {
+			commands::check(
 				&key,
 				&home,
 				&project,

@@ -15,7 +15,12 @@ Kind `delegation` has a `purpose` key with four values:
 | `recovery` | replace compromised or lost root keys |
 
 A decoder reads `purpose` first and then validates the variant, so a field
-from one purpose is never accepted in another.
+from one purpose is never accepted in another. An `ownership-transfer` carries
+owner references whose `key_id` fields identify the required signatures; the
+transfer must be signed by both named owner keys and its `project_id` must match
+the root subject.
+Migration and recovery records use the same subject and delegation-authority
+checks.
 
 ## Migration
 

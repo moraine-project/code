@@ -15,7 +15,7 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 	await page.goto('/account');
 	await page.getByLabel('Email').fill('ops@example.org');
 	await page.getByLabel('Password').fill(state.password);
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await page.locator('form').getByRole('button', { name: 'Sign in' }).click();
 	await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
 
 	await page.goto('/publish');
@@ -49,7 +49,7 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 	await expect(created).toBeVisible({ timeout: 30_000 });
 	const projectId = (await created.textContent())?.split(': ')[1]?.trim() ?? '';
 	expect(projectId).toContain('gd:sha256:');
-	await page.getByRole('tab', { name: 'Existing project' }).click();
+	await page.getByRole('button', { name: 'Existing project' }).click();
 	await expect(page.getByRole('button', { name: 'Publish the profile' })).toBeVisible();
 	await page.getByRole('button', { name: 'Publish the profile' }).click();
 	await expect(page.getByText(/Profile published:/)).toBeVisible({ timeout: 30_000 });
@@ -132,7 +132,7 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 	await expect(page.getByRole('heading', { name: 'Browser Test Mod' })).toBeVisible();
 	await expect(page.getByText('Signing roots')).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Download' })).toBeVisible();
-	await page.getByRole('tab', { name: /Versions/ }).click();
+	await page.getByRole('button', { name: /Versions/ }).click();
 	await expect(page.getByRole('link', { name: 'View' })).toHaveCount(1);
 	await page.getByLabel('Game version').click();
 	await page.getByRole('option', { name: '1.20.1' }).click();
@@ -169,6 +169,7 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 	});
 	await expect(page.getByRole('alert').filter({ hasText: 'does not match' })).toBeVisible();
 	await page.route('**/v1/artifacts/**/locations', async (route) => {
+		const now = Math.floor(Date.now() / 1000);
 		await route.fulfill({
 			contentType: 'application/json',
 			body: JSON.stringify({
@@ -178,17 +179,52 @@ test('signs in, publishes a release in the browser, and finds it', async ({ page
 				size: 9,
 				locations: [
 					{
+						url: 'https://mirror.example/artifact.jar',
+						kind: 'mirror',
+						provenance: 'mirror-committed',
+						operator_id: 'gd:sha256:' + 'a'.repeat(64),
+						last_success_at: now - 600,
+						expires_at: now + 3600,
+					},
+					{
+						url: 'https://expired.example/artifact.jar',
+						kind: 'mirror',
+						provenance: 'mirror-committed',
+						operator_id: 'gd:sha256:' + 'b'.repeat(64),
+						last_success_at: now - 7200,
+						expires_at: now - 3600,
+					},
+					{
+						url: 'https://unchecked.example/artifact.jar',
+						kind: 'mirror',
+						provenance: 'mirror-committed',
+						operator_id: 'gd:sha256:' + 'c'.repeat(64),
+						last_success_at: null,
+						expires_at: null,
+					},
+					{
 						url: 'javascript:alert(document.domain)',
 						kind: 'mirror',
 						provenance: 'mirror-committed',
+						operator_id: 'gd:sha256:' + 'd'.repeat(64),
+						last_success_at: now - 60,
+						expires_at: now + 60,
 					},
 				],
-				refreshed_at: Math.floor(Date.now() / 1000),
+				refreshed_at: now,
 			}),
 		});
 	});
 	await page.getByRole('button', { name: 'Other locations' }).click();
 	await expect(page.getByText('Unavailable mirror location')).toBeVisible();
+	await expect(page.getByText(/Last successful check \(last_success_at\)/).first()).toBeVisible();
+	await expect(page.getByText('No successful check recorded for this commitment')).toBeVisible();
+	await expect(page.getByText('Commitment window ended (expires_at):')).toBeVisible();
+	await expect(page.getByText(/Expires \(expires_at\)/).first()).toBeVisible();
+	await expect(
+		page.getByText('4 location(s) · 2 of 4 mirror commitment(s) verified'),
+	).toBeVisible();
+	await expect(page.getByText('Mirror aaaaaaaaaaaa')).toBeVisible();
 	await expect(page.locator('a[href^="javascript:"]')).toHaveCount(0);
 	await page.unroute('**/v1/artifacts/**/locations');
 
